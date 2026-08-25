@@ -11,7 +11,9 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:43151](http://localhost:43151). The first visit loads Summit Electric demo stock (warehouses, trucks, catalog, POs, and an activity log). Use **Settings → Reset demo data** to restore it.
+Then open **http://127.0.0.1:43151** (or http://localhost:43151). The first visit loads Summit Electric demo stock (warehouses, trucks, catalog, POs, and an activity log). Use **Settings → Reset demo data** to restore it.
+
+If the page is blank, the HTML loaded but Next.js blocked the JavaScript (common when the tab uses `127.0.0.1` and the server bound `localhost`). Restart with `npm run dev` after pulling — this repo already allowlists both hosts.
 
 ## What is included
 
