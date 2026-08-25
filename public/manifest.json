@@ -1,0 +1,21 @@
+{
+  "name": "Stockr",
+  "short_name": "Stockr",
+  "description": "Comprehensive field inventory management for warehouses and service fleets, featuring real-time tracking, barcode scanning, and seamless material transfers.",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0d1117",
+  "background_color": "#ffffff"
+}
