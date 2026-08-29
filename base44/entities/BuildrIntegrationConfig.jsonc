@@ -1,0 +1,45 @@
+{
+  "name": "BuildrIntegrationConfig",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant/company ID for multi-tenant Buildr integration"
+    },
+    "company_name": {
+      "type": "string",
+      "description": "Human-readable company name"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this Buildr integration is active"
+    },
+    "buildr_receiver_url": {
+      "type": "string",
+      "description": "Buildr receiveStockrExpense endpoint URL"
+    },
+    "buildr_shared_secret_ref": {
+      "type": "string",
+      "description": "Reference to secret containing Buildr shared secret (e.g., STOCKR_BUILDR_SECRET_DAYONE)"
+    },
+    "buildr_api_base_url": {
+      "type": "string",
+      "description": "Buildr API base URL"
+    },
+    "buildr_app_id": {
+      "type": "string",
+      "description": "Buildr app ID"
+    },
+    "buildr_api_key_secret_ref": {
+      "type": "string",
+      "description": "Reference to secret containing Buildr API key (e.g., BUILDR_API_KEY_DAYONE)"
+    }
+  },
+  "required": [
+    "company_id",
+    "company_name",
+    "buildr_receiver_url",
+    "buildr_shared_secret_ref"
+  ]
+}

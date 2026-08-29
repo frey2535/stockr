@@ -1,0 +1,39 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "admin",
+        "user"
+      ],
+      "description": "User role (admin = platform admin or company owner, user = regular user)"
+    },
+    "company_id": {
+      "type": "string",
+      "description": "Company/tenant ID for company-app instances (null for platform-level access)"
+    },
+    "is_platform_admin": {
+      "type": "boolean",
+      "description": "True if this user is the platform owner with unrestricted access",
+      "default": false
+    },
+    "recent_material_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ordered list of recently used material IDs (most recent first, max 20)"
+    },
+    "last_to_location_id": {
+      "type": "string",
+      "description": "Last destination location used by this user"
+    },
+    "last_from_location_id": {
+      "type": "string",
+      "description": "Last source location used by this user"
+    }
+  },
+  "required": []
+}

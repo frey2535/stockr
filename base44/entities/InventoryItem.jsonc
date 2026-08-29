@@ -1,0 +1,27 @@
+{
+  "name": "InventoryItem",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant/company ID for multi-tenant scoping"
+    },
+    "material_id": {
+      "type": "string",
+      "description": "Reference to Material entity"
+    },
+    "location_id": {
+      "type": "string",
+      "description": "Reference to Location entity"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Current quantity at this location"
+    }
+  },
+  "required": [
+    "material_id",
+    "location_id",
+    "quantity"
+  ]
+}

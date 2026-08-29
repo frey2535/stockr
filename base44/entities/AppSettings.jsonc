@@ -1,0 +1,36 @@
+{
+  "name": "AppSettings",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant/company ID for multi-tenant scoping"
+    },
+    "company_name": {
+      "type": "string",
+      "description": "Company name displayed in the app"
+    },
+    "logo_url": {
+      "type": "string",
+      "description": "URL of the company logo"
+    },
+    "primary_color": {
+      "type": "string",
+      "description": "Primary brand color (hex)"
+    },
+    "accent_color": {
+      "type": "string",
+      "description": "Accent/secondary brand color (hex)"
+    },
+    "buildr_linked": {
+      "type": "boolean",
+      "description": "Whether linked to the Buildr app",
+      "default": false
+    },
+    "buildr_company_id": {
+      "type": "string",
+      "description": "Buildr company ID for linking"
+    }
+  },
+  "required": []
+}

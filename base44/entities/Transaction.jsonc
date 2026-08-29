@@ -1,0 +1,77 @@
+{
+  "name": "Transaction",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Tenant/company ID for multi-tenant scoping"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "add",
+        "transfer",
+        "use",
+        "adjust",
+        "shrink"
+      ],
+      "description": "Type of transaction: add (stock in), transfer (move), use (consumed on job), adjust (correction), shrink (loss/damage/theft)"
+    },
+    "material_id": {
+      "type": "string",
+      "description": "Reference to Material entity"
+    },
+    "from_location_id": {
+      "type": "string",
+      "description": "Source location for transfers"
+    },
+    "to_location_id": {
+      "type": "string",
+      "description": "Destination location"
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Quantity involved"
+    },
+    "project_name": {
+      "type": "string",
+      "description": "Project name for usage transactions (transitional, use buildr_project_id as primary)"
+    },
+    "buildr_project_id": {
+      "type": "string",
+      "description": "Validated Buildr project ID (primary linkage for sync)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Additional notes (e.g. reason for adjustment or shrinkage)"
+    },
+    "buildr_expense_id": {
+      "type": "string",
+      "description": "Buildr Expense ID when synced (use transactions only)"
+    },
+    "synced_to_buildr": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this transaction has been synced to Buildr"
+    },
+    "sync_error": {
+      "type": "string",
+      "description": "Error message if sync to Buildr failed"
+    },
+    "sync_retry_count": {
+      "type": "integer",
+      "default": 0,
+      "description": "Number of sync retry attempts"
+    },
+    "last_sync_attempt_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of last sync attempt"
+    }
+  },
+  "required": [
+    "type",
+    "material_id",
+    "quantity"
+  ]
+}

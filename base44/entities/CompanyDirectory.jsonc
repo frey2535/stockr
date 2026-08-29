@@ -1,0 +1,23 @@
+{
+  "name": "CompanyDirectory",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Unique company identifier (e.g., co_dayoneelectric)"
+    },
+    "company_name": {
+      "type": "string",
+      "description": "Human-readable company name"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this company is available for selection"
+    }
+  },
+  "required": [
+    "company_id",
+    "company_name"
+  ]
+}
