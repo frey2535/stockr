@@ -1,0 +1,39 @@
+{
+  "name": "Buildr Sync - Transaction Update",
+  "description": "",
+  "trigger": {
+    "condition": "${ ((.trigger.changed_fields | index(\"quantity\") != null) or (.trigger.changed_fields | index(\"buildr_project_id\") != null) or (.trigger.changed_fields | index(\"material_id\") != null) or (.trigger.changed_fields | index(\"notes\") != null)) }",
+    "config": {
+      "trigger_type": "entity",
+      "events": [
+        "update"
+      ],
+      "entity_name": "Transaction"
+    }
+  },
+  "definition": {
+    "document": {
+      "dsl": "1.0.0",
+      "name": "buildr_sync_transaction_update",
+      "version": "1.0",
+      "namespace": "base44"
+    },
+    "do": [
+      {
+        "run_function": {
+          "call": "invoke_backend_function",
+          "with": {
+            "function_name": "syncTransactionToBuildr",
+            "args": {
+              "operation": "upsert"
+            }
+          },
+          "then": "end"
+        }
+      }
+    ]
+  },
+  "x-base44-migrated-from-automation": {
+    "legacy_payload_function": "syncTransactionToBuildr"
+  }
+}
