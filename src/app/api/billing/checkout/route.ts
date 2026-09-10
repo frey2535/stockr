@@ -17,10 +17,10 @@ export async function POST(request: Request) {
   const plan = PLANS.find((row) => row.id === body?.plan);
   if (!plan) return NextResponse.json({ error: "Unknown plan." }, { status: 400 });
 
-  setCompanyPlan(account.company.id, plan.id);
+  await setCompanyPlan(account.company.id, plan.id);
   return NextResponse.json({
     ok: true,
     mock: true,
-    account: getAccount(account.user.id, account.company.id),
+    account: await getAccount(account.user.id, account.company.id),
   });
 }

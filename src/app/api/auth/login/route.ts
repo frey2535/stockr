@@ -10,12 +10,12 @@ export async function POST(request: Request) {
     password?: string;
   } | null;
 
-  const match = verifyPassword(body?.email || "", body?.password || "");
+  const match = await verifyPassword(body?.email || "", body?.password || "");
   if (!match) {
     return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
   }
 
-  const session = createSession(match.userId, match.companyId);
+  const session = await createSession(match.userId, match.companyId);
   await setSessionCookie(session.id, session.expiresAt);
   return NextResponse.json({ ok: true });
 }

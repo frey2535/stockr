@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Company name is required." }, { status: 400 });
   }
 
-  const result = createCompanyWithOwner({
+  const result = await createCompanyWithOwner({
     email,
     name: body?.name?.trim() || email.split("@")[0],
     password,
@@ -39,8 +39,11 @@ export async function POST(request: Request) {
   if ("error" in result && result.error) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
+  if (!("userId" in result) || !result.userId || !result.companyId) {
+    return NextResponse.json({ error: "Could not create the account." }, { status: 400 });
+  }
 
-  const session = createSession(result.userId!, result.companyId!);
+  const session = await createSession(result.userId, result.companyId);
   await setSessionCookie(session.id, session.expiresAt);
   return NextResponse.json({ ok: true });
 }

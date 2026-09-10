@@ -137,9 +137,12 @@ export type TeamMember = {
   role: MemberRole;
 };
 
+export type DataBackend = "supabase" | "sqlite";
+
 export type Account = {
   user: AccountUser;
   company: AccountCompany;
   role: MemberRole;
   members: TeamMember[];
+  dataBackend: DataBackend;
 };

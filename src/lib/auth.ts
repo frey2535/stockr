@@ -21,7 +21,7 @@ export async function setSessionCookie(sessionId: string, expiresAt: string) {
 export async function clearSessionCookie() {
   const store = await cookies();
   const current = store.get(SESSION_COOKIE)?.value;
-  if (current) deleteSession(current);
+  if (current) await deleteSession(current);
   store.delete(SESSION_COOKIE);
 }
 
@@ -29,7 +29,7 @@ export async function getCurrentAccount(): Promise<Account | null> {
   const store = await cookies();
   const sessionId = store.get(SESSION_COOKIE)?.value;
   if (!sessionId) return null;
-  const session = getSession(sessionId);
+  const session = await getSession(sessionId);
   if (!session) return null;
   return getAccount(session.user_id, session.company_id);
 }

@@ -2,7 +2,7 @@
 
 Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-Data lives in a local SQLite database (`data/stockr.db`). There is no Base44 SDK. Stripe is not required — plan upgrades use a mock checkout so you can test limits without a billing key.
+Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so they can live in the same project as another app. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Stripe is not required — plan upgrades use a mock checkout.
 
 ## Run locally
 
@@ -62,6 +62,23 @@ NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
 
 On production (`next start`), session cookies are marked `Secure` and scoped to that host. Local `npm run dev` keeps host-only cookies so http://127.0.0.1:43151 still signs in.
 
+## Supabase
+
+Use the same Supabase project as your other app. Stockr only creates `stockr_*` tables.
+
+1. In Supabase: **SQL Editor** → paste and run [`supabase/schema.sql`](supabase/schema.sql)
+2. **Project Settings → API**: copy the project URL and the **service role** key (server only, never ship it to the browser)
+3. Put them in `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+4. Restart the app. Settings will say the workspace database is Supabase. The demo company is created there on first boot if it does not exist.
+
+Invite codes are indexed by code, so joining a company does not scan every tenant.
+
 ## Production notes
 
-This slice is a self-hosted SaaS: accounts, sessions (httpOnly cookie), and per-company JSON state in SQLite. Before a public launch you will still want HTTPS on this domain, a hosted database, real Stripe keys, a privacy policy, and backups of `data/stockr.db`.
+Point `stockr.currentflowconsulting.org` at this app over HTTPS, keep the service role key on the server, and use real Stripe when you are ready to charge. SQLite is only the no-key fallback.

@@ -63,6 +63,28 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Workspace database</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          {account?.dataBackend === "supabase" ? (
+            <p>
+              Company data is stored in your Supabase project as separate tables (locations,
+              catalog, inventory, activity, invites). This is the production store.
+            </p>
+          ) : (
+            <p>
+              This preview is using the local SQLite file. Add{" "}
+              <span className="font-mono text-foreground">NEXT_PUBLIC_SUPABASE_URL</span> and{" "}
+              <span className="font-mono text-foreground">SUPABASE_SERVICE_ROLE_KEY</span>, then run{" "}
+              <span className="font-mono text-foreground">supabase/schema.sql</span> in the Supabase
+              SQL editor to move every company onto your hosted database.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="size-5 text-secondary" />
             Team

@@ -16,7 +16,7 @@ export async function GET() {
   const account = await getCurrentAccount();
   if (!account) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return NextResponse.json({
-    state: getCompanyState(account.company.id),
+    state: await getCompanyState(account.company.id),
     account,
   });
 }
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only the company owner can reset workspace data." }, { status: 403 });
   }
 
-  const prev = getCompanyState(account.company.id);
+  const prev = await getCompanyState(account.company.id);
 
   if (command.type === "upsertLocation" && !command.location.id) {
     const limit = planLimitError(account.company.plan, prev, "location");
@@ -62,12 +62,12 @@ export async function POST(request: Request) {
     );
   }
 
-  setCompanyState(account.company.id, result.state);
+  await setCompanyState(account.company.id, result.state);
   if (command.type === "updateSettings" && command.patch.company_name) {
-    updateCompanyName(account.company.id, command.patch.company_name);
+    await updateCompanyName(account.company.id, command.patch.company_name);
   }
 
-  const nextAccount = getAccount(account.user.id, account.company.id);
+  const nextAccount = await getAccount(account.user.id, account.company.id);
   return NextResponse.json({
     state: result.state,
     account: nextAccount,
