@@ -31,7 +31,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (authed && (pathname === "/login" || pathname === "/signup")) {
+  if (
+    authed &&
+    (pathname === "/login" ||
+      pathname === "/signup" ||
+      pathname === "/signin" ||
+      pathname === "/sign-in")
+  ) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -52,6 +58,9 @@ export const config = {
     "/settings/:path*",
     "/billing/:path*",
     "/login",
+    "/signin",
+    "/sign-in",
     "/signup",
+    "/sign-up",
   ],
 };

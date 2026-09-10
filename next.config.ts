@@ -10,6 +10,15 @@ const nextConfig: NextConfig = {
     "0.0.0.0",
     "stockr.currentflowconsulting.org",
   ],
+  async redirects() {
+    return [
+      { source: "/signin", destination: "/login", permanent: false },
+      { source: "/sign-in", destination: "/login", permanent: false },
+      { source: "/sign_in", destination: "/login", permanent: false },
+      { source: "/sign-up", destination: "/signup", permanent: false },
+      { source: "/sign_up", destination: "/signup", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

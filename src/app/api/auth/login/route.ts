@@ -4,6 +4,10 @@ import { createSession, verifyPassword } from "@/lib/db";
 
 export const runtime = "nodejs";
 
+export async function GET(request: Request) {
+  return NextResponse.redirect(new URL("/login", request.url));
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     email?: string;

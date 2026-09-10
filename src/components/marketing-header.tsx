@@ -30,7 +30,7 @@ export function MarketingHeader({ signedIn = false }: { signedIn?: boolean }) {
           ) : (
             <>
               <Button asChild variant="ghost" className="text-white hover:bg-white/10 hover:text-white">
-                <Link href="/login">Log in</Link>
+                <Link href="/login">Sign in</Link>
               </Button>
               <Button asChild className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
                 <Link href="/signup">Start free</Link>

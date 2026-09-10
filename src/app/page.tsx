@@ -72,7 +72,7 @@ export default async function LandingPage() {
                   </Link>
                 </Button>
                 <Button asChild size="lg" variant="outline" className="border-white/20 bg-transparent text-white hover:bg-white/10">
-                  <Link href="/login">Log in</Link>
+                  <Link href="/login">Sign in</Link>
                 </Button>
               </>
             )}
