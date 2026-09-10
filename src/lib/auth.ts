@@ -1,16 +1,20 @@
 import { cookies } from "next/headers";
 import { deleteSession, getAccount, getSession } from "./db";
+import { SITE_HOST } from "./site";
 import type { Account } from "./types";
 
 export const SESSION_COOKIE = "stockr_session";
 
 export async function setSessionCookie(sessionId: string, expiresAt: string) {
   const store = await cookies();
+  const production = process.env.NODE_ENV === "production";
   store.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     expires: new Date(expiresAt),
+    secure: production,
+    ...(production ? { domain: SITE_HOST } : {}),
   });
 }
 

@@ -11,7 +11,9 @@ npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:43151**.
+Open **http://127.0.0.1:43151** for local preview.
+
+Production hostname is **https://stockr.currentflowconsulting.org**. Point that name at this app (CNAME or A record) and serve it over HTTPS so camera scanning and session cookies work.
 
 ### Demo company
 
@@ -49,6 +51,17 @@ Upgrade from **Billing**. In this repo the checkout immediately activates the pl
 
 Camera scanning needs HTTPS or `localhost` and a browser that implements `BarcodeDetector`. Demo barcodes include `012345678901` (3/4" EMT) and `099887766554` (screws).
 
+## Domain
+
+Canonical host: **stockr.currentflowconsulting.org**
+
+```bash
+NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
+NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
+```
+
+On production (`next start`), session cookies are marked `Secure` and scoped to that host. Local `npm run dev` keeps host-only cookies so http://127.0.0.1:43151 still signs in.
+
 ## Production notes
 
-This slice is a self-hosted SaaS: accounts, sessions (httpOnly cookie), and per-company JSON state in SQLite. Before a public launch you will still want HTTPS, a hosted database, real Stripe keys, a privacy policy, and backups of `data/stockr.db`.
+This slice is a self-hosted SaaS: accounts, sessions (httpOnly cookie), and per-company JSON state in SQLite. Before a public launch you will still want HTTPS on this domain, a hosted database, real Stripe keys, a privacy policy, and backups of `data/stockr.db`.

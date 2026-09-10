@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
     "localhost",
     "::1",
     "0.0.0.0",
+    "stockr.currentflowconsulting.org",
   ],
 };
 

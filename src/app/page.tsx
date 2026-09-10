@@ -158,7 +158,7 @@ export default async function LandingPage() {
       </section>
 
       <footer className="border-t border-white/10 py-8 text-center text-sm text-white/40">
-        Stockr · Company workspaces for contractor inventory
+        Stockr · stockr.currentflowconsulting.org · Company workspaces for contractor inventory
       </footer>
     </div>
   );
