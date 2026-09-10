@@ -79,6 +79,10 @@ const globalForDb = globalThis as unknown as { stockrDb?: DatabaseSync };
 export const db = globalForDb.stockrDb ?? openDb();
 if (process.env.NODE_ENV !== "production") globalForDb.stockrDb = db;
 
+function plain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function slugify(name: string) {
   const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "company";
   return `${base}-${uid("co").slice(-6)}`;
@@ -89,7 +93,7 @@ export function getCompanyState(companyId: string): StoreState {
     .prepare("SELECT payload FROM company_state WHERE company_id = ?")
     .get(companyId) as { payload: string } | undefined;
   if (!row) return createEmptyState("New company");
-  return JSON.parse(row.payload) as StoreState;
+  return plain(JSON.parse(row.payload) as StoreState);
 }
 
 export function setCompanyState(companyId: string, state: StoreState) {
@@ -121,7 +125,7 @@ export function listMembers(companyId: string): TeamMember[] {
        WHERE m.company_id = ?`,
     )
     .all(companyId) as { id: string; email: string; name: string; role: MemberRole }[];
-  return rows;
+  return plain(rows);
 }
 
 export function getAccount(userId: string, companyId: string): Account | null {
@@ -131,7 +135,7 @@ export function getAccount(userId: string, companyId: string): Account | null {
     .prepare("SELECT role FROM memberships WHERE user_id = ? AND company_id = ?")
     .get(userId, companyId) as { role: MemberRole } | undefined;
   if (!user || !company || !membership) return null;
-  return {
+  return plain({
     user: { id: user.id, email: user.email, name: user.name },
     company: {
       id: company.id,
@@ -142,7 +146,7 @@ export function getAccount(userId: string, companyId: string): Account | null {
     },
     role: membership.role,
     members: listMembers(companyId),
-  };
+  });
 }
 
 export function createSession(userId: string, companyId: string) {
