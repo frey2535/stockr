@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ImagePlus, Link2, Settings, Shield, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ImagePlus, Link2, Settings, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -10,18 +10,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
 import type { AccessCodeType } from "@/lib/types";
 
 export default function SettingsPage() {
-  const { state, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
+  const { state, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
   const { settings, accessCodes } = state;
   const [draft, setDraft] = useState(settings);
   const [label, setLabel] = useState("");
   const [codeType, setCodeType] = useState<AccessCodeType>("trial");
 
-  const saveBranding = () => {
-    updateSettings(draft);
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
+
+  const saveBranding = async () => {
+    const result = await updateSettings(draft);
+    if (!result.ok) {
+      toast.error(result.error || "Could not save settings.");
+      return;
+    }
     toast.success("Branding saved");
   };
 
@@ -34,11 +43,15 @@ export default function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
+  const plan = account ? getPlan(account.company.plan) : null;
+  const isOwner = account?.role === "owner";
+  const isDemo = account?.company.id === "co_summit";
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Settings"
-        description="Customize the app for your company"
+        description="Company branding, team, and invite codes"
         icon={<Settings className="size-8 text-secondary" />}
         actions={
           draft.logo_url ? (
@@ -47,6 +60,34 @@ export default function SettingsPage() {
           ) : null
         }
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="size-5 text-secondary" />
+            Team
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {account?.company.name} · {plan?.name} plan · {account?.members.length || 0}
+            {plan?.seats != null ? ` / ${plan.seats}` : ""} seats
+          </p>
+          <div className="space-y-2">
+            {(account?.members || []).map((member) => (
+              <div key={member.id} className="flex items-center justify-between rounded-xl bg-muted/30 p-3">
+                <div>
+                  <p className="text-sm font-medium">{member.name}</p>
+                  <p className="text-xs text-muted-foreground">{member.email}</p>
+                </div>
+                <Badge variant="outline" className="capitalize">
+                  {member.role}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -166,7 +207,7 @@ export default function SettingsPage() {
             <div>
               <p className="font-medium">Link to Buildr App</p>
               <p className="text-sm text-muted-foreground">
-                Connect your inventory with your Buildr projects
+                Store a Buildr company ID with this workspace
               </p>
             </div>
             <Switch
@@ -183,7 +224,7 @@ export default function SettingsPage() {
                 placeholder="Find your Company ID in Buildr → Settings → Integrations"
               />
               <p className="text-xs text-muted-foreground">
-                Project names stay local in this Cursor copy. Live Buildr sync is not required to leave Base44.
+                Saved on this company workspace. Live Buildr project sync is optional.
               </p>
             </div>
           ) : null}
@@ -197,15 +238,16 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="size-5 text-secondary" />
-            Access Codes
+            Invite codes
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Give contractors trial or permanent access to this app.
+            Share a code so a teammate can create an account and join this company. Trial codes expire
+            in 14 days. Seat limits are enforced when they sign up.
           </p>
           <div className="space-y-3 rounded-xl bg-muted/40 p-4">
-            <p className="text-sm font-medium">Create New Code</p>
+            <p className="text-sm font-medium">Create invite</p>
             <div className="space-y-2">
               <Label>Label (e.g. contractor name)</Label>
               <Input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. John Smith - Trial" />
@@ -226,13 +268,17 @@ export default function SettingsPage() {
             </div>
             <Button
               className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
-              onClick={() => {
+              onClick={async () => {
                 if (!label.trim()) {
                   toast.error("Add a label first.");
                   return;
                 }
-                const created = createAccessCode({ label: label.trim(), type: codeType });
-                toast.success(`Code ${created.code} created`);
+                const created = await createAccessCode({ label: label.trim(), type: codeType });
+                if (!created.ok) {
+                  toast.error(created.error);
+                  return;
+                }
+                toast.success(`Code ${created.code.code} created`);
                 setLabel("");
               }}
             >
@@ -240,6 +286,9 @@ export default function SettingsPage() {
             </Button>
           </div>
           <div className="space-y-2">
+            {accessCodes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No invite codes yet.</p>
+            ) : null}
             {accessCodes.map((code) => {
               const expired = code.type === "trial" && code.expires_at && new Date(code.expires_at) < new Date();
               return (
@@ -263,28 +312,34 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Local data</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Stockr now stores everything in this browser. You can leave Base44 — no Base44 login, SDK, or hosting is required.
-          </p>
-          <Button
-            variant="outline"
-            className="border-destructive/30 text-destructive hover:bg-destructive/10"
-            onClick={() => {
-              resetDemo();
-              setDraft(state.settings);
-              toast.success("Demo data restored");
-              window.location.reload();
-            }}
-          >
-            Reset demo data
-          </Button>
-        </CardContent>
-      </Card>
+      {isOwner ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Workspace data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {isDemo
+                ? "Reload the Summit Electric training catalog, trucks, and purchase orders."
+                : "Clear inventory, catalog, and activity for this company. Branding is kept as an empty shop."}
+            </p>
+            <Button
+              variant="outline"
+              className="border-destructive/30 text-destructive hover:bg-destructive/10"
+              onClick={async () => {
+                const result = await resetDemo();
+                if (!result.ok) {
+                  toast.error(result.error || "Could not reset.");
+                  return;
+                }
+                toast.success(isDemo ? "Training data restored" : "Workspace cleared");
+              }}
+            >
+              {isDemo ? "Reset training data" : "Clear workspace data"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

@@ -61,15 +61,19 @@ export default function LocationsPage() {
     setOpen(true);
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) {
       toast.error("Name is required.");
       return;
     }
-    upsertLocation({
+    const result = await upsertLocation({
       id: editing?.id,
       ...form,
     });
+    if (!result.ok) {
+      toast.error(result.error || "Could not save location.");
+      return;
+    }
     toast.success(editing ? "Location updated" : "Location added");
     setOpen(false);
   };

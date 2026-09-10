@@ -6,10 +6,11 @@ import {
   ArrowLeftRight,
   BarChart3,
   ClipboardList,
+  CreditCard,
   LayoutDashboard,
+  LogOut,
   MapPin,
   Package,
-  RefreshCw,
   ScanLine,
   Settings,
   ShoppingCart,
@@ -17,10 +18,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
 
 const NAV = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
   { href: "/locations", label: "Locations", icon: MapPin },
@@ -29,11 +31,12 @@ const NAV = [
   { href: "/catalog", label: "Catalog", icon: Package },
   { href: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 const MOBILE_NAV = [
-  { href: "/", label: "Home", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
   { href: "/transfers", label: "Activity", icon: ArrowLeftRight },
@@ -114,13 +117,14 @@ function NavLink({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { hydrated } = useStore();
-  const [refreshing, setRefreshing] = useState(false);
+  const { hydrated, account, logout } = useStore();
+  const [signingOut, setSigningOut] = useState(false);
   const hideMobileNav = !MOBILE_NAV.some((item) => item.href === pathname);
+  const plan = account ? getPlan(account.company.plan) : null;
 
-  const refresh = () => {
-    setRefreshing(true);
-    window.location.reload();
+  const signOut = async () => {
+    setSigningOut(true);
+    await logout();
   };
 
   return (
@@ -135,7 +139,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3 px-5 py-5">
           <Brand />
         </div>
-        <nav className="flex flex-1 flex-col gap-1 px-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {NAV.map((item) => (
             <NavLink
               key={item.href}
@@ -145,18 +149,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div
-          className="px-3 py-3"
+          className="space-y-2 px-3 py-3"
           style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
         >
+          {account ? (
+            <div className="px-3 py-1">
+              <p className="truncate text-xs font-medium text-white">{account.company.name}</p>
+              <p className="truncate text-[11px] text-white/45">{account.user.email}</p>
+              {plan ? (
+                <Link
+                  href="/billing"
+                  className="mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{ background: ORANGE, color: "#fff" }}
+                >
+                  {plan.name}
+                </Link>
+              ) : null}
+            </div>
+          ) : null}
           <button
             type="button"
-            onClick={refresh}
-            disabled={refreshing}
+            onClick={signOut}
+            disabled={signingOut}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm"
             style={{ color: "rgba(255,255,255,0.65)" }}
           >
-            <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            Sync now
+            <LogOut className="size-4" />
+            {signingOut ? "Signing out…" : "Sign out"}
           </button>
         </div>
       </aside>
@@ -168,12 +187,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Brand compact />
         <button
           type="button"
-          onClick={refresh}
-          disabled={refreshing}
+          onClick={signOut}
+          disabled={signingOut}
           className="p-1.5"
           style={{ color: "rgba(255,255,255,0.6)" }}
         >
-          <RefreshCw className={cn("size-[18px]", refreshing && "animate-spin")} />
+          <LogOut className="size-[18px]" />
         </button>
       </div>
 

@@ -1,16 +1,9 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type {
   AccessCode,
+  Account,
   InventoryAction,
   Location,
   Material,
@@ -18,358 +11,167 @@ import type {
   Settings,
   StoreState,
 } from "./types";
-import { createSeedState } from "./seed";
-import { bumpQty } from "./inventory";
-import { uid } from "./id";
+import { createEmptyState } from "./seed";
+import type { StoreCommand } from "./mutations";
 
-const STORAGE_KEY = "stockr-store-v1";
-
-function cloneState(): StoreState {
-  return createSeedState();
-}
-
-function loadState(): StoreState {
-  if (typeof window === "undefined") return cloneState();
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return cloneState();
-    const parsed = JSON.parse(raw) as StoreState;
-    const seed = cloneState();
-    return {
-      ...seed,
-      ...parsed,
-      settings: { ...seed.settings, ...parsed.settings },
-    };
-  } catch {
-    return cloneState();
-  }
-}
-
-function persist(state: StoreState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
+type CommandResult = {
+  ok: boolean;
+  error?: string;
+  created?: Material | AccessCode;
+};
 
 type StoreApi = {
   state: StoreState;
+  account: Account | null;
   hydrated: boolean;
-  resetDemo: () => void;
-  updateSettings: (patch: Partial<Settings>) => void;
-  upsertLocation: (location: Partial<Location> & { id?: string }) => void;
-  deleteLocation: (id: string) => void;
-  upsertMaterial: (material: Partial<Material> & { id?: string }) => Material;
-  deleteMaterial: (id: string) => void;
-  applyAction: (action: InventoryAction) => { ok: true } | { ok: false; error: string };
-  deleteTransaction: (id: string) => void;
-  createPurchaseOrder: (po: Omit<PurchaseOrder, "id" | "created_at" | "status"> & { status?: PurchaseOrder["status"] }) => void;
+  resetDemo: () => Promise<CommandResult>;
+  updateSettings: (patch: Partial<Settings>) => Promise<CommandResult>;
+  upsertLocation: (location: Partial<Location> & { id?: string }) => Promise<CommandResult>;
+  deleteLocation: (id: string) => Promise<CommandResult>;
+  upsertMaterial: (
+    material: Partial<Material> & { id?: string },
+  ) => Promise<{ ok: true; material: Material } | { ok: false; error: string }>;
+  deleteMaterial: (id: string) => Promise<CommandResult>;
+  applyAction: (action: InventoryAction) => Promise<{ ok: true } | { ok: false; error: string }>;
+  deleteTransaction: (id: string) => Promise<CommandResult>;
+  createPurchaseOrder: (
+    po: Omit<PurchaseOrder, "id" | "created_at" | "status"> & { status?: PurchaseOrder["status"] },
+  ) => Promise<CommandResult>;
   receivePurchaseOrder: (
     poId: string,
     locationId: string,
     receipts: { material_id: string; quantity: number }[],
-  ) => { ok: true } | { ok: false; error: string };
-  setPurchaseOrderStatus: (poId: string, status: PurchaseOrder["status"]) => void;
-  createAccessCode: (input: { label: string; type: AccessCode["type"]; days?: number }) => AccessCode;
-  toggleAccessCode: (id: string) => void;
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  setPurchaseOrderStatus: (poId: string, status: PurchaseOrder["status"]) => Promise<CommandResult>;
+  createAccessCode: (input: {
+    label: string;
+    type: AccessCode["type"];
+    days?: number;
+  }) => Promise<{ ok: true; code: AccessCode } | { ok: false; error: string }>;
+  toggleAccessCode: (id: string) => Promise<CommandResult>;
+  setAccount: (account: Account | null) => void;
+  logout: () => Promise<void>;
 };
 
 const StoreContext = createContext<StoreApi | null>(null);
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<StoreState>(cloneState);
-  const [hydrated, setHydrated] = useState(false);
+export function StoreProvider({
+  children,
+  initialState,
+  initialAccount,
+}: {
+  children: React.ReactNode;
+  initialState: StoreState;
+  initialAccount: Account;
+}) {
+  const [state, setState] = useState<StoreState>(initialState);
+  const [account, setAccount] = useState<Account | null>(initialAccount);
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  useEffect(() => {
-    const loaded = loadState();
-    stateRef.current = loaded;
-    setState(loaded);
-    setHydrated(true);
-  }, []);
-
-  const commit = useCallback((updater: (prev: StoreState) => StoreState) => {
-    const next = updater(stateRef.current);
-    stateRef.current = next;
-    persist(next);
-    setState(next);
-    return next;
+  const send = useCallback(async (command: StoreCommand): Promise<CommandResult> => {
+    const response = await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command }),
+    });
+    const data = (await response.json().catch(() => null)) as {
+      state?: StoreState;
+      account?: Account;
+      error?: string;
+      created?: Material | AccessCode;
+    } | null;
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return { ok: false, error: "Sign in required." };
+    }
+    if (data?.state) {
+      stateRef.current = data.state;
+      setState(data.state);
+    }
+    if (data?.account) setAccount(data.account);
+    if (!response.ok || data?.error) {
+      return { ok: false, error: data?.error || "Could not save that change." };
+    }
+    return { ok: true, created: data?.created };
   }, []);
 
   const api = useMemo<StoreApi>(
     () => ({
       state,
-      hydrated,
-      resetDemo: () => {
-        const next = cloneState();
-        persist(next);
-        setState(next);
+      account,
+      hydrated: true,
+      setAccount,
+      resetDemo: () => send({ type: "resetDemo" }),
+      updateSettings: (patch) => send({ type: "updateSettings", patch }),
+      upsertLocation: (location) => send({ type: "upsertLocation", location }),
+      deleteLocation: (id) => send({ type: "deleteLocation", id }),
+      upsertMaterial: async (material) => {
+        const result = await send({ type: "upsertMaterial", material });
+        if (!result.ok || !result.created || !("unit" in result.created)) {
+          return { ok: false, error: result.error || "Could not save material." };
+        }
+        return { ok: true, material: result.created };
       },
-      updateSettings: (patch) =>
-        commit((prev) => ({
-          ...prev,
-          settings: { ...prev.settings, ...patch },
-        })),
-      upsertLocation: (location) =>
-        commit((prev) => {
-          if (location.id) {
-            return {
-              ...prev,
-              locations: prev.locations.map((row) =>
-                row.id === location.id ? { ...row, ...location, id: row.id } : row,
-              ),
-            };
-          }
-          const created: Location = {
-            id: uid("loc"),
-            name: location.name || "Untitled",
-            type: location.type || "warehouse",
-            description: location.description,
-            assigned_to: location.assigned_to,
-          };
-          return { ...prev, locations: [...prev.locations, created] };
-        }),
-      deleteLocation: (id) =>
-        commit((prev) => ({
-          ...prev,
-          locations: prev.locations.filter((row) => row.id !== id),
-          inventory: prev.inventory.filter((row) => row.location_id !== id),
-        })),
-      upsertMaterial: (material) => {
-        let saved: Material = {
-          id: material.id || uid("mat"),
-          name: material.name || "Untitled material",
-          unit: material.unit || "each",
-          ...material,
-        };
-        commit((prev) => {
-          if (material.id && prev.materials.some((row) => row.id === material.id)) {
-            saved = { ...prev.materials.find((row) => row.id === material.id)!, ...material };
-            return {
-              ...prev,
-              materials: prev.materials.map((row) =>
-                row.id === material.id ? saved : row,
-              ),
-            };
-          }
-          saved = {
-            id: uid("mat"),
-            name: material.name || "Untitled material",
-            unit: material.unit || "each",
-            description: material.description || "",
-            category: material.category || "",
-            sub_category: material.sub_category || "",
-            manufacturer: material.manufacturer || "",
-            supplier: material.supplier || "",
-            unit_cost: material.unit_cost ?? null,
-            barcode: material.barcode || "",
-            reorder_point: material.reorder_point ?? null,
-            min_stock_level: material.min_stock_level ?? null,
-            image_url: material.image_url || "",
-            aliases: material.aliases || [],
-          };
-          return { ...prev, materials: [...prev.materials, saved] };
-        });
-        return saved;
+      deleteMaterial: (id) => send({ type: "deleteMaterial", id }),
+      applyAction: async (action) => {
+        const result = await send({ type: "applyAction", action });
+        return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not update inventory." };
       },
-      deleteMaterial: (id) =>
-        commit((prev) => ({
-          ...prev,
-          materials: prev.materials.filter((row) => row.id !== id),
-          inventory: prev.inventory.filter((row) => row.material_id !== id),
-        })),
-      applyAction: (action) => {
-        const qty = Number(action.quantity);
-        if (!action.materialId) return { ok: false, error: "Select a material." };
-        if (!qty || qty <= 0) return { ok: false, error: "Quantity must be greater than zero." };
-
-        let error: string | null = null;
-        commit((prev) => {
-          let inventory = prev.inventory.map((row) => ({ ...row }));
-          if (action.type === "add") {
-            if (!action.toLocationId) {
-              error = "Destination location required.";
-              return prev;
-            }
-            inventory = bumpQty(inventory, action.materialId, action.toLocationId, qty);
-          } else if (action.type === "use" || action.type === "shrink") {
-            if (!action.fromLocationId) {
-              error = "Source location required.";
-              return prev;
-            }
-            const have = inventory.find(
-              (row) =>
-                row.material_id === action.materialId &&
-                row.location_id === action.fromLocationId,
-            )?.quantity ?? 0;
-            if (have < qty) {
-              error = `Only ${have} on hand at that location.`;
-              return prev;
-            }
-            inventory = bumpQty(inventory, action.materialId, action.fromLocationId, -qty);
-          } else if (action.type === "transfer") {
-            if (!action.fromLocationId || !action.toLocationId) {
-              error = "Both source and destination required.";
-              return prev;
-            }
-            if (action.fromLocationId === action.toLocationId) {
-              error = "Pick two different locations.";
-              return prev;
-            }
-            const have = inventory.find(
-              (row) =>
-                row.material_id === action.materialId &&
-                row.location_id === action.fromLocationId,
-            )?.quantity ?? 0;
-            if (have < qty) {
-              error = `Only ${have} on hand at the source location.`;
-              return prev;
-            }
-            inventory = bumpQty(inventory, action.materialId, action.fromLocationId, -qty);
-            inventory = bumpQty(inventory, action.materialId, action.toLocationId, qty);
-          } else if (action.type === "adjust") {
-            const locationId = action.toLocationId || action.fromLocationId;
-            if (!locationId) {
-              error = "Location required.";
-              return prev;
-            }
-            inventory = inventory.filter(
-              (row) =>
-                !(row.material_id === action.materialId && row.location_id === locationId),
-            );
-            if (qty > 0) {
-              inventory.push({
-                id: uid("inv"),
-                material_id: action.materialId,
-                location_id: locationId,
-                quantity: qty,
-              });
-            }
-          }
-
-          return {
-            ...prev,
-            inventory,
-            transactions: [
-              {
-                id: uid("tx"),
-                type: action.type,
-                material_id: action.materialId,
-                quantity: qty,
-                from_location_id: action.fromLocationId || null,
-                to_location_id: action.toLocationId || null,
-                project: action.project || null,
-                notes: action.notes || "",
-                created_at: new Date().toISOString(),
-                created_by: "you",
-              },
-              ...prev.transactions,
-            ],
-          };
-        });
-        return error ? { ok: false, error } : { ok: true };
+      deleteTransaction: (id) => send({ type: "deleteTransaction", id }),
+      createPurchaseOrder: (po) => send({ type: "createPurchaseOrder", po }),
+      receivePurchaseOrder: async (poId, locationId, receipts) => {
+        const result = await send({ type: "receivePurchaseOrder", poId, locationId, receipts });
+        return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not receive purchase order." };
       },
-      deleteTransaction: (id) =>
-        commit((prev) => ({
-          ...prev,
-          transactions: prev.transactions.filter((row) => row.id !== id),
-        })),
-      createPurchaseOrder: (po) =>
-        commit((prev) => ({
-          ...prev,
-          purchaseOrders: [
-            {
-              ...po,
-              id: uid("po"),
-              status: po.status || "ordered",
-              created_at: new Date().toISOString(),
-            },
-            ...prev.purchaseOrders,
-          ],
-        })),
-      receivePurchaseOrder: (poId, locationId, receipts) => {
-        let error: string | null = null;
-        commit((prev) => {
-          const po = prev.purchaseOrders.find((row) => row.id === poId);
-          if (!po) {
-            error = "Purchase order not found.";
-            return prev;
-          }
-          let inventory = prev.inventory.map((row) => ({ ...row }));
-          const lines = po.lines.map((line) => ({ ...line }));
-          const txs = [...prev.transactions];
-          for (const receipt of receipts) {
-            if (!receipt.quantity) continue;
-            const line = lines.find((row) => row.material_id === receipt.material_id);
-            if (!line) continue;
-            const remaining = line.expected_quantity - line.received_quantity;
-            const qty = Math.min(receipt.quantity, Math.max(0, remaining));
-            if (qty <= 0) continue;
-            line.received_quantity += qty;
-            inventory = bumpQty(inventory, receipt.material_id, locationId, qty);
-            txs.unshift({
-              id: uid("tx"),
-              type: "add",
-              material_id: receipt.material_id,
-              quantity: qty,
-              to_location_id: locationId,
-              notes: po.po_number,
-              created_at: new Date().toISOString(),
-              created_by: "you",
-            });
-          }
-          const allReceived = lines.every(
-            (line) => line.received_quantity >= line.expected_quantity,
-          );
-          const anyReceived = lines.some((line) => line.received_quantity > 0);
-          const status = allReceived ? "received" : anyReceived ? "partial" : po.status;
-          return {
-            ...prev,
-            inventory,
-            transactions: txs,
-            purchaseOrders: prev.purchaseOrders.map((row) =>
-              row.id === poId ? { ...row, lines, status } : row,
-            ),
-          };
-        });
-        return error ? { ok: false, error } : { ok: true };
+      setPurchaseOrderStatus: (poId, status) => send({ type: "setPurchaseOrderStatus", poId, status }),
+      createAccessCode: async ({ label, type, days }) => {
+        const result = await send({ type: "createAccessCode", label, codeType: type, days });
+        if (!result.ok || !result.created || !("code" in result.created)) {
+          return { ok: false, error: result.error || "Could not create invite code." };
+        }
+        return { ok: true, code: result.created };
       },
-      setPurchaseOrderStatus: (poId, status) =>
-        commit((prev) => ({
-          ...prev,
-          purchaseOrders: prev.purchaseOrders.map((row) =>
-            row.id === poId ? { ...row, status } : row,
-          ),
-        })),
-      createAccessCode: ({ label, type, days }) => {
-        const created: AccessCode = {
-          id: uid("ac"),
-          code: `${(label || "CODE").replace(/[^A-Za-z0-9]/g, "").slice(0, 8).toUpperCase() || "STOCK"}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
-          type,
-          label,
-          expires_at:
-            type === "trial"
-              ? new Date(Date.now() + (days || 14) * 86400000).toISOString()
-              : null,
-          is_active: true,
-          created_at: new Date().toISOString(),
-        };
-        commit((prev) => ({
-          ...prev,
-          accessCodes: [created, ...prev.accessCodes],
-        }));
-        return created;
+      toggleAccessCode: (id) => send({ type: "toggleAccessCode", id }),
+      logout: async () => {
+        await fetch("/api/auth/logout", { method: "POST" });
+        window.location.href = "/";
       },
-      toggleAccessCode: (id) =>
-        commit((prev) => ({
-          ...prev,
-          accessCodes: prev.accessCodes.map((row) =>
-            row.id === id ? { ...row, is_active: !row.is_active } : row,
-          ),
-        })),
     }),
-    [commit, hydrated, state],
+    [account, send, state],
   );
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
+}
+
+export function MarketingStoreFallback({ children }: { children: React.ReactNode }) {
+  const empty = createEmptyState("Stockr");
+  return (
+    <StoreContext.Provider
+      value={{
+        state: empty,
+        account: null,
+        hydrated: true,
+        resetDemo: async () => ({ ok: false }),
+        updateSettings: async () => ({ ok: false }),
+        upsertLocation: async () => ({ ok: false }),
+        deleteLocation: async () => ({ ok: false }),
+        upsertMaterial: async () => ({ ok: false, error: "Sign in required." }),
+        deleteMaterial: async () => ({ ok: false }),
+        applyAction: async () => ({ ok: false, error: "Sign in required." }),
+        deleteTransaction: async () => ({ ok: false }),
+        createPurchaseOrder: async () => ({ ok: false }),
+        receivePurchaseOrder: async () => ({ ok: false, error: "Sign in required." }),
+        setPurchaseOrderStatus: async () => ({ ok: false }),
+        createAccessCode: async () => ({ ok: false, error: "Sign in required." }),
+        toggleAccessCode: async () => ({ ok: false }),
+        setAccount: () => undefined,
+        logout: async () => undefined,
+      }}
+    >
+      {children}
+    </StoreContext.Provider>
+  );
 }
 
 export function useStore() {

@@ -1,8 +1,8 @@
 # Stockr
 
-Field inventory for warehouses and service fleets. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
+Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-This is a standalone Cursor copy of the Base44 Stockr app. It does **not** call Base44. Data lives in the browser (`localStorage`), so you can delete the Base44 project after you are comfortable with this version.
+Data lives in a local SQLite database (`data/stockr.db`). There is no Base44 SDK. Stripe is not required — plan upgrades use a mock checkout so you can test limits without a billing key.
 
 ## Run locally
 
@@ -11,12 +11,31 @@ npm install
 npm run dev
 ```
 
-Then open **http://127.0.0.1:43151** (or http://localhost:43151). The first visit loads Summit Electric demo stock (warehouses, trucks, catalog, POs, and an activity log). Use **Settings → Reset demo data** to restore it.
+Open **http://127.0.0.1:43151**.
 
-If the page is blank, the HTML loaded but Next.js blocked the JavaScript (common when the tab uses `127.0.0.1` and the server bound `localhost`). Restart with `npm run dev` after pulling — this repo already allowlists both hosts.
+### Demo company
+
+- Email: `demo@stockr.app`
+- Password: `demo1234`
+- Company: Summit Electric on the Fleet plan, with sample warehouses, trucks, catalog, POs, and activity
+
+### New company
+
+Sign up from the marketing page to create an empty Starter workspace (2 locations, 50 materials, 2 seats). Invite a teammate from **Settings** and have them join with the code on `/signup`.
+
+## Plans
+
+| Plan    | Price | Locations | Materials | Seats |
+| ------- | ----- | --------- | --------- | ----- |
+| Starter | $0    | 2         | 50        | 2     |
+| Pro     | $49   | 15        | 2,000     | 15    |
+| Fleet   | $149  | Unlimited | Unlimited | Unlimited |
+
+Upgrade from **Billing**. In this repo the checkout immediately activates the plan.
 
 ## What is included
 
+- **Marketing, login, signup** — company workspace or join via invite code
 - **Dashboard** — on-hand totals, estimated value, low-stock alerts, recent activity
 - **Scanner** — camera barcode (Chromium `BarcodeDetector`), manual lookup, and plain-English actions (`add 25 screws to Main Warehouse`)
 - **Inventory** — quantities by location, add / transfer / use / adjust / shrink
@@ -25,6 +44,11 @@ If the page is blank, the HTML loaded but Next.js blocked the JavaScript (common
 - **Catalog** — materials, barcodes, reorder points, printable CODE128 labels
 - **Purchase Orders** — draft through received, with receive-into-location
 - **Reports** — valuation by location, usage by project, shrinkage
-- **Settings** — company branding, Buildr company ID (stored locally), access codes
+- **Billing** — plan and seat/location limits
+- **Settings** — branding, team list, invite codes, optional Buildr company ID
 
-Camera scanning needs HTTPS or `localhost` and a browser that implements `BarcodeDetector`. If the camera is unavailable, type or paste the barcode — demo codes include `012345678901` (3/4" EMT) and `099887766554` (screws).
+Camera scanning needs HTTPS or `localhost` and a browser that implements `BarcodeDetector`. Demo barcodes include `012345678901` (3/4" EMT) and `099887766554` (screws).
+
+## Production notes
+
+This slice is a self-hosted SaaS: accounts, sessions (httpOnly cookie), and per-company JSON state in SQLite. Before a public launch you will still want HTTPS, a hosted database, real Stripe keys, a privacy policy, and backups of `data/stockr.db`.

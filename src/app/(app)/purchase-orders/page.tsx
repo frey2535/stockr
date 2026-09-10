@@ -64,7 +64,7 @@ export default function PurchaseOrdersPage() {
     ]);
   };
 
-  const savePo = () => {
+  const savePo = async () => {
     if (!poNumber.trim()) {
       toast.error("PO Number is required.");
       return;
@@ -73,12 +73,16 @@ export default function PurchaseOrdersPage() {
       toast.error("Add at least one line.");
       return;
     }
-    createPurchaseOrder({
+    const result = await createPurchaseOrder({
       po_number: poNumber.trim(),
       supplier,
       expected_delivery: expected,
       lines,
     });
+    if (!result.ok) {
+      toast.error(result.error || "Could not create purchase order.");
+      return;
+    }
     toast.success("Purchase order created");
     setCreateOpen(false);
     setPoNumber("");
@@ -87,7 +91,7 @@ export default function PurchaseOrdersPage() {
     setLines([]);
   };
 
-  const commitReceive = () => {
+  const commitReceive = async () => {
     if (!receiving) return;
     const payload = Object.entries(receipts)
       .filter(([, qty]) => qty > 0)
@@ -96,7 +100,7 @@ export default function PurchaseOrdersPage() {
       toast.error("Enter quantities to receive.");
       return;
     }
-    const result = receivePurchaseOrder(receiving.id, receiveLocation, payload);
+    const result = await receivePurchaseOrder(receiving.id, receiveLocation, payload);
     if (!result.ok) {
       toast.error(result.error);
       return;

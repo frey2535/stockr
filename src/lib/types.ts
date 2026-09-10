@@ -112,3 +112,34 @@ export type InventoryAction = {
   project?: string | null;
   notes?: string;
 };
+
+export type PlanId = "starter" | "pro" | "fleet";
+export type MemberRole = "owner" | "admin" | "member";
+
+export type AccountUser = {
+  id: string;
+  email: string;
+  name: string;
+};
+
+export type AccountCompany = {
+  id: string;
+  name: string;
+  slug: string;
+  plan: PlanId;
+  planStatus: "trialing" | "active" | "past_due";
+};
+
+export type TeamMember = {
+  id: string;
+  email: string;
+  name: string;
+  role: MemberRole;
+};
+
+export type Account = {
+  user: AccountUser;
+  company: AccountCompany;
+  role: MemberRole;
+  members: TeamMember[];
+};

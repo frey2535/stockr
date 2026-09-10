@@ -67,9 +67,9 @@ export default function InventoryPage() {
 
   const selected = materials.find((row) => row.id === active);
 
-  const commit = () => {
+  const commit = async () => {
     if (!selected) return;
-    const result = applyAction({
+    const result = await applyAction({
       type: actionType,
       materialId: selected.id,
       quantity: parseFloat(quantity),

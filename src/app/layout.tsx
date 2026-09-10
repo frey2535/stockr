@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
-import { AppShell } from "@/components/app-shell";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -11,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Stockr",
+  title: "Stockr — Field inventory for contractors",
   description:
-    "Comprehensive field inventory management for warehouses and service fleets, featuring real-time tracking, barcode scanning, and seamless material transfers.",
+    "Multi-tenant inventory for warehouses and service fleets. Scan barcodes, transfer stock to trucks, receive purchase orders, and invite your crew.",
   icons: {
     icon: "/favicon.png",
     apple: "/logo.png",
@@ -29,9 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full bg-background font-sans text-foreground">
-        <Providers>
-          <AppShell>{children}</AppShell>
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

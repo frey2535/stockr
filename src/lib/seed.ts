@@ -424,3 +424,23 @@ export function createSeedState(): StoreState {
     projects: structuredClone(projects),
   };
 }
+
+export function createEmptyState(companyName: string): StoreState {
+  return {
+    settings: {
+      company_name: companyName,
+      logo_url: "/logo.png",
+      primary_color: "#12203a",
+      accent_color: "#f97316",
+      buildr_linked: false,
+      buildr_company_id: "",
+    },
+    locations: [],
+    materials: [],
+    inventory: [],
+    transactions: [],
+    purchaseOrders: [],
+    accessCodes: [],
+    projects: [],
+  };
+}

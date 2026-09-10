@@ -137,9 +137,9 @@ export default function ScannerPage() {
     }
   }, [selected]);
 
-  const commitScan = () => {
+  const commitScan = async () => {
     if (!selected) return;
-    const result = applyAction({
+    const result = await applyAction({
       type: actionType,
       materialId: selected.id,
       quantity: parseFloat(quantity),
@@ -160,13 +160,17 @@ export default function ScannerPage() {
     setQuantity("1");
   };
 
-  const createUnknown = () => {
-    const created = upsertMaterial({
+  const createUnknown = async () => {
+    const created = await upsertMaterial({
       name: `Unknown Product - ${unknownCode}`,
       barcode: unknownCode,
       unit: "each",
     });
-    setSelected(created);
+    if (!created.ok) {
+      toast.error(created.error);
+      return;
+    }
+    setSelected(created.material);
     setUnknownCode("");
     toast.success("Material created. Fill in the details from Catalog when you can.");
   };

@@ -19,6 +19,9 @@ agent-tools/
 /.next/
 /out/
 
+# local tenant database
+/data
+
 # production
 /build
 

@@ -87,12 +87,16 @@ export default function CatalogPage() {
     return acc;
   }, {});
 
-  const save = () => {
+  const save = async () => {
     if (!editing?.name?.trim()) {
       toast.error("Name is required.");
       return;
     }
-    upsertMaterial(editing);
+    const result = await upsertMaterial(editing);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
     toast.success("Material saved");
     setEditing(null);
   };
