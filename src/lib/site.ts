@@ -6,3 +6,11 @@ export const SITE_URL = (
 ).replace(/\/$/, "");
 
 export const SITE_ORIGIN = new URL(SITE_URL).origin;
+
+export function hostWithoutPort(host: string | null | undefined) {
+  return (host || "").split(":")[0].toLowerCase();
+}
+
+export function isCanonicalHost(host: string | null | undefined) {
+  return hostWithoutPort(host) === SITE_HOST;
+}
