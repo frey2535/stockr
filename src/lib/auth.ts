@@ -5,20 +5,26 @@ import type { Account } from "./types";
 
 export const SESSION_COOKIE = "stockr_session";
 
-export async function setSessionCookie(sessionId: string, expiresAt: string) {
-  const store = await cookies();
+async function sessionCookieBase() {
   const headerStore = await headers();
   const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
   const proto = headerStore.get("x-forwarded-proto") || "";
   const canonical = isCanonicalHost(host);
   const https = proto === "https" || canonical;
-  store.set(SESSION_COOKIE, sessionId, {
+  return {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "lax" as const,
     path: "/",
-    expires: new Date(expiresAt),
     secure: https,
     ...(canonical ? { domain: SITE_HOST } : {}),
+  };
+}
+
+export async function setSessionCookie(sessionId: string, expiresAt: string) {
+  const store = await cookies();
+  store.set(SESSION_COOKIE, sessionId, {
+    ...(await sessionCookieBase()),
+    expires: new Date(expiresAt),
   });
 }
 
@@ -26,7 +32,10 @@ export async function clearSessionCookie() {
   const store = await cookies();
   const current = store.get(SESSION_COOKIE)?.value;
   if (current) await deleteSession(current);
-  store.delete(SESSION_COOKIE);
+  store.set(SESSION_COOKIE, "", {
+    ...(await sessionCookieBase()),
+    expires: new Date(0),
+  });
 }
 
 export async function getCurrentAccount(): Promise<Account | null> {

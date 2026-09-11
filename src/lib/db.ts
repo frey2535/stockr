@@ -33,6 +33,11 @@ let adapterPromise: Promise<Adapter> | null = null;
 
 function loadAdapter() {
   if (!adapterPromise) {
+    if (process.env.VERCEL && !isSupabaseConfigured()) {
+      throw new Error(
+        "Stockr on Vercel needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+      );
+    }
     adapterPromise = isSupabaseConfigured()
       ? import("./db-supabase").then(async (mod) => {
           try {

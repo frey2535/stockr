@@ -60,7 +60,7 @@ NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
 NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
 ```
 
-On production (`next start`), session cookies are marked `Secure` and scoped to that host. Local `npm run dev` keeps host-only cookies so http://127.0.0.1:43151 still signs in.
+On production (`next start` or Vercel), session cookies are marked `Secure` and scoped to that host. Local `npm run dev` keeps host-only cookies so http://127.0.0.1:43151 still signs in.
 
 ## Supabase
 
@@ -79,6 +79,42 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 
 Invite codes are indexed by code, so joining a company does not scan every tenant.
 
-## Production notes
+## Put this app on stockr.currentflowconsulting.org
 
-Point `stockr.currentflowconsulting.org` at this app over HTTPS, keep the service role key on the server, and use real Stripe when you are ready to charge. SQLite is only the no-key fallback.
+The domain already exists. It still opens the old Base44 site. These three steps switch it to this app.
+
+### 1. Publish this repo to Vercel
+
+Use the **Publish** button in Cursor, or run `npx vercel` while logged in.
+
+In the Vercel project, add these environment variables (same values as `.env.local`):
+
+```bash
+NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
+NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+SQLite cannot persist on Vercel. The two Supabase keys are required there.
+
+### 2. Attach the domain in Vercel
+
+**Project → Settings → Domains → Add** `stockr.currentflowconsulting.org`.
+
+Vercel will show a CNAME target, usually `cname.vercel-dns.com`.
+
+### 3. Point Cloudflare at Vercel (not Base44)
+
+In Cloudflare, for the `currentflowconsulting.org` zone:
+
+| Field | Value |
+| ----- | ----- |
+| Type | CNAME |
+| Name | `stockr` |
+| Target | `cname.vercel-dns.com` (or the target Vercel shows) |
+| Proxy | DNS only (grey cloud), or Proxied with SSL mode **Full (strict)** |
+
+Save. After DNS updates, `https://stockr.currentflowconsulting.org` and `/login` should open this Next.js app, not the Base44 Vite page.
+
+Keep the service role key on the server only. Use real Stripe when you are ready to charge.

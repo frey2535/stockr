@@ -5,7 +5,11 @@ import { createSession, verifyPassword } from "@/lib/db";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  return NextResponse.redirect(new URL("/login", request.url));
+  const url = new URL("/login", request.url);
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+  if (host) url.host = host.split(",")[0].trim();
+  if (url.hostname === "0.0.0.0") url.hostname = "127.0.0.1";
+  return NextResponse.redirect(url);
 }
 
 export async function POST(request: Request) {
