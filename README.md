@@ -4,6 +4,12 @@ Multi-tenant field inventory for warehouses and service fleets. Each company get
 
 Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so they can live in the same project as another app. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Stripe is not required — plan upgrades use a mock checkout.
 
+## GitHub
+
+Public repo: [github.com/frey2535/stockerr](https://github.com/frey2535/stockerr)
+
+Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates — this is a Next.js app.
+
 ## Run locally
 
 ```bash
