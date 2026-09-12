@@ -50,3 +50,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Android / Play signing and build output
+android/local.properties
+android/.gradle/
+android/app/build/
+android/build/
+android/captures/
+android/keystore/*.jks
+android/keystore/key.properties
+*.apk
+*.aab
+dist/android/
+public/downloads/*.apk
+public/downloads/*.aab
+!public/downloads/stockr.apk

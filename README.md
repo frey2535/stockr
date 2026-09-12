@@ -118,3 +118,40 @@ In Cloudflare, for the `currentflowconsulting.org` zone:
 Save. After DNS updates, `https://stockr.currentflowconsulting.org` and `/login` should open this Next.js app, not the Base44 Vite page.
 
 Keep the service role key on the server only. Use real Stripe when you are ready to charge.
+
+## Google Play and selling outside the store
+
+Package name (type this in Play Console, never change it):
+
+```
+org.currentflowconsulting.stockr
+```
+
+The Android app is a Capacitor wrapper that opens the live site. People subscribe on the website (Starter / Pro / Fleet). Play is only the install channel.
+
+### One-time machine setup
+
+```bash
+npm install
+npm run android:sdk
+npm run android:keystore
+```
+
+Back up `android/keystore/` (the `.jks` and `key.properties`). If you lose that folder you cannot update the Play app.
+
+### Build files
+
+```bash
+npm run android:bundle   # dist/android/stockr-release.aab  → upload in Play Console
+npm run android:apk      # public/downloads/stockr.apk     → sideload / website
+```
+
+Play listing copy, privacy URL, and screenshot notes: [`store/google-play/LISTING.md`](store/google-play/LISTING.md).
+
+### Sell without Play
+
+1. Create the company and pick a plan at `/signup` and `/billing` (or `/download`).
+2. Install the APK from `/download` (allow unknown sources) or use the browser.
+3. Privacy and terms for stores and sideload: `/privacy` and `/terms`.
+
+The website must be live on HTTPS (`stockr.currentflowconsulting.org`) before the Android wrapper is useful on a phone.

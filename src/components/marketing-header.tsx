@@ -21,6 +21,9 @@ export function MarketingHeader({ signedIn = false }: { signedIn?: boolean }) {
           <a href="/#pricing" className="hover:text-white">
             Pricing
           </a>
+          <Link href="/download" className="hover:text-white">
+            Get the app
+          </Link>
         </nav>
         <div className="flex items-center gap-2">
           {signedIn ? (

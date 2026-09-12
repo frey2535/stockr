@@ -8,6 +8,7 @@ import {
   Truck,
   Warehouse,
 } from "lucide-react";
+import { MarketingFooter } from "@/components/marketing-footer";
 import { MarketingHeader } from "@/components/marketing-header";
 import { Button } from "@/components/ui/button";
 import { getCurrentAccount } from "@/lib/auth";
@@ -157,9 +158,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-white/10 py-8 text-center text-sm text-white/40">
-        Stockr · stockr.currentflowconsulting.org · Company workspaces for contractor inventory
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }

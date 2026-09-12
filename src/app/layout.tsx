@@ -22,6 +22,11 @@ export const metadata: Metadata = {
     apple: "/logo.png",
   },
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "Stockr",
+    statusBarStyle: "black-translucent",
+  },
   openGraph: {
     type: "website",
     url: SITE_URL,

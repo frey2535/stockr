@@ -6,9 +6,21 @@
     "dev": "next dev --hostname 0.0.0.0 --port 43151",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 43151",
-    "lint": "eslint"
+    "lint": "eslint",
+    "android:sdk": "bash scripts/install-android-sdk.sh",
+    "android:keystore": "bash scripts/create-keystore.sh",
+    "android:sync": "cap sync android",
+    "android:apk": "bash scripts/build-android.sh apk",
+    "android:bundle": "bash scripts/build-android.sh bundle",
+    "android:release": "bash scripts/build-android.sh all"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@supabase/supabase-js": "^2.116.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",

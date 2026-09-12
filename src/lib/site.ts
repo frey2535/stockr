@@ -7,6 +7,15 @@ export const SITE_URL = (
 
 export const SITE_ORIGIN = new URL(SITE_URL).origin;
 
+export const ANDROID_PACKAGE_NAME = "org.currentflowconsulting.stockr";
+export const ANDROID_APP_NAME = "Stockr";
+export const LEGAL_ENTITY = "CurrentFlow Consulting";
+export const SUPPORT_EMAIL = "stockr@currentflowconsulting.org";
+export const PLAY_STORE_URL =
+  process.env.NEXT_PUBLIC_PLAY_STORE_URL ||
+  `https://play.google.com/store/apps/details?id=${ANDROID_PACKAGE_NAME}`;
+export const ANDROID_APK_PATH = "/downloads/stockr.apk";
+
 export function hostWithoutPort(host: string | null | undefined) {
   return (host || "").split(":")[0].toLowerCase();
 }
