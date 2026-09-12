@@ -16,7 +16,9 @@ function LoginForm() {
   const next = params.get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    params.get("error") ? "Email or password is incorrect." : "",
+  );
   const [busy, setBusy] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
@@ -44,7 +46,8 @@ function LoginForm() {
         <CardTitle>Log in to your company</CardTitle>
       </CardHeader>
       <CardContent>
-        <form className="space-y-4" onSubmit={submit}>
+        <form className="space-y-4" action="/api/auth/login" method="post" onSubmit={submit}>
+          <input type="hidden" name="next" value={next.startsWith("/") ? next : "/dashboard"} />
           {error ? (
             <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
           ) : null}
@@ -52,6 +55,7 @@ function LoginForm() {
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
+              name="email"
               type="email"
               autoComplete="email"
               value={email}
@@ -64,6 +68,7 @@ function LoginForm() {
             <Label htmlFor="password">Password</Label>
             <Input
               id="password"
+              name="password"
               type="password"
               autoComplete="current-password"
               value={password}

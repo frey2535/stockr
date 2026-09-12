@@ -40,9 +40,16 @@ function expireSessionCookie(response: NextResponse, hostHeader: string) {
   }
 }
 
+const SIGN_IN_PAGES = new Set(["/login", "/signin", "/sign-in", "/sign_in"]);
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+
+  if (request.method === "POST" && SIGN_IN_PAGES.has(pathname)) {
+    return NextResponse.rewrite(new URL("/api/auth/login", request.url));
+  }
+
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = sessionId ? await getSession(sessionId) : null;
   const authed = Boolean(session);
