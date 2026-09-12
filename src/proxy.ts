@@ -25,19 +25,24 @@ function isProtected(pathname: string) {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-function expireSessionCookie(response: NextResponse) {
+function expireSessionCookie(response: NextResponse, hostHeader: string) {
   const blank = {
     path: "/",
     expires: new Date(0),
     httpOnly: true,
     sameSite: "lax" as const,
   };
-  response.cookies.set(SESSION_COOKIE, "", blank);
-  response.cookies.set(SESSION_COOKIE, "", { ...blank, domain: SITE_HOST });
+  const host = hostHeader.split(",")[0].trim().split(":")[0].toLowerCase();
+  if (host === SITE_HOST) {
+    response.cookies.set(SESSION_COOKIE, "", { ...blank, domain: SITE_HOST });
+  } else {
+    response.cookies.set(SESSION_COOKIE, "", blank);
+  }
 }
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
   const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
   const session = sessionId ? await getSession(sessionId) : null;
   const authed = Boolean(session);
@@ -47,7 +52,7 @@ export async function proxy(request: NextRequest) {
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
     const response = NextResponse.redirect(url);
-    if (sessionId) expireSessionCookie(response);
+    if (sessionId) expireSessionCookie(response, host);
     return response;
   }
 
@@ -57,7 +62,7 @@ export async function proxy(request: NextRequest) {
 
   if (sessionId && !session) {
     const response = NextResponse.next();
-    expireSessionCookie(response);
+    expireSessionCookie(response, host);
     return response;
   }
 
