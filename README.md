@@ -6,7 +6,7 @@ Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so 
 
 ## GitHub
 
-Public repo: [github.com/frey2535/stockerr](https://github.com/frey2535/stockerr)
+Public repo: [github.com/frey2535/stockr](https://github.com/frey2535/stockr)
 
 Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates — this is a Next.js app.
 
