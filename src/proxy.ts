@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getSession } from "@/lib/db";
+import { SITE_HOST } from "@/lib/site";
+
+const SESSION_COOKIE = "stockr_session";
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -15,30 +19,46 @@ const PROTECTED_PREFIXES = [
   "/billing",
 ];
 
+const AUTH_PAGES = new Set(["/login", "/signup", "/signin", "/sign-in", "/sign-up"]);
+
 function isProtected(pathname: string) {
   return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
-export function proxy(request: NextRequest) {
+function expireSessionCookie(response: NextResponse) {
+  const blank = {
+    path: "/",
+    expires: new Date(0),
+    httpOnly: true,
+    sameSite: "lax" as const,
+  };
+  response.cookies.set(SESSION_COOKIE, "", blank);
+  response.cookies.set(SESSION_COOKIE, "", { ...blank, domain: SITE_HOST });
+}
+
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const session = request.cookies.get("stockr_session")?.value;
+  const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = sessionId ? await getSession(sessionId) : null;
   const authed = Boolean(session);
 
   if (isProtected(pathname) && !authed) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    if (sessionId) expireSessionCookie(response);
+    return response;
   }
 
-  if (
-    authed &&
-    (pathname === "/login" ||
-      pathname === "/signup" ||
-      pathname === "/signin" ||
-      pathname === "/sign-in")
-  ) {
+  if (authed && AUTH_PAGES.has(pathname)) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  if (sessionId && !session) {
+    const response = NextResponse.next();
+    expireSessionCookie(response);
+    return response;
   }
 
   return NextResponse.next();
