@@ -12,17 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
-import type { AccessCodeType, Settings } from "@/lib/types";
+import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
 
 export default function SettingsPage() {
   const { state, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
   const { settings, accessCodes } = state;
-  const [overrides, setOverrides] = useState<Partial<Settings>>({});
+  const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
   const draft = { ...settings, ...overrides };
   const [label, setLabel] = useState("");
   const [codeType, setCodeType] = useState<AccessCodeType>("trial");
 
-  const patchDraft = (patch: Partial<Settings>) => {
+  const patchDraft = (patch: Partial<CompanySettings>) => {
     setOverrides((prev) => ({ ...prev, ...patch }));
   };
 
