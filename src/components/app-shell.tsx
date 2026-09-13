@@ -10,11 +10,13 @@ import {
   LayoutDashboard,
   LogOut,
   MapPin,
+  Menu,
   Package,
   ScanLine,
   Settings,
   ShoppingCart,
   Warehouse,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -39,8 +41,10 @@ const MOBILE_NAV = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
-  { href: "/transfers", label: "Activity", icon: ArrowLeftRight },
+  { href: "/activity", label: "Activity", icon: ClipboardList },
 ];
+
+const MORE_NAV = NAV.filter((item) => !MOBILE_NAV.some((tab) => tab.href === item.href));
 
 const SIDEBAR = "#0d1117";
 const ACTIVE = "#2563eb";
@@ -119,7 +123,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { hydrated, account, logout } = useStore();
   const [signingOut, setSigningOut] = useState(false);
-  const hideMobileNav = !MOBILE_NAV.some((item) => item.href === pathname);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = MORE_NAV.some((item) => item.href === pathname);
   const plan = account ? getPlan(account.company.plan) : null;
 
   const signOut = async () => {
@@ -185,16 +190,72 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ background: SIDEBAR }}
       >
         <Brand compact />
-        <button
-          type="button"
-          onClick={signOut}
-          disabled={signingOut}
-          className="p-1.5"
-          style={{ color: "rgba(255,255,255,0.6)" }}
-        >
-          <LogOut className="size-[18px]" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setMoreOpen((open) => !open)}
+            className="p-1.5"
+            style={{ color: moreOpen || moreActive ? "#fff" : "rgba(255,255,255,0.6)" }}
+            aria-expanded={moreOpen}
+            aria-label={moreOpen ? "Close menu" : "Open menu"}
+          >
+            {moreOpen ? <X className="size-[18px]" /> : <Menu className="size-[18px]" />}
+          </button>
+          <button
+            type="button"
+            onClick={signOut}
+            disabled={signingOut}
+            className="p-1.5"
+            style={{ color: "rgba(255,255,255,0.6)" }}
+            aria-label="Sign out"
+          >
+            <LogOut className="size-[18px]" />
+          </button>
+        </div>
       </div>
+
+      {moreOpen ? (
+        <div className="fixed inset-0 z-30 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/50"
+            aria-label="Close menu"
+            onClick={() => setMoreOpen(false)}
+          />
+          <div
+            className="absolute right-0 bottom-0 left-0 rounded-t-2xl px-3 pt-3"
+            style={{
+              background: SIDEBAR,
+              paddingBottom: "calc(4.5rem + env(safe-area-inset-bottom))",
+            }}
+          >
+            <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-white/40 uppercase">
+              More
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {MORE_NAV.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMoreOpen(false)}
+                    className="flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-medium"
+                    style={{
+                      color: active ? "#fff" : "rgba(255,255,255,0.75)",
+                      background: active ? ACTIVE : "rgba(255,255,255,0.06)",
+                    }}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <nav
         className="fixed right-0 bottom-0 left-0 z-40 flex lg:hidden"
@@ -211,6 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => setMoreOpen(false)}
               className="flex flex-1 flex-col items-center gap-1 py-2 text-[11px]"
               style={{ color: active ? "#fff" : "rgba(255,255,255,0.55)" }}
             >
@@ -219,6 +281,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen((open) => !open)}
+          className="flex flex-1 flex-col items-center gap-1 py-2 text-[11px]"
+          style={{ color: moreOpen || moreActive ? "#fff" : "rgba(255,255,255,0.55)" }}
+          aria-expanded={moreOpen}
+        >
+          <Menu className="size-4" />
+          More
+        </button>
       </nav>
 
       <main
@@ -226,7 +298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           "min-h-screen lg:ml-64",
           "px-4 py-5 lg:p-8",
           "mt-14 lg:mt-0",
-          hideMobileNav ? "pb-6" : "pb-24 lg:pb-8",
+          "pb-24 lg:pb-8",
         )}
       >
         {!hydrated ? (

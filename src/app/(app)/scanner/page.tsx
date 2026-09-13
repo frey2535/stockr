@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Keyboard, ScanLine, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -129,13 +129,14 @@ export default function ScannerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  const recentProjects = useMemo(() => {
+  const recentProjects = (() => {
+    if (typeof window === "undefined") return [] as string[];
     try {
       return (JSON.parse(localStorage.getItem("stockr_recent_projects") || "[]") as string[]) || [];
     } catch {
       return [];
     }
-  }, [selected]);
+  })();
 
   const commitScan = async () => {
     if (!selected) return;

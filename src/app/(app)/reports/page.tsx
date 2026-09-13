@@ -23,9 +23,6 @@ export default function ReportsPage() {
   const [from, setFrom] = useState(daysAgo(90));
   const [to, setTo] = useState(daysAgo(0));
 
-  const fromDate = from ? new Date(from) : null;
-  const toDate = to ? new Date(`${to}T23:59:59`) : null;
-
   const valuation = useMemo(() => {
     return locations.map((location) => {
       const rows = inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
@@ -40,12 +37,19 @@ export default function ReportsPage() {
 
   const grand = valuation.reduce((sum, row) => sum + row.totalValue, 0);
 
-  const inRange = transactions.filter((tx) => {
-    const t = new Date(tx.created_at).getTime();
-    if (fromDate && t < fromDate.getTime()) return false;
-    if (toDate && t > toDate.getTime()) return false;
-    return true;
-  });
+  const inRange = useMemo(() => {
+    const start = from ? new Date(from) : null;
+    const end = to ? new Date(`${to}T23:59:59`) : null;
+    return transactions.filter((tx) => {
+      const t = new Date(tx.created_at).getTime();
+      if (start && t < start.getTime()) return false;
+      if (end && t > end.getTime()) return false;
+      return true;
+    });
+  }, [transactions, from, to]);
+
+  const fromDate = from ? new Date(from) : null;
+  const toDate = to ? new Date(`${to}T23:59:59`) : null;
 
   const usage = useMemo(() => {
     const map = new Map<string, { qty: number; value: number }>();

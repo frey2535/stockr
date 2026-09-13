@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type {
   AccessCode,
   Account,
@@ -66,8 +66,6 @@ export function StoreProvider({
 }) {
   const [state, setState] = useState<StoreState>(initialState);
   const [account, setAccount] = useState<Account | null>(initialAccount);
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   const send = useCallback(async (command: StoreCommand): Promise<CommandResult> => {
     const response = await fetch("/api/state", {
@@ -86,7 +84,6 @@ export function StoreProvider({
       return { ok: false, error: "Sign in required." };
     }
     if (data?.state) {
-      stateRef.current = data.state;
       setState(data.state);
     }
     if (data?.account) setAccount(data.account);

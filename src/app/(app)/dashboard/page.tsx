@@ -117,9 +117,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-2">
             {alerts.map((item) => (
-              <div
+              <Link
                 key={item.id}
-                className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/30 p-3"
+                href={`/inventory?q=${encodeURIComponent(item.name)}`}
+                className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/30 p-3 transition-colors hover:bg-muted/50"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{item.name}</p>
@@ -137,7 +138,7 @@ export default function DashboardPage() {
                 >
                   {item.status === "critical" ? "Critical" : "Reorder"}
                 </Badge>
-              </div>
+              </Link>
             ))}
           </CardContent>
         </Card>
@@ -163,9 +164,10 @@ export default function DashboardPage() {
                 );
                 const units = rows.reduce((sum, row) => sum + row.quantity, 0);
                 return (
-                  <div
+                  <Link
                     key={location.id}
-                    className="flex items-center justify-between rounded-xl bg-muted/50 p-3"
+                    href={`/inventory?location=${encodeURIComponent(location.id)}`}
+                    className="flex items-center justify-between rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted/70"
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -189,7 +191,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <span className="text-sm font-semibold">{qty(units)}</span>
-                  </div>
+                  </Link>
                 );
               })
             )}
@@ -201,9 +203,16 @@ export default function DashboardPage() {
 
         <Card className="md:col-span-2">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              Recent Activity
-            </CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                Recent Activity
+              </CardTitle>
+              {transactions.length > 0 ? (
+                <Button asChild variant="ghost" size="sm">
+                  <Link href="/activity">View all</Link>
+                </Button>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent>
             {transactions.length === 0 ? (
