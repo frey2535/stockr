@@ -102,7 +102,7 @@ Add these GitHub Actions secrets (repo **Settings → Secrets and variables → 
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_REF.supabase.co` (not the dashboard URL) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Stockr service-role key (server only) |
 
-In the Cloudflare dashboard, **turn off automatic Git builds** on Pages project `stockr`. Actions uploads the Next.js build; the old Vite/Base44 Git builder is what fails the extra “Cloudflare Pages” check.
+CI and Deploy turn off automatic Git builds on Pages project `stockr`. Actions uploads the Next.js build; do not reconnect the old Vite/Base44 Git builder.
 
 Custom domain: `stockr.currentflowconsulting.org` → the production alias Deploy prints (today `stockr-unm.pages.dev`). Do **not** point it at the old Vite host `stockr.pages.dev`, at `frey2535.github.io`, or at `cname.vercel-dns.com`. Grey-cloud CNAME.
 
