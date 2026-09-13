@@ -8,7 +8,7 @@ Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not r
 
 Public repo: [github.com/frey2535/stockr](https://github.com/frey2535/stockr)
 
-Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Merging to `main` deploys this Next.js app to Cloudflare Worker `stockr` (`.github/workflows/deploy.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates. There is no Base44 or Vite deploy path.
+Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Merging to `main` deploys this Next.js app to Cloudflare Pages project `stockr` (`.github/workflows/deploy.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates. There is no Base44 or Vite deploy path.
 
 ## Run locally
 
@@ -91,20 +91,20 @@ Invite codes are indexed by code, so joining a company does not scan every tenan
 Same loop as The Truth: open a PR, merge `main`, Actions publishes the site.
 
 1. **CI** (every PR and every push to `main`) — lint + `next build`
-2. **Deploy** (push to `main` only) — OpenNext build, then `wrangler deploy` to Worker **`stockr`**
+2. **Deploy** (push to `main` only) — OpenNext build, then `wrangler pages deploy` to Pages project **`stockr`** (same target as The Truth’s `thetruth`)
 
 Add these GitHub Actions secrets (repo **Settings → Secrets and variables → Actions**):
 
 | Secret | Value |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | Same token The Truth uses |
+| `CLOUDFLARE_API_TOKEN` | Same Pages token The Truth uses |
 | `CLOUDFLARE_ACCOUNT_ID` | Same account as The Truth |
-| `NEXT_PUBLIC_SUPABASE_URL` | Stockr Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_REF.supabase.co` (not the dashboard URL) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Stockr service-role key (server only) |
 
-In the Cloudflare dashboard, **turn off automatic Git builds** on the old Pages project `stockr`. That project still tries to build the Base44/Vite app and is why the “Cloudflare Pages” check fails. This repo deploys a Worker named `stockr` instead.
+In the Cloudflare dashboard, **turn off automatic Git builds** on Pages project `stockr`. Actions uploads the Next.js build; the old Vite/Base44 Git builder is what fails the extra “Cloudflare Pages” check.
 
-Attach the custom domain `stockr.currentflowconsulting.org` to that Worker (or CNAME `stockr` → the Worker/`*.workers.dev` host Cloudflare shows). Target is **not** `frey2535.github.io` and **not** `cname.vercel-dns.com`.
+Custom domain: `stockr.currentflowconsulting.org` → `stockr.pages.dev`. Target is **not** `frey2535.github.io` and **not** `cname.vercel-dns.com`.
 
 Keep the service role key on the server only. Use real Stripe when you are ready to charge.
 
