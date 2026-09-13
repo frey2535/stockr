@@ -15,8 +15,8 @@ import { useStore } from "@/lib/store";
 import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
 
 export default function SettingsPage() {
-  const { state, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
-  const { settings, accessCodes } = state;
+  const { workspace, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
+  const { settings, accessCodes } = workspace;
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
   const draft = { ...settings, ...overrides };
   const [label, setLabel] = useState("");

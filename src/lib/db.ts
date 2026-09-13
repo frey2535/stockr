@@ -33,9 +33,9 @@ let adapterPromise: Promise<Adapter> | null = null;
 
 function loadAdapter() {
   if (!adapterPromise) {
-    if (process.env.VERCEL && !isSupabaseConfigured()) {
+    if ((process.env.VERCEL || process.env.CF_PAGES) && !isSupabaseConfigured()) {
       throw new Error(
-        "Stockr on Vercel needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+        "Stockr in production needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
       );
     }
     adapterPromise = isSupabaseConfigured()

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Plus, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -24,8 +24,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
+import { useApi } from "@/lib/use-api";
 import { money } from "@/lib/format";
 import type { POLine, POStatus } from "@/lib/types";
+import type { PurchaseOrderListPayload } from "@/lib/workspace-types";
 
 const STATUS: Record<POStatus, string> = {
   draft: "bg-gray-100 text-gray-700",
@@ -36,9 +38,14 @@ const STATUS: Record<POStatus, string> = {
 };
 
 export default function PurchaseOrdersPage() {
-  const { state, createPurchaseOrder, receivePurchaseOrder, setPurchaseOrderStatus } = useStore();
-  const { materials, locations, purchaseOrders } = state;
+  const { workspace, createPurchaseOrder, receivePurchaseOrder, setPurchaseOrderStatus } = useStore();
+  const { locations } = workspace;
   const [status, setStatus] = useState("all");
+  const params = new URLSearchParams();
+  if (status !== "all") params.set("status", status);
+  const { data, reload } = useApi<PurchaseOrderListPayload>(`/api/purchase-orders?${params.toString()}`);
+  const purchaseOrders = data?.rows ?? [];
+  const materials = data?.materials ?? [];
   const [createOpen, setCreateOpen] = useState(false);
   const [receiveId, setReceiveId] = useState<string | null>(null);
   const [poNumber, setPoNumber] = useState("");
@@ -48,10 +55,7 @@ export default function PurchaseOrdersPage() {
   const [receiveLocation, setReceiveLocation] = useState(locations[0]?.id || "");
   const [receipts, setReceipts] = useState<Record<string, number>>({});
 
-  const filtered = useMemo(
-    () => purchaseOrders.filter((po) => status === "all" || po.status === status),
-    [purchaseOrders, status],
-  );
+  const filtered = purchaseOrders;
 
   const receiving = purchaseOrders.find((row) => row.id === receiveId);
 
@@ -84,6 +88,7 @@ export default function PurchaseOrdersPage() {
       return;
     }
     toast.success("Purchase order created");
+    await reload();
     setCreateOpen(false);
     setPoNumber("");
     setSupplier("");
@@ -106,6 +111,7 @@ export default function PurchaseOrdersPage() {
       return;
     }
     toast.success("Stock received");
+    await reload();
     setReceiveId(null);
     setReceipts({});
   };

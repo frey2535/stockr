@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Package, Printer, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -23,11 +23,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
+import { usePagedApi } from "@/lib/use-api";
 import { printLabels } from "@/lib/labels";
 import { materialBarcode } from "@/lib/id";
 import { money } from "@/lib/format";
-import { onHand } from "@/lib/inventory";
 import type { Material } from "@/lib/types";
+import type { CatalogListPayload } from "@/lib/workspace-types";
 
 const emptyMaterial: Partial<Material> = {
   name: "",
@@ -44,41 +45,22 @@ const emptyMaterial: Partial<Material> = {
 };
 
 export default function CatalogPage() {
-  const { state, upsertMaterial, deleteMaterial } = useStore();
-  const { materials } = state;
+  const { upsertMaterial, deleteMaterial } = useStore();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [sub, setSub] = useState("all");
   const [editing, setEditing] = useState<Partial<Material> | null>(null);
-
-  const categories = useMemo(
-    () => Array.from(new Set(materials.map((row) => row.category).filter(Boolean))) as string[],
-    [materials],
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (category !== "all") params.set("category", category);
+  if (sub !== "all") params.set("sub", sub);
+  const { data, reload, hasMore, loadMore, loading } = usePagedApi<CatalogListPayload>(
+    `/api/catalog?${params.toString()}`,
   );
-  const subcategories = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          materials
-            .filter((row) => category === "all" || row.category === category)
-            .map((row) => row.sub_category)
-            .filter(Boolean),
-        ),
-      ) as string[],
-    [materials, category],
-  );
-
-  const filtered = materials.filter((row) => {
-    if (category !== "all" && row.category !== category) return false;
-    if (sub !== "all" && row.sub_category !== sub) return false;
-    const q = query.toLowerCase();
-    if (!q) return true;
-    return (
-      row.name.toLowerCase().includes(q) ||
-      (row.manufacturer || "").toLowerCase().includes(q) ||
-      (row.barcode || "").includes(q)
-    );
-  });
+  const categories = data?.categories || [];
+  const subcategories = data?.subcategories || [];
+  const filtered = data?.rows || [];
+  const onHandMap = data?.onHand || {};
 
   const grouped = filtered.reduce<Record<string, Material[]>>((acc, row) => {
     const key = row.category || "Uncategorized";
@@ -99,6 +81,7 @@ export default function CatalogPage() {
     }
     toast.success("Material saved");
     setEditing(null);
+    await reload();
   };
 
   return (
@@ -184,50 +167,58 @@ export default function CatalogPage() {
           description="Try adjusting your search or filters"
         />
       ) : (
-        Object.entries(grouped).map(([group, items]) => (
-          <section key={group} className="space-y-3">
-            <h2 className="text-lg font-semibold">{group}</h2>
-            <div className="grid gap-3 md:grid-cols-2">
-              {items.map((material) => (
-                <Card key={material.id} className="hover:shadow-md">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <h3 className="font-semibold">{material.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {[material.manufacturer, material.sub_category].filter(Boolean).join(" · ") || "No manufacturer"}
-                        </p>
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">
-                          {material.barcode || materialBarcode(material)}
-                        </p>
-                        <p className="mt-2 text-sm">
-                          On hand {onHand(state, material.id)} {material.unit}
-                          {material.unit_cost != null ? ` · $${money(material.unit_cost)}` : ""}
-                        </p>
+        <>
+          {Object.entries(grouped).map(([group, items]) => (
+            <section key={group} className="space-y-3">
+              <h2 className="text-lg font-semibold">{group}</h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                {items.map((material) => (
+                  <Card key={material.id} className="hover:shadow-md">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="font-semibold">{material.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {[material.manufacturer, material.sub_category].filter(Boolean).join(" · ") || "No manufacturer"}
+                          </p>
+                          <p className="mt-1 font-mono text-xs text-muted-foreground">
+                            {material.barcode || materialBarcode(material)}
+                          </p>
+                          <p className="mt-2 text-sm">
+                            On hand {onHandMap[material.id] || 0} {material.unit}
+                            {material.unit_cost != null ? ` · $${money(material.unit_cost)}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Button size="sm" variant="outline" onClick={() => setEditing(material)}>
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive"
+                            onClick={async () => {
+                              await deleteMaterial(material.id);
+                              toast.success("Material deleted");
+                              await reload();
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setEditing(material)}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          onClick={() => {
-                            deleteMaterial(material.id);
-                            toast.success("Material deleted");
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
-        ))
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          ))}
+          {hasMore ? (
+            <Button variant="outline" className="w-full" onClick={loadMore} disabled={loading}>
+              {loading ? "Loading…" : `Load more (${filtered.length} of ${data?.total || 0})`}
+            </Button>
+          ) : null}
+        </>
       )}
 
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>

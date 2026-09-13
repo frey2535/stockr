@@ -256,8 +256,7 @@ export async function createCompanyWithOwner(input: {
     const company = await getCompany(invite.company_id);
     if (!company) return { error: "Invite code is invalid or expired." };
     const members = await listMembers(company.id);
-    const state = await getCompanyState(company.id);
-    const seatError = planLimitError(company.plan, state, "seat", members.length);
+    const seatError = planLimitError(company.plan, {}, "seat", members.length);
     if (seatError) return { error: seatError };
 
     const userId = uid("usr");

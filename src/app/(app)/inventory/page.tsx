@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
@@ -24,13 +24,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
+import { usePagedApi } from "@/lib/use-api";
 import { money, qty } from "@/lib/format";
-import { onHand } from "@/lib/inventory";
 import type { TxType } from "@/lib/types";
+import type { InventoryListPayload } from "@/lib/workspace-types";
 
 function InventoryPageInner() {
-  const { state, applyAction } = useStore();
-  const { settings, materials, locations } = state;
+  const { workspace, applyAction } = useStore();
+  const { settings, locations } = workspace;
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [locationId, setLocationId] = useState(searchParams.get("location") || "all");
@@ -39,35 +40,14 @@ function InventoryPageInner() {
   const [quantity, setQuantity] = useState("");
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
-
-  const rows = useMemo(() => {
-    return materials
-      .map((material) => {
-        const byLocation = locations
-          .map((location) => ({
-            location,
-            quantity: onHand(state, material.id, location.id),
-          }))
-          .filter((row) => row.quantity > 0);
-        const total = byLocation.reduce((sum, row) => sum + row.quantity, 0);
-        return { material, byLocation, total };
-      })
-      .filter((row) => {
-        if (locationId !== "all" && !row.byLocation.some((item) => item.location.id === locationId)) {
-          return false;
-        }
-        const q = query.toLowerCase();
-        if (!q) return true;
-        return (
-          row.material.name.toLowerCase().includes(q) ||
-          (row.material.category || "").toLowerCase().includes(q) ||
-          (row.material.barcode || "").includes(q)
-        );
-      })
-      .sort((a, b) => a.material.name.localeCompare(b.material.name));
-  }, [materials, locations, state, query, locationId]);
-
-  const selected = materials.find((row) => row.id === active);
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (locationId !== "all") params.set("location", locationId);
+  const { data, reload, hasMore, loadMore, loading } = usePagedApi<InventoryListPayload>(
+    `/api/inventory?${params.toString()}`,
+  );
+  const rows = data?.rows || [];
+  const selected = rows.find((row) => row.material.id === active)?.material;
 
   const commit = async () => {
     if (!selected) return;
@@ -85,6 +65,7 @@ function InventoryPageInner() {
     toast.success("Inventory updated");
     setActive(null);
     setQuantity("");
+    await reload();
   };
 
   return (
@@ -178,6 +159,11 @@ function InventoryPageInner() {
               </CardContent>
             </Card>
           ))}
+          {hasMore ? (
+            <Button variant="outline" className="w-full" onClick={loadMore} disabled={loading}>
+              {loading ? "Loading…" : `Load more (${rows.length} of ${data?.total || 0})`}
+            </Button>
+          ) : null}
         </div>
       )}
 

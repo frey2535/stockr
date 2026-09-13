@@ -24,8 +24,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
+import { useApi } from "@/lib/use-api";
 import { qty } from "@/lib/format";
 import type { Location, LocationType } from "@/lib/types";
+import type { DashboardPayload } from "@/lib/workspace-types";
 
 const emptyForm = {
   name: "",
@@ -35,8 +37,9 @@ const emptyForm = {
 };
 
 export default function LocationsPage() {
-  const { state, upsertLocation, deleteLocation } = useStore();
-  const { settings, locations, inventory } = state;
+  const { workspace, upsertLocation, deleteLocation } = useStore();
+  const { settings, locations } = workspace;
+  const { data: dash } = useApi<DashboardPayload>("/api/dashboard");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Location | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -79,8 +82,9 @@ export default function LocationsPage() {
   };
 
   const LocationCard = ({ location }: { location: Location }) => {
-    const rows = inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
-    const units = rows.reduce((sum, row) => sum + row.quantity, 0);
+    const stats = dash?.locations.find((row) => row.id === location.id);
+    const rows = stats?.materialCount || 0;
+    const units = stats?.units || 0;
     return (
       <Card className="transition-all hover:shadow-lg">
         <CardContent className="p-5">
@@ -109,7 +113,7 @@ export default function LocationsPage() {
           </div>
           <div className="mt-4 flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
-              {rows.length} materials · {qty(units)} on hand
+              {rows} materials · {qty(units)} on hand
             </span>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={() => startEdit(location)}>

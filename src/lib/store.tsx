@@ -9,7 +9,7 @@ import type {
   Material,
   PurchaseOrder,
   Settings,
-  StoreState,
+  WorkspaceShell,
 } from "./types";
 import { createEmptyState } from "./seed";
 import type { StoreCommand } from "./mutations";
@@ -21,9 +21,10 @@ type CommandResult = {
 };
 
 type StoreApi = {
-  state: StoreState;
+  workspace: WorkspaceShell;
   account: Account | null;
   hydrated: boolean;
+  refreshWorkspace: () => Promise<void>;
   resetDemo: () => Promise<CommandResult>;
   updateSettings: (patch: Partial<Settings>) => Promise<CommandResult>;
   upsertLocation: (location: Partial<Location> & { id?: string }) => Promise<CommandResult>;
@@ -55,17 +56,44 @@ type StoreApi = {
 
 const StoreContext = createContext<StoreApi | null>(null);
 
+function emptyWorkspace(name = "Stockr"): WorkspaceShell {
+  const empty = createEmptyState(name);
+  return {
+    settings: empty.settings,
+    locations: empty.locations,
+    projects: empty.projects,
+    accessCodes: empty.accessCodes,
+    counts: {
+      locations: empty.locations.length,
+      materials: 0,
+      inventoryRows: 0,
+      transactions: 0,
+      purchaseOrders: 0,
+    },
+  };
+}
+
 export function StoreProvider({
   children,
-  initialState,
+  initialWorkspace,
   initialAccount,
 }: {
   children: React.ReactNode;
-  initialState: StoreState;
+  initialWorkspace: WorkspaceShell;
   initialAccount: Account;
 }) {
-  const [state, setState] = useState<StoreState>(initialState);
+  const [workspace, setWorkspace] = useState<WorkspaceShell>(initialWorkspace);
   const [account, setAccount] = useState<Account | null>(initialAccount);
+
+  const refreshWorkspace = useCallback(async () => {
+    const response = await fetch("/api/workspace");
+    const data = (await response.json().catch(() => null)) as {
+      workspace?: WorkspaceShell;
+      account?: Account;
+    } | null;
+    if (data?.workspace) setWorkspace(data.workspace);
+    if (data?.account) setAccount(data.account);
+  }, []);
 
   const send = useCallback(async (command: StoreCommand): Promise<CommandResult> => {
     const response = await fetch("/api/state", {
@@ -74,7 +102,7 @@ export function StoreProvider({
       body: JSON.stringify({ command }),
     });
     const data = (await response.json().catch(() => null)) as {
-      state?: StoreState;
+      workspace?: WorkspaceShell;
       account?: Account;
       error?: string;
       created?: Material | AccessCode;
@@ -83,9 +111,7 @@ export function StoreProvider({
       window.location.href = "/login";
       return { ok: false, error: "Sign in required." };
     }
-    if (data?.state) {
-      setState(data.state);
-    }
+    if (data?.workspace) setWorkspace(data.workspace);
     if (data?.account) setAccount(data.account);
     if (!response.ok || data?.error) {
       return { ok: false, error: data?.error || "Could not save that change." };
@@ -95,9 +121,10 @@ export function StoreProvider({
 
   const api = useMemo<StoreApi>(
     () => ({
-      state,
+      workspace,
       account,
       hydrated: true,
+      refreshWorkspace,
       setAccount,
       resetDemo: () => send({ type: "resetDemo" }),
       updateSettings: (patch) => send({ type: "updateSettings", patch }),
@@ -135,20 +162,21 @@ export function StoreProvider({
         window.location.href = "/";
       },
     }),
-    [account, send, state],
+    [account, refreshWorkspace, send, workspace],
   );
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;
 }
 
 export function MarketingStoreFallback({ children }: { children: React.ReactNode }) {
-  const empty = createEmptyState("Stockr");
+  const empty = emptyWorkspace("Stockr");
   return (
     <StoreContext.Provider
       value={{
-        state: empty,
+        workspace: empty,
         account: null,
         hydrated: true,
+        refreshWorkspace: async () => undefined,
         resetDemo: async () => ({ ok: false }),
         updateSettings: async () => ({ ok: false }),
         upsertLocation: async () => ({ ok: false }),

@@ -1,4 +1,4 @@
-import type { PlanId, StoreState } from "./types";
+import type { PlanId } from "./types";
 
 export type Plan = {
   id: PlanId;
@@ -66,15 +66,15 @@ export function getPlan(id: PlanId) {
 
 export function planLimitError(
   planId: PlanId,
-  state: StoreState,
+  counts: { locations?: number; materials?: number },
   action: "location" | "material" | "seat",
   extraSeats = 0,
 ) {
   const plan = getPlan(planId);
-  if (action === "location" && plan.locations != null && state.locations.length >= plan.locations) {
+  if (action === "location" && plan.locations != null && (counts.locations ?? 0) >= plan.locations) {
     return `${plan.name} includes ${plan.locations} locations. Upgrade to add more.`;
   }
-  if (action === "material" && plan.materials != null && state.materials.length >= plan.materials) {
+  if (action === "material" && plan.materials != null && (counts.materials ?? 0) >= plan.materials) {
     return `${plan.name} includes ${plan.materials} materials. Upgrade to add more.`;
   }
   if (action === "seat" && plan.seats != null && extraSeats >= plan.seats) {

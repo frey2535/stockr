@@ -2,7 +2,7 @@
 
 Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so they can live in the same project as another app. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Stripe is not required — plan upgrades use a mock checkout.
+Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so they can live in the same project as another app. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. Stripe is not required — plan upgrades use a mock checkout.
 
 ## GitHub
 
