@@ -15,12 +15,12 @@ export function MarketingHeader({ signedIn = false }: { signedIn?: boolean }) {
           </span>
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-white/70 md:flex">
-          <a href="/#product" className="hover:text-white">
+          <Link href="/#product" className="hover:text-white">
             Product
-          </a>
-          <a href="/#pricing" className="hover:text-white">
+          </Link>
+          <Link href="/#pricing" className="hover:text-white">
             Pricing
-          </a>
+          </Link>
           <Link href="/download" className="hover:text-white">
             Get the app
           </Link>

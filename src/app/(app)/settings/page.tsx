@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Copy, ImagePlus, Link2, Settings, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -12,18 +12,19 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
-import type { AccessCodeType } from "@/lib/types";
+import type { AccessCodeType, Settings } from "@/lib/types";
 
 export default function SettingsPage() {
   const { state, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
   const { settings, accessCodes } = state;
-  const [draft, setDraft] = useState(settings);
+  const [overrides, setOverrides] = useState<Partial<Settings>>({});
+  const draft = { ...settings, ...overrides };
   const [label, setLabel] = useState("");
   const [codeType, setCodeType] = useState<AccessCodeType>("trial");
 
-  useEffect(() => {
-    setDraft(settings);
-  }, [settings]);
+  const patchDraft = (patch: Partial<Settings>) => {
+    setOverrides((prev) => ({ ...prev, ...patch }));
+  };
 
   const saveBranding = async () => {
     const result = await updateSettings(draft);
@@ -31,6 +32,7 @@ export default function SettingsPage() {
       toast.error(result.error || "Could not save settings.");
       return;
     }
+    setOverrides({});
     toast.success("Branding saved");
   };
 
@@ -38,7 +40,7 @@ export default function SettingsPage() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      setDraft((prev) => ({ ...prev, logo_url: String(reader.result || "") }));
+      patchDraft({ logo_url: String(reader.result || "") });
     };
     reader.readAsDataURL(file);
   };
@@ -142,7 +144,7 @@ export default function SettingsPage() {
                     variant="outline"
                     size="sm"
                     className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => setDraft({ ...draft, logo_url: "" })}
+                    onClick={() => patchDraft({ logo_url: "" })}
                   >
                     <Trash2 className="mr-2 size-4" />
                     Remove Logo
@@ -155,7 +157,7 @@ export default function SettingsPage() {
             <Label>Company Name</Label>
             <Input
               value={draft.company_name}
-              onChange={(event) => setDraft({ ...draft, company_name: event.target.value })}
+              onChange={(event) => patchDraft({ company_name: event.target.value })}
               placeholder="e.g. Acme Contracting LLC"
             />
           </div>
@@ -166,12 +168,12 @@ export default function SettingsPage() {
                 <input
                   type="color"
                   value={draft.primary_color}
-                  onChange={(event) => setDraft({ ...draft, primary_color: event.target.value })}
+                  onChange={(event) => patchDraft({ primary_color: event.target.value })}
                   className="size-10 cursor-pointer rounded-lg border"
                 />
                 <Input
                   value={draft.primary_color}
-                  onChange={(event) => setDraft({ ...draft, primary_color: event.target.value })}
+                  onChange={(event) => patchDraft({ primary_color: event.target.value })}
                   className="font-mono text-sm"
                 />
               </div>
@@ -182,12 +184,12 @@ export default function SettingsPage() {
                 <input
                   type="color"
                   value={draft.accent_color}
-                  onChange={(event) => setDraft({ ...draft, accent_color: event.target.value })}
+                  onChange={(event) => patchDraft({ accent_color: event.target.value })}
                   className="size-10 cursor-pointer rounded-lg border"
                 />
                 <Input
                   value={draft.accent_color}
-                  onChange={(event) => setDraft({ ...draft, accent_color: event.target.value })}
+                  onChange={(event) => patchDraft({ accent_color: event.target.value })}
                   className="font-mono text-sm"
                 />
               </div>
@@ -234,7 +236,7 @@ export default function SettingsPage() {
             </div>
             <Switch
               checked={draft.buildr_linked}
-              onCheckedChange={(checked) => setDraft({ ...draft, buildr_linked: checked })}
+              onCheckedChange={(checked) => patchDraft({ buildr_linked: checked })}
             />
           </div>
           {draft.buildr_linked ? (
@@ -242,7 +244,7 @@ export default function SettingsPage() {
               <Label>Buildr Company ID</Label>
               <Input
                 value={draft.buildr_company_id}
-                onChange={(event) => setDraft({ ...draft, buildr_company_id: event.target.value })}
+                onChange={(event) => patchDraft({ buildr_company_id: event.target.value })}
                 placeholder="Find your Company ID in Buildr → Settings → Integrations"
               />
               <p className="text-xs text-muted-foreground">
@@ -369,6 +371,7 @@ export default function SettingsPage() {
                   toast.error(result.error || "Could not reset.");
                   return;
                 }
+                setOverrides({});
                 toast.success(isDemo ? "Training data restored" : "Workspace cleared");
               }}
             >

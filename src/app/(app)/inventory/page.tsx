@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
@@ -30,18 +30,11 @@ import type { TxType } from "@/lib/types";
 
 function InventoryPageInner() {
   const { state, applyAction } = useStore();
-  const { settings, materials, locations, inventory } = state;
+  const { settings, materials, locations } = state;
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [locationId, setLocationId] = useState(searchParams.get("location") || "all");
   const [active, setActive] = useState<string | null>(null);
-
-  useEffect(() => {
-    const nextQuery = searchParams.get("q") || "";
-    const nextLocation = searchParams.get("location") || "all";
-    setQuery(nextQuery);
-    setLocationId(nextLocation);
-  }, [searchParams]);
   const [actionType, setActionType] = useState<TxType>("adjust");
   const [quantity, setQuantity] = useState("");
   const [fromId, setFromId] = useState("");
