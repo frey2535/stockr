@@ -201,7 +201,7 @@ export function createCompanyWithOwner(input: {
       if (!companyRow) continue;
       const seatError = planLimitError(
         companyRow.plan,
-        state,
+        {},
         "seat",
         listMembers(company.id).length,
       );

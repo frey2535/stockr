@@ -9,34 +9,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useStore } from "@/lib/store";
+import { useApi } from "@/lib/use-api";
 import { money, qty } from "@/lib/format";
-import { totalValue } from "@/lib/inventory";
+import type { DashboardPayload } from "@/lib/workspace-types";
 
 export default function DashboardPage() {
-  const { state } = useStore();
-  const { settings, locations, materials, inventory, transactions } = state;
+  const { workspace } = useStore();
+  const { settings, locations } = workspace;
+  const { data, loading } = useApi<DashboardPayload>("/api/dashboard");
 
-  const totalItems = inventory.reduce((sum, row) => sum + (row.quantity || 0), 0);
-  const value = totalValue(state);
-  const vehicles = locations.filter((row) => row.type === "vehicle").length;
-  const warehouses = locations.filter((row) => row.type === "warehouse").length;
-
-  const alerts = materials
-    .map((material) => {
-      const totalQty = inventory
-        .filter((row) => row.material_id === material.id)
-        .reduce((sum, row) => sum + row.quantity, 0);
-      let status: "critical" | "reorder" | null = null;
-      if (material.min_stock_level != null && totalQty <= material.min_stock_level) {
-        status = "critical";
-      } else if (material.reorder_point != null && totalQty <= material.reorder_point) {
-        status = "reorder";
-      }
-      return { ...material, totalQty, status };
-    })
-    .filter((row) => row.status)
-    .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === "critical" ? -1 : 1));
-
+  const alerts = data?.alerts || [];
   const criticalCount = alerts.filter((row) => row.status === "critical").length;
 
   return (
@@ -64,7 +46,7 @@ export default function DashboardPage() {
         }
       />
 
-      {locations.length === 0 && materials.length === 0 ? (
+      {locations.length === 0 && (data?.materialCount || 0) === 0 ? (
         <Card className="border-secondary/40 bg-secondary/5">
           <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -82,22 +64,22 @@ export default function DashboardPage() {
       ) : null}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <StatCard title="Total Items" value={qty(totalItems)} icon={<Warehouse className="size-4" />} />
+        <StatCard title="Total Items" value={loading ? "…" : qty(data?.totalItems || 0)} icon={<Warehouse className="size-4" />} />
         <StatCard
           title="Estimated Total Value"
-          value={`$${money(value)}`}
+          value={loading ? "…" : `$${money(data?.value || 0)}`}
           icon={<Wallet className="size-4" />}
           accent
         />
         <StatCard
           title="Vehicles"
-          value={vehicles}
-          subtitle={`${warehouses} warehouse(s)`}
+          value={loading ? "…" : data?.vehicles || 0}
+          subtitle={`${data?.warehouses || 0} warehouse(s)`}
           icon={<Truck className="size-4" />}
         />
         <StatCard
           title="Materials"
-          value={materials.length}
+          value={loading ? "…" : data?.materialCount || 0}
           subtitle="unique items"
           icon={<Package className="size-4" />}
           accent
@@ -153,47 +135,41 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {locations.length === 0 ? (
+            {!data?.locations.length ? (
               <p className="text-sm text-muted-foreground">
                 No locations yet. Add a warehouse or vehicle to get started.
               </p>
             ) : (
-              locations.map((location) => {
-                const rows = inventory.filter(
-                  (row) => row.location_id === location.id && row.quantity > 0,
-                );
-                const units = rows.reduce((sum, row) => sum + row.quantity, 0);
-                return (
-                  <Link
-                    key={location.id}
-                    href={`/inventory?location=${encodeURIComponent(location.id)}`}
-                    className="flex items-center justify-between rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted/70"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={
-                          location.type === "warehouse"
-                            ? "flex size-9 items-center justify-center rounded-lg bg-primary/10"
-                            : "flex size-9 items-center justify-center rounded-lg bg-secondary/10"
-                        }
-                      >
-                        {location.type === "warehouse" ? (
-                          <Warehouse className="size-4 text-primary" />
-                        ) : (
-                          <Truck className="size-4 text-secondary" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">{location.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {rows.length} materials
-                        </p>
-                      </div>
+              data.locations.map((location) => (
+                <Link
+                  key={location.id}
+                  href={`/inventory?location=${encodeURIComponent(location.id)}`}
+                  className="flex items-center justify-between rounded-xl bg-muted/50 p-3 transition-colors hover:bg-muted/70"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={
+                        location.type === "warehouse"
+                          ? "flex size-9 items-center justify-center rounded-lg bg-primary/10"
+                          : "flex size-9 items-center justify-center rounded-lg bg-secondary/10"
+                      }
+                    >
+                      {location.type === "warehouse" ? (
+                        <Warehouse className="size-4 text-primary" />
+                      ) : (
+                        <Truck className="size-4 text-secondary" />
+                      )}
                     </div>
-                    <span className="text-sm font-semibold">{qty(units)}</span>
-                  </Link>
-                );
-              })
+                    <div>
+                      <p className="text-sm font-medium">{location.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {location.materialCount} materials
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-semibold">{qty(location.units)}</span>
+                </Link>
+              ))
             )}
             <Button asChild variant="outline" size="sm" className="mt-2 w-full">
               <Link href="/locations">Manage Locations</Link>
@@ -207,7 +183,7 @@ export default function DashboardPage() {
               <CardTitle className="flex items-center gap-2 text-lg">
                 Recent Activity
               </CardTitle>
-              {transactions.length > 0 ? (
+              {(data?.recent.length || 0) > 0 ? (
                 <Button asChild variant="ghost" size="sm">
                   <Link href="/activity">View all</Link>
                 </Button>
@@ -215,18 +191,18 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {transactions.length === 0 ? (
+            {!data?.recent.length ? (
               <p className="text-sm text-muted-foreground">
                 No activity yet. Scan some materials to get started!
               </p>
             ) : (
               <div className="space-y-3">
-                {transactions.slice(0, 10).map((tx) => (
+                {data.recent.map((tx) => (
                   <ActivityItem
                     key={tx.id}
                     tx={tx}
-                    materials={materials}
-                    locations={locations}
+                    materials={data.recentMaterials}
+                    locations={data.locations}
                   />
                 ))}
               </div>

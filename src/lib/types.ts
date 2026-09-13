@@ -103,6 +103,24 @@ export type StoreState = {
   projects: Project[];
 };
 
+export type WorkspaceCounts = {
+  locations: number;
+  materials: number;
+  inventoryRows: number;
+  transactions: number;
+  purchaseOrders: number;
+};
+
+export type WorkspaceShell = {
+  settings: Settings;
+  locations: Location[];
+  projects: Project[];
+  accessCodes: AccessCode[];
+  counts: WorkspaceCounts;
+};
+
+export const WORKSPACE_PAGE_SIZE = 50;
+
 export type InventoryAction = {
   type: TxType;
   materialId: string;

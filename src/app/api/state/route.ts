@@ -9,6 +9,7 @@ import {
 import { applyCommand, type StoreCommand } from "@/lib/mutations";
 import { planLimitError } from "@/lib/plans";
 import { createEmptyState, createSeedState } from "@/lib/seed";
+import { getWorkspaceCounts, getWorkspaceShell } from "@/lib/workspace-data";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function GET() {
   const account = await getCurrentAccount();
   if (!account) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   return NextResponse.json({
-    state: await getCompanyState(account.company.id),
+    workspace: await getWorkspaceShell(account.company.id),
     account,
   });
 }
@@ -35,20 +36,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only the company owner can reset workspace data." }, { status: 403 });
   }
 
-  const prev = await getCompanyState(account.company.id);
+  const counts = await getWorkspaceCounts(account.company.id);
 
   if (command.type === "upsertLocation" && !command.location.id) {
-    const limit = planLimitError(account.company.plan, prev, "location");
-    if (limit) return NextResponse.json({ state: prev, account, error: limit }, { status: 403 });
+    const limit = planLimitError(account.company.plan, counts, "location");
+    if (limit) return NextResponse.json({ error: limit }, { status: 403 });
   }
   if (command.type === "upsertMaterial") {
-    const isNew = !command.material.id || !prev.materials.some((row) => row.id === command.material.id);
+    const isNew = !command.material.id;
     if (isNew) {
-      const limit = planLimitError(account.company.plan, prev, "material");
-      if (limit) return NextResponse.json({ state: prev, account, error: limit }, { status: 403 });
+      const limit = planLimitError(account.company.plan, counts, "material");
+      if (limit) return NextResponse.json({ error: limit }, { status: 403 });
     }
   }
 
+  const prev = await getCompanyState(account.company.id);
   const seed =
     account.company.id === "co_summit"
       ? createSeedState()
@@ -56,10 +58,7 @@ export async function POST(request: Request) {
 
   const result = applyCommand(prev, command, account.user.email, seed);
   if (result.error) {
-    return NextResponse.json(
-      { state: prev, account, error: result.error },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
   await setCompanyState(account.company.id, result.state);
@@ -69,7 +68,7 @@ export async function POST(request: Request) {
 
   const nextAccount = await getAccount(account.user.id, account.company.id);
   return NextResponse.json({
-    state: result.state,
+    workspace: await getWorkspaceShell(account.company.id),
     account: nextAccount,
     created: result.created,
   });

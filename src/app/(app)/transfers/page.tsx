@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -14,21 +14,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
+import { useApi } from "@/lib/use-api";
+import type { ActivityListPayload } from "@/lib/workspace-types";
 
 export default function TransfersPage() {
-  const { state } = useStore();
-  const { settings, transactions, materials, locations } = state;
+  const { workspace } = useStore();
+  const { settings, locations } = workspace;
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
-
-  const rows = useMemo(() => {
-    return transactions.filter((tx) => {
-      if (type !== "all" && tx.type !== type) return false;
-      const material = materials.find((row) => row.id === tx.material_id);
-      const hay = `${material?.name || ""} ${tx.project || ""} ${tx.notes || ""}`.toLowerCase();
-      return hay.includes(query.toLowerCase());
-    });
-  }, [transactions, materials, query, type]);
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (type !== "all") params.set("type", type);
+  const { data } = useApi<ActivityListPayload>(`/api/activity?${params.toString()}`);
+  const rows = data?.rows || [];
+  const materials = Object.entries(data?.materialNames || {}).map(([id, name]) => ({ id, name, unit: "each" }));
 
   return (
     <div className="space-y-6">

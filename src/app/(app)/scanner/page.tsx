@@ -27,8 +27,8 @@ type Detector = {
 };
 
 export default function ScannerPage() {
-  const { state, applyAction, upsertMaterial } = useStore();
-  const { materials, locations, projects } = state;
+  const { workspace, applyAction, upsertMaterial } = useStore();
+  const { locations, projects } = workspace;
   const [mode, setMode] = useState<"manual" | "camera">("manual");
   const [barcode, setBarcode] = useState("");
   const [cameraError, setCameraError] = useState("");
@@ -46,14 +46,14 @@ export default function ScannerPage() {
   const detectorRef = useRef<Detector | null>(null);
   const scanningRef = useRef(false);
 
-  const lookup = (code: string) => {
+  const lookup = async (code: string) => {
     const trimmed = code.trim();
     if (!trimmed) return;
-    const found = materials.find(
-      (row) =>
-        (row.barcode && row.barcode === trimmed) ||
-        materialBarcode(row) === trimmed,
-    );
+    const response = await fetch(`/api/materials?barcode=${encodeURIComponent(trimmed)}&q=${encodeURIComponent(trimmed)}`);
+    const data = (await response.json().catch(() => null)) as { rows?: Material[] } | null;
+    const found =
+      data?.rows?.find((row) => row.barcode === trimmed || materialBarcode(row) === trimmed) ||
+      data?.rows?.[0];
     if (found) {
       setSelected(found);
       setUnknownCode("");
@@ -126,7 +126,6 @@ export default function ScannerPage() {
       scanningRef.current = false;
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
   const recentProjects = (() => {
@@ -176,9 +175,12 @@ export default function ScannerPage() {
     toast.success("Material created. Fill in the details from Catalog when you can.");
   };
 
-  const processSmart = () => {
+  const processSmart = async () => {
     const parsed = parseInventoryEnglish(smart);
     setParsedPreview(parsed);
+    const lookupRes = await fetch(`/api/materials?q=${encodeURIComponent(parsed.itemQuery || "")}`);
+    const lookupData = (await lookupRes.json().catch(() => null)) as { rows?: Material[] } | null;
+    const materials = lookupData?.rows || [];
     const { match } = matchMaterial(parsed.itemQuery, materials);
     const from = matchLocation(parsed.fromLocationName, locations);
     const to = matchLocation(parsed.toLocationName, locations);

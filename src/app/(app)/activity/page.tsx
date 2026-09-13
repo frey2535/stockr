@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { ClipboardList, Download } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
@@ -23,38 +23,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useStore } from "@/lib/store";
+import { usePagedApi } from "@/lib/use-api";
 import { actorLabel, downloadCsv, TX_META } from "@/lib/inventory";
 import { formatDate, qty } from "@/lib/format";
+import type { ActivityListPayload } from "@/lib/workspace-types";
 
 export default function ActivityPage() {
-  const { state } = useStore();
-  const { settings, transactions, materials, locations } = state;
+  const { workspace } = useStore();
+  const { settings, locations } = workspace;
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
-
-  const rows = useMemo(() => {
-    const q = query.toLowerCase().trim();
-    return transactions.filter((tx) => {
-      if (type !== "all" && tx.type !== type) return false;
-      if (!q) return true;
-      const material = materials.find((row) => row.id === tx.material_id);
-      const from = locations.find((row) => row.id === tx.from_location_id);
-      const to = locations.find((row) => row.id === tx.to_location_id);
-      const hay = [
-        material?.name,
-        from?.name,
-        to?.name,
-        tx.project,
-        tx.notes,
-        tx.created_by,
-        TX_META[tx.type].label,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [transactions, materials, locations, query, type]);
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (type !== "all") params.set("type", type);
+  const { data, hasMore, loadMore, loading } = usePagedApi<ActivityListPayload>(
+    `/api/activity?${params.toString()}`,
+  );
+  const rows = data?.rows || [];
+  const materialNames = data?.materialNames || {};
 
   const exportCsv = () => {
     downloadCsv(
@@ -63,7 +49,7 @@ export default function ActivityPage() {
       rows.map((tx) => [
         formatDate(tx.created_at),
         TX_META[tx.type].label,
-        materials.find((row) => row.id === tx.material_id)?.name || "",
+        materialNames[tx.material_id] || "",
         tx.quantity,
         locations.find((row) => row.id === tx.from_location_id)?.name || "",
         locations.find((row) => row.id === tx.to_location_id)?.name || "",
@@ -78,7 +64,7 @@ export default function ActivityPage() {
     <div className="space-y-6">
       <PageHeader
         title="Inventory Log"
-        description={`Full audit trail — ${rows.length} of ${transactions.length} records`}
+        description={`Audit trail — showing ${rows.length} of ${data?.total || 0} records`}
         actions={
           <div className="flex items-center gap-3">
             {settings.logo_url ? (
@@ -117,8 +103,8 @@ export default function ActivityPage() {
       {rows.length === 0 ? (
         <EmptyState
           icon={<ClipboardList className="size-12" />}
-          title={transactions.length === 0 ? "No activity yet. Scan some materials to get started!" : "No matching activity"}
-          description={transactions.length === 0 ? undefined : "Try adjusting your search or filters"}
+          title={(data?.total || 0) === 0 ? "No activity yet. Scan some materials to get started!" : "No matching activity"}
+          description={(data?.total || 0) === 0 ? undefined : "Try adjusting your search or filters"}
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border">
@@ -149,7 +135,7 @@ export default function ActivityPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium">
-                      {materials.find((row) => row.id === tx.material_id)?.name || "Unknown"}
+                      {materialNames[tx.material_id] || "Unknown"}
                     </TableCell>
                     <TableCell>{qty(tx.quantity)}</TableCell>
                     <TableCell>
@@ -165,6 +151,11 @@ export default function ActivityPage() {
               })}
             </TableBody>
           </Table>
+          {hasMore ? (
+            <Button variant="outline" className="mt-3 w-full" onClick={loadMore} disabled={loading}>
+              {loading ? "Loading…" : `Load more (${rows.length} of ${data?.total || 0})`}
+            </Button>
+          ) : null}
         </div>
       )}
     </div>

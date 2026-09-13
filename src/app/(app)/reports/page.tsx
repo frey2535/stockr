@@ -1,15 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { BarChart3, Download, Wallet, Wrench } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useStore } from "@/lib/store";
+import { useApi } from "@/lib/use-api";
 import { downloadCsv } from "@/lib/inventory";
 import { money, qty } from "@/lib/format";
+import type { ReportsPayload } from "@/lib/workspace-types";
 
 function daysAgo(n: number) {
   const d = new Date();
@@ -18,53 +19,15 @@ function daysAgo(n: number) {
 }
 
 export default function ReportsPage() {
-  const { state } = useStore();
-  const { locations, materials, inventory, transactions } = state;
   const [from, setFrom] = useState(daysAgo(90));
   const [to, setTo] = useState(daysAgo(0));
-
-  const valuation = useMemo(() => {
-    return locations.map((location) => {
-      const rows = inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
-      const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
-      const totalValue = rows.reduce((sum, row) => {
-        const material = materials.find((item) => item.id === row.material_id);
-        return sum + row.quantity * (material?.unit_cost || 0);
-      }, 0);
-      return { location: location.name, type: location.type, totalQty, totalValue };
-    });
-  }, [locations, inventory, materials]);
-
-  const grand = valuation.reduce((sum, row) => sum + row.totalValue, 0);
-
-  const inRange = useMemo(() => {
-    const start = from ? new Date(from) : null;
-    const end = to ? new Date(`${to}T23:59:59`) : null;
-    return transactions.filter((tx) => {
-      const t = new Date(tx.created_at).getTime();
-      if (start && t < start.getTime()) return false;
-      if (end && t > end.getTime()) return false;
-      return true;
-    });
-  }, [transactions, from, to]);
-
+  const { data } = useApi<ReportsPayload>(`/api/reports?from=${from}&to=${to}`);
+  const valuation = data?.valuation || [];
+  const grand = data?.grand || 0;
+  const usage = data?.usage || [];
+  const shrinkage = data?.shrinkage || [];
   const fromDate = from ? new Date(from) : null;
   const toDate = to ? new Date(`${to}T23:59:59`) : null;
-
-  const usage = useMemo(() => {
-    const map = new Map<string, { qty: number; value: number }>();
-    for (const tx of inRange.filter((row) => row.type === "use")) {
-      const key = tx.project || "Unassigned";
-      const material = materials.find((item) => item.id === tx.material_id);
-      const current = map.get(key) || { qty: 0, value: 0 };
-      current.qty += tx.quantity;
-      current.value += tx.quantity * (material?.unit_cost || 0);
-      map.set(key, current);
-    }
-    return Array.from(map.entries()).sort((a, b) => b[1].value - a[1].value);
-  }, [inRange, materials]);
-
-  const shrinkage = inRange.filter((tx) => tx.type === "shrink");
 
   return (
     <div className="space-y-6">
@@ -192,9 +155,9 @@ export default function ReportsPage() {
                   ["When", "Material", "Qty", "Location", "Notes"],
                   shrinkage.map((tx) => [
                     tx.created_at,
-                    materials.find((row) => row.id === tx.material_id)?.name || "",
+                    tx.materialName,
                     tx.quantity,
-                    locations.find((row) => row.id === tx.from_location_id)?.name || "",
+                    tx.locationName,
                     tx.notes || "",
                   ]),
                 )
@@ -214,10 +177,10 @@ export default function ReportsPage() {
                 <div key={tx.id} className="flex items-center justify-between rounded-xl bg-red-50 p-3">
                   <div>
                     <p className="text-sm font-medium">
-                      {materials.find((row) => row.id === tx.material_id)?.name}
+                      {tx.materialName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {locations.find((row) => row.id === tx.from_location_id)?.name} · {tx.notes}
+                      {tx.locationName} · {tx.notes}
                     </p>
                   </div>
                   <p className="font-semibold text-red-700">-{qty(tx.quantity)}</p>
