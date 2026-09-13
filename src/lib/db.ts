@@ -33,7 +33,13 @@ let adapterPromise: Promise<Adapter> | null = null;
 
 function loadAdapter() {
   if (!adapterPromise) {
-    if ((process.env.VERCEL || process.env.CF_PAGES) && !isSupabaseConfigured()) {
+    if (
+      (process.env.VERCEL ||
+        process.env.CF_PAGES ||
+        process.env.OPEN_NEXT_CLOUDFLARE ||
+        process.env.CLOUDFLARE_ACCOUNT_ID) &&
+      !isSupabaseConfigured()
+    ) {
       throw new Error(
         "Stockr in production needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
       );
