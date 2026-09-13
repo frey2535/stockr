@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -27,12 +28,20 @@ import { money, qty } from "@/lib/format";
 import { onHand } from "@/lib/inventory";
 import type { TxType } from "@/lib/types";
 
-export default function InventoryPage() {
+function InventoryPageInner() {
   const { state, applyAction } = useStore();
   const { settings, materials, locations, inventory } = state;
-  const [query, setQuery] = useState("");
-  const [locationId, setLocationId] = useState("all");
+  const searchParams = useSearchParams();
+  const [query, setQuery] = useState(searchParams.get("q") || "");
+  const [locationId, setLocationId] = useState(searchParams.get("location") || "all");
   const [active, setActive] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nextQuery = searchParams.get("q") || "";
+    const nextLocation = searchParams.get("location") || "all";
+    setQuery(nextQuery);
+    setLocationId(nextLocation);
+  }, [searchParams]);
   const [actionType, setActionType] = useState<TxType>("adjust");
   const [quantity, setQuantity] = useState("");
   const [fromId, setFromId] = useState("");
@@ -141,14 +150,18 @@ export default function InventoryPage() {
                       {row.material.unit_cost != null ? ` · $${money(row.material.unit_cost)} / ${row.material.unit}` : ` · ${row.material.unit}`}
                     </p>
                     <div className="mt-3 space-y-1">
-                      {row.byLocation.map((item) => (
-                        <div key={item.location.id} className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">{item.location.name}</span>
-                          <span className="font-medium">
-                            {qty(item.quantity)} {row.material.unit}
-                          </span>
-                        </div>
-                      ))}
+                      {row.byLocation.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">None on hand</p>
+                      ) : (
+                        row.byLocation.map((item) => (
+                          <div key={item.location.id} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{item.location.name}</span>
+                            <span className="font-medium">
+                              {qty(item.quantity)} {row.material.unit}
+                            </span>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                   <div className="text-right">
@@ -241,5 +254,21 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function InventoryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-28 animate-pulse rounded-xl bg-muted" />
+          ))}
+        </div>
+      }
+    >
+      <InventoryPageInner />
+    </Suspense>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ImagePlus, Link2, Settings, Shield, Trash2, Users } from "lucide-react";
+import { Copy, ImagePlus, Link2, Settings, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -314,15 +314,30 @@ export default function SettingsPage() {
             {accessCodes.map((code) => {
               const expired = code.type === "trial" && code.expires_at && new Date(code.expires_at) < new Date();
               return (
-                <div key={code.id} className="flex items-center justify-between rounded-xl bg-muted/30 p-3">
+                <div key={code.id} className="flex flex-col gap-3 rounded-xl bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="font-mono text-sm font-semibold">{code.code}</p>
                     <p className="text-xs text-muted-foreground">{code.label}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge className={!code.is_active || expired ? "bg-gray-100 text-gray-600" : "bg-green-100 text-green-700"}>
                       {!code.is_active ? "Inactive" : expired ? "Expired" : code.type}
                     </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(code.code);
+                          toast.success(`Copied ${code.code}`);
+                        } catch {
+                          toast.error("Could not copy the code.");
+                        }
+                      }}
+                    >
+                      <Copy className="mr-1 size-3.5" />
+                      Copy
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => toggleAccessCode(code.id)}>
                       {code.is_active ? "Revoke" : "Restore"}
                     </Button>
