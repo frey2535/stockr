@@ -1,39 +1,163 @@
-**Welcome to your Base44 project** 
+# Stockr
 
-**About**
+Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so they can live in the same project as another app. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Stripe is not required — plan upgrades use a mock checkout.
 
-This project contains everything you need to run your app locally.
+## GitHub
 
-**Edit the code in your local development environment**
+Public repo: [github.com/frey2535/stockr](https://github.com/frey2535/stockr)
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates — this is a Next.js app.
 
-**Prerequisites:** 
+## Run locally
 
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+```bash
+npm install
+npm run dev
 ```
 
-Run the app: `npm run dev`
+Open **http://127.0.0.1:43151** for local preview.
 
-**Publish your changes**
+Production hostname is **https://stockr.currentflowconsulting.org**. Point that name at this app (CNAME or A record) and serve it over HTTPS so camera scanning and session cookies work.
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+### Demo company
 
-**Docs & Support**
+- Email: `demo@stockr.app`
+- Password: `demo1234`
+- Company: Summit Electric on the Fleet plan, with sample warehouses, trucks, catalog, POs, and activity
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+### New company
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+Sign up from the marketing page to create an empty Starter workspace (2 locations, 50 materials, 2 seats). Invite a teammate from **Settings** and have them join with the code on `/signup`.
+
+## Plans
+
+| Plan    | Price | Locations | Materials | Seats |
+| ------- | ----- | --------- | --------- | ----- |
+| Starter | $0    | 2         | 50        | 2     |
+| Pro     | $49   | 15        | 2,000     | 15    |
+| Fleet   | $149  | Unlimited | Unlimited | Unlimited |
+
+Upgrade from **Billing**. In this repo the checkout immediately activates the plan.
+
+## What is included
+
+- **Marketing, login, signup** — company workspace or join via invite code
+- **Dashboard** — on-hand totals, estimated value, low-stock alerts, recent activity
+- **Scanner** — camera barcode (Chromium `BarcodeDetector`), manual lookup, and plain-English actions (`add 25 screws to Main Warehouse`)
+- **Inventory** — quantities by location, add / transfer / use / adjust / shrink
+- **Locations** — warehouses and vehicles
+- **Transfers & Activity Log** — full audit trail with CSV export
+- **Catalog** — materials, barcodes, reorder points, printable CODE128 labels
+- **Purchase Orders** — draft through received, with receive-into-location
+- **Reports** — valuation by location, usage by project, shrinkage
+- **Billing** — plan and seat/location limits
+- **Settings** — branding, team list, invite codes, optional Buildr company ID
+
+Camera scanning needs HTTPS or `localhost` and a browser that implements `BarcodeDetector`. Demo barcodes include `012345678901` (3/4" EMT) and `099887766554` (screws).
+
+## Domain
+
+Canonical host: **stockr.currentflowconsulting.org**
+
+```bash
+NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
+NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
+```
+
+On production (`next start` or Vercel), session cookies are marked `Secure` and scoped to that host. Local `npm run dev` keeps host-only cookies so http://127.0.0.1:43151 still signs in.
+
+## Supabase
+
+Use the same Supabase project as your other app. Stockr only creates `stockr_*` tables.
+
+1. In Supabase: **SQL Editor** → paste and run [`supabase/schema.sql`](supabase/schema.sql)
+2. **Project Settings → API**: copy the project URL and the **service role** key (server only, never ship it to the browser)
+3. Put them in `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+4. Restart the app. Settings will say the workspace database is Supabase. The demo company is created there on first boot if it does not exist.
+
+Invite codes are indexed by code, so joining a company does not scan every tenant.
+
+## Put this app on stockr.currentflowconsulting.org
+
+The domain already exists. It still opens the old Base44 site. These three steps switch it to this app.
+
+### 1. Publish this repo to Vercel
+
+Use the **Publish** button in Cursor, or run `npx vercel` while logged in.
+
+In the Vercel project, add these environment variables (same values as `.env.local`):
+
+```bash
+NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
+NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+SQLite cannot persist on Vercel. The two Supabase keys are required there.
+
+### 2. Attach the domain in Vercel
+
+**Project → Settings → Domains → Add** `stockr.currentflowconsulting.org`.
+
+Vercel will show a CNAME target, usually `cname.vercel-dns.com`.
+
+### 3. Point Cloudflare at Vercel (not Base44)
+
+In Cloudflare, for the `currentflowconsulting.org` zone:
+
+| Field | Value |
+| ----- | ----- |
+| Type | CNAME |
+| Name | `stockr` |
+| Target | `cname.vercel-dns.com` (or the target Vercel shows) |
+| Proxy | DNS only (grey cloud), or Proxied with SSL mode **Full (strict)** |
+
+Save. After DNS updates, `https://stockr.currentflowconsulting.org` and `/login` should open this Next.js app, not the Base44 Vite page.
+
+Keep the service role key on the server only. Use real Stripe when you are ready to charge.
+
+## Google Play and selling outside the store
+
+Package name (type this in Play Console, never change it):
+
+```
+org.currentflowconsulting.stockr
+```
+
+The Android app is a Capacitor wrapper that opens the live site. People subscribe on the website (Starter / Pro / Fleet). Play is only the install channel.
+
+### One-time machine setup
+
+```bash
+npm install
+npm run android:sdk
+npm run android:keystore
+```
+
+Back up `android/keystore/` (the `.jks` and `key.properties`). If you lose that folder you cannot update the Play app.
+
+### Build files
+
+```bash
+npm run android:bundle   # dist/android/stockr-release.aab  → upload in Play Console
+npm run android:apk      # public/downloads/stockr.apk     → sideload / website
+```
+
+Play listing copy, privacy URL, and screenshot notes: [`store/google-play/LISTING.md`](store/google-play/LISTING.md).
+
+### Sell without Play
+
+1. Create the company and pick a plan at `/signup` and `/billing` (or `/download`).
+2. Install the APK from `/download` (allow unknown sources) or use the browser.
+3. Privacy and terms for stores and sideload: `/privacy` and `/terms`.
+
+The website must be live on HTTPS (`stockr.currentflowconsulting.org`) before the Android wrapper is useful on a phone.

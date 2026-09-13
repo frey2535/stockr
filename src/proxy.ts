@@ -1,0 +1,98 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getSession } from "@/lib/db";
+import { SITE_HOST } from "@/lib/site";
+
+const SESSION_COOKIE = "stockr_session";
+
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/scanner",
+  "/inventory",
+  "/locations",
+  "/transfers",
+  "/activity",
+  "/catalog",
+  "/purchase-orders",
+  "/reports",
+  "/settings",
+  "/billing",
+];
+
+const AUTH_PAGES = new Set(["/login", "/signup", "/signin", "/sign-in", "/sign-up"]);
+
+function isProtected(pathname: string) {
+  return PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function expireSessionCookie(response: NextResponse, hostHeader: string) {
+  const blank = {
+    path: "/",
+    expires: new Date(0),
+    httpOnly: true,
+    sameSite: "lax" as const,
+  };
+  const host = hostHeader.split(",")[0].trim().split(":")[0].toLowerCase();
+  if (host === SITE_HOST) {
+    response.cookies.set(SESSION_COOKIE, "", { ...blank, domain: SITE_HOST });
+  } else {
+    response.cookies.set(SESSION_COOKIE, "", blank);
+  }
+}
+
+const SIGN_IN_PAGES = new Set(["/login", "/signin", "/sign-in", "/sign_in"]);
+
+export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+
+  if (request.method === "POST" && SIGN_IN_PAGES.has(pathname)) {
+    return NextResponse.rewrite(new URL("/api/auth/login", request.url));
+  }
+
+  const sessionId = request.cookies.get(SESSION_COOKIE)?.value;
+  const session = sessionId ? await getSession(sessionId) : null;
+  const authed = Boolean(session);
+
+  if (isProtected(pathname) && !authed) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("next", pathname);
+    const response = NextResponse.redirect(url);
+    if (sessionId) expireSessionCookie(response, host);
+    return response;
+  }
+
+  if (authed && AUTH_PAGES.has(pathname)) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  if (sessionId && !session) {
+    const response = NextResponse.next();
+    expireSessionCookie(response, host);
+    return response;
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    "/dashboard/:path*",
+    "/scanner/:path*",
+    "/inventory/:path*",
+    "/locations/:path*",
+    "/transfers/:path*",
+    "/activity/:path*",
+    "/catalog/:path*",
+    "/purchase-orders/:path*",
+    "/reports/:path*",
+    "/settings/:path*",
+    "/billing/:path*",
+    "/login",
+    "/signin",
+    "/sign-in",
+    "/signup",
+    "/sign-up",
+  ],
+};
