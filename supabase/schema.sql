@@ -1,5 +1,5 @@
--- Stockr tables for an existing Supabase project.
--- All names are prefixed with stockr_ so they do not collide with another app.
+-- Stockr tables for Stockr's own Supabase project.
+-- Do not run NECalcul8r or The Truth SQL here. This file never uses public.profiles.
 
 create table if not exists stockr_users (
   id text primary key,
