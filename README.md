@@ -2,7 +2,7 @@
 
 Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-Company data belongs in **Supabase** (Postgres). Tables are named `stockr_*` so they can live in the same project as another app. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. Stripe is not required — plan upgrades use a mock checkout.
+Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not reuse the NECalcul8r or The Truth project — those apps have their own databases. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. Stripe is not required — plan upgrades use a mock checkout.
 
 ## GitHub
 
@@ -70,18 +70,19 @@ On production (`next start` or Vercel), session cookies are marked `Secure` and 
 
 ## Supabase
 
-Use the same Supabase project as your other app. Stockr only creates `stockr_*` tables.
+Create a **dedicated Supabase project for Stockr** (CurrentFlow Consulting org is fine; the project must not be NECalcul8r or The Truth).
 
-1. In Supabase: **SQL Editor** → paste and run [`supabase/schema.sql`](supabase/schema.sql)
-2. **Project Settings → API**: copy the project URL and the **service role** key (server only, never ship it to the browser)
-3. Put them in `.env.local`:
+In that project’s SQL Editor, paste and run **only** [`supabase/schema.sql`](supabase/schema.sql). That file creates `stockr_*` tables. It does **not** use `public.profiles`. If you see `type "public.profiles" does not exist` / `actor public.profiles`, you pasted a NECalcul8r fix — stop and run this repo’s schema instead.
+
+1. **Project Settings → API**: copy this Stockr project’s URL and the **service role** key (server only, never ship it to the browser)
+2. Put them in `.env.local`:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_STOCKR_PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 ```
 
-4. Restart the app. Settings will say the workspace database is Supabase. The demo company is created there on first boot if it does not exist.
+3. Restart the app. Settings will say the workspace database is Supabase. The demo company is created there on first boot if it does not exist.
 
 Invite codes are indexed by code, so joining a company does not scan every tenant.
 
@@ -98,7 +99,7 @@ In the Vercel project, add these environment variables (same values as `.env.loc
 ```bash
 NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
 NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_STOCKR_PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 ```
 
