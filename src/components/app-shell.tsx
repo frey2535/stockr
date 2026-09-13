@@ -15,6 +15,7 @@ import {
   ScanLine,
   Settings,
   ShoppingCart,
+  Shield,
   Warehouse,
   X,
 } from "lucide-react";
@@ -43,8 +44,6 @@ const MOBILE_NAV = [
   { href: "/inventory", label: "Inventory", icon: Warehouse },
   { href: "/activity", label: "Activity", icon: ClipboardList },
 ];
-
-const MORE_NAV = NAV.filter((item) => !MOBILE_NAV.some((tab) => tab.href === item.href));
 
 const SIDEBAR = "#0d1117";
 const ACTIVE = "#2563eb";
@@ -124,7 +123,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { hydrated, account, logout } = useStore();
   const [signingOut, setSigningOut] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const moreActive = MORE_NAV.some((item) => item.href === pathname);
+  const nav = account?.platformOwner
+    ? [{ href: "/admin", label: "Platform", icon: Shield }, ...NAV]
+    : NAV;
+  const moreNav = nav.filter((item) => !MOBILE_NAV.some((tab) => tab.href === item.href));
+  const moreActive = moreNav.some((item) => item.href === pathname);
   const plan = account ? getPlan(account.company.plan) : null;
 
   const signOut = async () => {
@@ -145,7 +148,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Brand />
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <NavLink
               key={item.href}
               {...item}
@@ -233,7 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               More
             </p>
             <div className="grid grid-cols-2 gap-2">
-              {MORE_NAV.map((item) => {
+              {moreNav.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
                 return (

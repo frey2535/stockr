@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setSessionCookie } from "@/lib/auth";
-import { createSession, verifyPassword } from "@/lib/db";
+import { createSession, getAccount, verifyPassword } from "@/lib/db";
+import { platformHomePath } from "@/lib/platform";
 import { isFormRequest, requestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -45,8 +46,11 @@ export async function POST(request: Request) {
 
   const session = await createSession(match.userId, match.companyId);
   await setSessionCookie(session.id, session.expiresAt);
+  const account = await getAccount(match.userId, match.companyId);
+  const destination =
+    nextPath !== "/dashboard" ? nextPath : account?.platformOwner ? platformHomePath() : "/dashboard";
   if (form) {
-    return NextResponse.redirect(new URL(nextPath, requestOrigin(request)), 303);
+    return NextResponse.redirect(new URL(destination, requestOrigin(request)), 303);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, next: destination });
 }

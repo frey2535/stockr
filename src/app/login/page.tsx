@@ -30,13 +30,17 @@ function LoginForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    const data = (await response.json().catch(() => null)) as { error?: string } | null;
+    const data = (await response.json().catch(() => null)) as {
+      error?: string;
+      next?: string;
+    } | null;
     setBusy(false);
     if (!response.ok) {
       setError(data?.error || "Could not sign in.");
       return;
     }
-    router.push(next.startsWith("/") ? next : "/dashboard");
+    const destination = data?.next || (next.startsWith("/") ? next : "/dashboard");
+    router.push(destination);
     router.refresh();
   };
 

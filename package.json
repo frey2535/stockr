@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 43151",
     "lint": "eslint",
+    "test": "node --experimental-strip-types --test src/lib/platform.test.ts",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
