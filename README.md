@@ -8,7 +8,7 @@ Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not r
 
 Public repo: [github.com/frey2535/stockr](https://github.com/frey2535/stockr)
 
-Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates — this is a Next.js app.
+Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Merging to `main` deploys this Next.js app to Cloudflare Worker `stockr` (`.github/workflows/deploy.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates. There is no Base44 or Vite deploy path.
 
 ## Run locally
 
@@ -86,43 +86,25 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 
 Invite codes are indexed by code, so joining a company does not scan every tenant.
 
-## Put this app on stockr.currentflowconsulting.org
+## Deploy (GitHub PR → Cloudflare)
 
-The domain already exists. It still opens the old Base44 site. These three steps switch it to this app.
+Same loop as The Truth: open a PR, merge `main`, Actions publishes the site.
 
-### 1. Publish this repo to Vercel
+1. **CI** (every PR and every push to `main`) — lint + `next build`
+2. **Deploy** (push to `main` only) — OpenNext build, then `wrangler deploy` to Worker **`stockr`**
 
-Use the **Publish** button in Cursor, or run `npx vercel` while logged in.
+Add these GitHub Actions secrets (repo **Settings → Secrets and variables → Actions**):
 
-In the Vercel project, add these environment variables (same values as `.env.local`):
+| Secret | Value |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Same token The Truth uses |
+| `CLOUDFLARE_ACCOUNT_ID` | Same account as The Truth |
+| `NEXT_PUBLIC_SUPABASE_URL` | Stockr Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Stockr service-role key (server only) |
 
-```bash
-NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
-NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_STOCKR_PROJECT.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
-```
+In the Cloudflare dashboard, **turn off automatic Git builds** on the old Pages project `stockr`. That project still tries to build the Base44/Vite app and is why the “Cloudflare Pages” check fails. This repo deploys a Worker named `stockr` instead.
 
-SQLite cannot persist on Vercel. The two Supabase keys are required there.
-
-### 2. Attach the domain in Vercel
-
-**Project → Settings → Domains → Add** `stockr.currentflowconsulting.org`.
-
-Vercel will show a CNAME target, usually `cname.vercel-dns.com`.
-
-### 3. Point Cloudflare at Vercel (not Base44)
-
-In Cloudflare, for the `currentflowconsulting.org` zone:
-
-| Field | Value |
-| ----- | ----- |
-| Type | CNAME |
-| Name | `stockr` |
-| Target | `cname.vercel-dns.com` (or the target Vercel shows) |
-| Proxy | DNS only (grey cloud), or Proxied with SSL mode **Full (strict)** |
-
-Save. After DNS updates, `https://stockr.currentflowconsulting.org` and `/login` should open this Next.js app, not the Base44 Vite page.
+Attach the custom domain `stockr.currentflowconsulting.org` to that Worker (or CNAME `stockr` → the Worker/`*.workers.dev` host Cloudflare shows). Target is **not** `frey2535.github.io` and **not** `cname.vercel-dns.com`.
 
 Keep the service role key on the server only. Use real Stripe when you are ready to charge.
 

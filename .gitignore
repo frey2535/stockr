@@ -18,6 +18,10 @@ agent-tools/
 # next.js
 /.next/
 /out/
+.open-next/
+.wrangler/
+.dev.vars
+cloudflare-env.d.ts
 
 # local tenant database
 /data
@@ -44,7 +48,7 @@ yarn-error.log*
 /AGENTS.md
 /CLAUDE.md
 
-# vercel
+# vercel (not used — Stockr deploys with GitHub Actions to Cloudflare)
 .vercel
 
 # typescript

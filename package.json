@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 43151",
     "lint": "eslint",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "android:sdk": "bash scripts/install-android-sdk.sh",
     "android:keystore": "bash scripts/create-keystore.sh",
     "android:sync": "cap sync android",
@@ -21,6 +24,7 @@
     "@capacitor/core": "^8.5.2",
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
+    "@opennextjs/cloudflare": "^1.20.6",
     "@supabase/supabase-js": "^2.116.0",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
@@ -47,6 +51,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.131.1"
   }
 }
