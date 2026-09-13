@@ -57,9 +57,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          # Same as The Truth: hide wrangler.jsonc so this is a Pages upload,
-          # not a Workers script (The Truth token is a Pages token).
-          cp .open-next/worker.js .open-next/_worker.js
-          mv wrangler.jsonc wrangler.jsonc.bak
-          npx wrangler pages deploy .open-next --project-name=stockr --branch=main --commit-dirty=true
+        run: bash scripts/pages-deploy.sh
