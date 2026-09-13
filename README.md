@@ -91,7 +91,7 @@ Invite codes are indexed by code, so joining a company does not scan every tenan
 Same loop as The Truth: open a PR, merge `main`, Actions publishes the site.
 
 1. **CI** (every PR and every push to `main`) — lint + `next build`
-2. **Deploy** (push to `main` only) — OpenNext build, then `wrangler pages deploy` to Pages project **`stockr`** (same target as The Truth’s `thetruth`)
+2. **Deploy** (push to `main` only) — OpenNext build, then `scripts/pages-deploy.sh` uploads to Pages project **`stockr`**. That script lifts `.open-next/assets/_next` to the site root and writes `_routes.json` so CSS/JS are not swallowed by `_worker.js`.
 
 Add these GitHub Actions secrets (repo **Settings → Secrets and variables → Actions**):
 
@@ -104,7 +104,7 @@ Add these GitHub Actions secrets (repo **Settings → Secrets and variables → 
 
 In the Cloudflare dashboard, **turn off automatic Git builds** on Pages project `stockr`. Actions uploads the Next.js build; the old Vite/Base44 Git builder is what fails the extra “Cloudflare Pages” check.
 
-Custom domain: `stockr.currentflowconsulting.org` → `stockr.pages.dev`. Target is **not** `frey2535.github.io` and **not** `cname.vercel-dns.com`.
+Custom domain: `stockr.currentflowconsulting.org` → the production alias Deploy prints (today `stockr-unm.pages.dev`). Do **not** point it at the old Vite host `stockr.pages.dev`, at `frey2535.github.io`, or at `cname.vercel-dns.com`. Grey-cloud CNAME.
 
 Keep the service role key on the server only. Use real Stripe when you are ready to charge.
 
