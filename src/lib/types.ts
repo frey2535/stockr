@@ -163,4 +163,14 @@ export type Account = {
   role: MemberRole;
   members: TeamMember[];
   dataBackend: DataBackend;
+  platformOwner: boolean;
+};
+
+export type PlatformCompany = {
+  id: string;
+  name: string;
+  slug: string;
+  plan: PlanId;
+  planStatus: AccountCompany["planStatus"];
+  memberCount: number;
 };

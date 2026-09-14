@@ -3,6 +3,15 @@ import { createEmptyState, createSeedState } from "./seed";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
+import {
+  PLATFORM_OWNER_COMPANY_ID,
+  PLATFORM_OWNER_COMPANY_NAME,
+  PLATFORM_OWNER_NAME,
+  PLATFORM_OWNER_USER_ID,
+  isPlatformOwner,
+  platformOwnerEmail,
+  platformOwnerPassword,
+} from "./platform";
 import type {
   AccessCode,
   Account,
@@ -11,6 +20,7 @@ import type {
   Material,
   MemberRole,
   PlanId,
+  PlatformCompany,
   Project,
   PurchaseOrder,
   StoreState,
@@ -197,6 +207,7 @@ export async function getAccount(userId: string, companyId: string): Promise<Acc
     role: membership.role as MemberRole,
     members: await listMembers(companyId),
     dataBackend: "supabase",
+    platformOwner: isPlatformOwner(user.email),
   };
 }
 
@@ -310,12 +321,54 @@ export async function verifyPassword(email: string, password: string) {
   const { data, error } = await getSupabaseAdmin()
     .from("stockr_memberships")
     .select("company_id")
-    .eq("user_id", user.id)
-    .limit(1)
+    .eq("user_id", user.id);
+  throwIfError(error, "Look up membership");
+  const companyIds = (data || []).map((row) => row.company_id as string);
+  if (companyIds.length === 0) return null;
+  const preferred = isPlatformOwner(user.email) ? PLATFORM_OWNER_COMPANY_ID : "";
+  const companyId = companyIds.includes(preferred) ? preferred : companyIds[0];
+  return { userId: user.id, companyId };
+}
+
+export async function listCompanies(): Promise<PlatformCompany[]> {
+  const supabase = getSupabaseAdmin();
+  const [{ data: companies, error: companyError }, { data: memberships, error: memberError }] =
+    await Promise.all([
+      supabase.from("stockr_companies").select("id, name, slug, plan, plan_status").order("name"),
+      supabase.from("stockr_memberships").select("company_id"),
+    ]);
+  throwIfError(companyError, "List companies");
+  throwIfError(memberError, "Count members");
+  const counts = new Map<string, number>();
+  for (const row of memberships || []) {
+    const id = row.company_id as string;
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  return (companies || []).map((company) => ({
+    id: company.id as string,
+    name: company.name as string,
+    slug: company.slug as string,
+    plan: company.plan as PlanId,
+    planStatus: company.plan_status as PlatformCompany["planStatus"],
+    memberCount: counts.get(company.id as string) || 0,
+  }));
+}
+
+export async function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {
+  const { data, error } = await getSupabaseAdmin()
+    .from("stockr_memberships")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .maybeSingle();
   throwIfError(error, "Look up membership");
-  if (!data) return null;
-  return { userId: user.id, companyId: data.company_id as string };
+  if (data) return;
+  const insert = await getSupabaseAdmin().from("stockr_memberships").insert({
+    user_id: userId,
+    company_id: companyId,
+    role,
+  });
+  throwIfError(insert.error, "Grant membership");
 }
 
 export async function setCompanyPlan(companyId: string, plan: PlanId) {
@@ -359,4 +412,49 @@ export async function seedDemoTenant() {
   });
   throwIfError(memberInsert.error, "Seed demo membership");
   await setCompanyState("co_summit", createSeedState());
+}
+
+export async function ensurePlatformOwner() {
+  const email = platformOwnerEmail();
+  const passwordHash = bcrypt.hashSync(platformOwnerPassword(), 10);
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+
+  let user = await getUserByEmail(email);
+  if (!user) {
+    const insert = await supabase.from("stockr_users").insert({
+      id: PLATFORM_OWNER_USER_ID,
+      email,
+      name: PLATFORM_OWNER_NAME,
+      password_hash: passwordHash,
+      created_at: now,
+    });
+    throwIfError(insert.error, "Create platform owner");
+    user = await getUserByEmail(email);
+  } else {
+    const update = await supabase
+      .from("stockr_users")
+      .update({ password_hash: passwordHash, name: user.name || PLATFORM_OWNER_NAME })
+      .eq("id", user.id);
+    throwIfError(update.error, "Reset platform owner password");
+  }
+  if (!user) throw new Error("Create platform owner: user missing after insert");
+
+  let company = await getCompany(PLATFORM_OWNER_COMPANY_ID);
+  if (!company) {
+    const insert = await supabase.from("stockr_companies").insert({
+      id: PLATFORM_OWNER_COMPANY_ID,
+      name: PLATFORM_OWNER_COMPANY_NAME,
+      slug: "currentflow-consulting",
+      plan: "fleet",
+      plan_status: "active",
+      created_at: now,
+    });
+    throwIfError(insert.error, "Create CurrentFlow company");
+    await setCompanyState(PLATFORM_OWNER_COMPANY_ID, createEmptyState(PLATFORM_OWNER_COMPANY_NAME));
+    company = await getCompany(PLATFORM_OWNER_COMPANY_ID);
+  }
+  if (!company) throw new Error("Create CurrentFlow company: company missing after insert");
+
+  await ensureCompanyMembership(user.id, company.id, "owner");
 }

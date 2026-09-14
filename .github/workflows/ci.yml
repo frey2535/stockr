@@ -28,6 +28,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: bash scripts/pages-deploy-layout-test.sh
+      - run: npm test
       - run: npm run lint
       - run: npm run build
         env:

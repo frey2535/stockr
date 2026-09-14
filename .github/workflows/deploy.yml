@@ -41,6 +41,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PLATFORM_OWNER_PASSWORD: ${{ secrets.PLATFORM_OWNER_PASSWORD }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "Add GitHub secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (same as The Truth)."
@@ -58,6 +59,9 @@ jobs:
           put_secret NEXT_PUBLIC_SUPABASE_URL "$NEXT_PUBLIC_SUPABASE_URL"
           put_secret SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
           printf '%s' "1" | npx wrangler pages secret put OPEN_NEXT_CLOUDFLARE --project-name=stockr
+          if [ -n "${PLATFORM_OWNER_PASSWORD:-}" ]; then
+            put_secret PLATFORM_OWNER_PASSWORD "$PLATFORM_OWNER_PASSWORD"
+          fi
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

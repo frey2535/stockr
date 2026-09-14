@@ -27,6 +27,10 @@ Production hostname is **https://stockr.currentflowconsulting.org**. Point that 
 - Password: `demo1234`
 - Company: Summit Electric on the Fleet plan, with sample warehouses, trucks, catalog, POs, and activity
 
+### Platform owner
+
+`currentflowconsultingllc@gmail.com` is the CurrentFlow platform owner. That mailbox is created on boot (it is not a leftover Base44 login). After sign-in it opens **Platform** (`/admin`) so you can open any company workspace. Set GitHub / Pages secret `PLATFORM_OWNER_PASSWORD` to replace the bootstrap password in `src/lib/platform.ts`.
+
 ### New company
 
 Sign up from the marketing page to create an empty Starter workspace (2 locations, 50 materials, 2 seats). Invite a teammate from **Settings** and have them join with the code on `/signup`.

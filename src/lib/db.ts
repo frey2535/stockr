@@ -1,5 +1,5 @@
 import { isSupabaseConfigured } from "./db-config";
-import type { Account, PlanId, StoreState } from "./types";
+import type { Account, MemberRole, PlanId, PlatformCompany, StoreState } from "./types";
 
 export { dataBackend, isSupabaseConfigured } from "./db-config";
 
@@ -27,6 +27,13 @@ type Adapter = {
   setCompanyPlan: (companyId: string, plan: PlanId) => void | Promise<void>;
   updateCompanyName: (companyId: string, name: string) => void | Promise<void>;
   seedDemoTenant?: () => void | Promise<void>;
+  ensurePlatformOwner?: () => void | Promise<void>;
+  listCompanies: () => PlatformCompany[] | Promise<PlatformCompany[]>;
+  ensureCompanyMembership: (
+    userId: string,
+    companyId: string,
+    role: MemberRole,
+  ) => void | Promise<void>;
 };
 
 let adapterPromise: Promise<Adapter> | null = null;
@@ -48,6 +55,7 @@ function loadAdapter() {
       ? import("./db-supabase").then(async (mod) => {
           try {
             await mod.seedDemoTenant();
+            await mod.ensurePlatformOwner();
           } catch (error) {
             console.error(
               "Stockr could not seed Supabase. Run supabase/schema.sql in the SQL editor, then restart.",
@@ -105,4 +113,12 @@ export async function setCompanyPlan(companyId: string, plan: PlanId) {
 
 export async function updateCompanyName(companyId: string, name: string) {
   return (await loadAdapter()).updateCompanyName(companyId, name);
+}
+
+export async function listCompanies() {
+  return (await loadAdapter()).listCompanies();
+}
+
+export async function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {
+  return (await loadAdapter()).ensureCompanyMembership(userId, companyId, role);
 }

@@ -4,7 +4,16 @@ import { DatabaseSync } from "node:sqlite";
 import bcrypt from "bcryptjs";
 import { createEmptyState, createSeedState } from "./seed";
 import { planLimitError } from "./plans";
-import type { Account, MemberRole, PlanId, StoreState, TeamMember } from "./types";
+import {
+  PLATFORM_OWNER_COMPANY_ID,
+  PLATFORM_OWNER_COMPANY_NAME,
+  PLATFORM_OWNER_NAME,
+  PLATFORM_OWNER_USER_ID,
+  isPlatformOwner,
+  platformOwnerEmail,
+  platformOwnerPassword,
+} from "./platform";
+import type { Account, MemberRole, PlanId, PlatformCompany, StoreState, TeamMember } from "./types";
 import { uid } from "./id";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -147,6 +156,7 @@ export function getAccount(userId: string, companyId: string): Account | null {
     role: membership.role,
     members: listMembers(companyId),
     dataBackend: "sqlite",
+    platformOwner: isPlatformOwner(user.email),
   });
 }
 
@@ -247,11 +257,51 @@ export function createCompanyWithOwner(input: {
 export function verifyPassword(email: string, password: string) {
   const user = getUserByEmail(email);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) return null;
-  const membership = db
+  const memberships = db
     .prepare("SELECT company_id FROM memberships WHERE user_id = ?")
-    .get(user.id) as { company_id: string } | undefined;
-  if (!membership) return null;
-  return { userId: user.id, companyId: membership.company_id };
+    .all(user.id) as { company_id: string }[];
+  if (memberships.length === 0) return null;
+  const companyIds = memberships.map((row) => row.company_id);
+  const preferred = isPlatformOwner(user.email) ? PLATFORM_OWNER_COMPANY_ID : "";
+  const companyId = companyIds.includes(preferred) ? preferred : companyIds[0];
+  return { userId: user.id, companyId };
+}
+
+export function listCompanies(): PlatformCompany[] {
+  const companies = db
+    .prepare("SELECT id, name, slug, plan, plan_status FROM companies ORDER BY name")
+    .all() as {
+    id: string;
+    name: string;
+    slug: string;
+    plan: PlanId;
+    plan_status: PlatformCompany["planStatus"];
+  }[];
+  return companies.map((company) => {
+    const count = db
+      .prepare("SELECT COUNT(*) AS n FROM memberships WHERE company_id = ?")
+      .get(company.id) as { n: number };
+    return {
+      id: company.id,
+      name: company.name,
+      slug: company.slug,
+      plan: company.plan,
+      planStatus: company.plan_status,
+      memberCount: count.n,
+    };
+  });
+}
+
+export function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {
+  const existing = db
+    .prepare("SELECT role FROM memberships WHERE user_id = ? AND company_id = ?")
+    .get(userId, companyId) as { role: string } | undefined;
+  if (existing) return;
+  db.prepare("INSERT INTO memberships (user_id, company_id, role) VALUES (?, ?, ?)").run(
+    userId,
+    companyId,
+    role,
+  );
 }
 
 export function setCompanyPlan(companyId: string, plan: PlanId) {
@@ -281,4 +331,39 @@ export function seedDemoTenant() {
   setCompanyState(companyId, createSeedState());
 }
 
+export function ensurePlatformOwner() {
+  const email = platformOwnerEmail();
+  const passwordHash = bcrypt.hashSync(platformOwnerPassword(), 10);
+  const now = new Date().toISOString();
+  let user = getUserByEmail(email);
+  if (!user) {
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(PLATFORM_OWNER_USER_ID, email, PLATFORM_OWNER_NAME, passwordHash, now);
+    user = getUserByEmail(email);
+  } else {
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, user.id);
+  }
+  if (!user) throw new Error("Create platform owner: user missing after insert");
+
+  let company = getCompany(PLATFORM_OWNER_COMPANY_ID);
+  if (!company) {
+    db.prepare(
+      "INSERT INTO companies (id, name, slug, plan, plan_status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      PLATFORM_OWNER_COMPANY_ID,
+      PLATFORM_OWNER_COMPANY_NAME,
+      "currentflow-consulting",
+      "fleet",
+      "active",
+      now,
+    );
+    setCompanyState(PLATFORM_OWNER_COMPANY_ID, createEmptyState(PLATFORM_OWNER_COMPANY_NAME));
+    company = getCompany(PLATFORM_OWNER_COMPANY_ID);
+  }
+  if (!company) throw new Error("Create CurrentFlow company: company missing after insert");
+  ensureCompanyMembership(user.id, company.id, "owner");
+}
+
 seedDemoTenant();
+ensurePlatformOwner();
