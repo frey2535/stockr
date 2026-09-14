@@ -166,12 +166,14 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
   }
 
   const supabase = getSupabaseAdmin();
-  const [inventoryRes, materialsRes, locationsRes, txRes] = await Promise.all([
+  const [inventoryRes, costRes, alertRes, locationsRes, txRes, materialCountRes] = await Promise.all([
     supabase.from("stockr_inventory").select("material_id, location_id, quantity").eq("company_id", companyId),
+    supabase.from("stockr_materials").select("id, unit_cost").eq("company_id", companyId),
     supabase
       .from("stockr_materials")
       .select("id, name, unit, unit_cost, reorder_point, min_stock_level")
-      .eq("company_id", companyId),
+      .eq("company_id", companyId)
+      .or("reorder_point.not.is.null,min_stock_level.not.is.null"),
     supabase.from("stockr_locations").select("*").eq("company_id", companyId),
     supabase
       .from("stockr_transactions")
@@ -179,17 +181,22 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .limit(10),
+    supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
   ]);
 
   if (inventoryRes.error) throw new Error(inventoryRes.error.message);
-  if (materialsRes.error) throw new Error(materialsRes.error.message);
+  if (costRes.error) throw new Error(costRes.error.message);
+  if (alertRes.error) throw new Error(alertRes.error.message);
   if (locationsRes.error) throw new Error(locationsRes.error.message);
   if (txRes.error) throw new Error(txRes.error.message);
+  if (materialCountRes.error) throw new Error(materialCountRes.error.message);
 
   const inventory = (inventoryRes.data || []).map(mapInventory);
-  const materials = (materialsRes.data || []).map(mapMaterial);
+  const alertMaterials = (alertRes.data || []).map(mapMaterial);
   const locations = (locationsRes.data || []) as Location[];
-  const costById = new Map(materials.map((row) => [row.id, row.unit_cost || 0]));
+  const costById = new Map(
+    (costRes.data || []).map((row) => [String(row.id), row.unit_cost == null ? 0 : Number(row.unit_cost)]),
+  );
 
   const totalItems = inventory.reduce((sum, row) => sum + (row.quantity || 0), 0);
   const value = inventory.reduce((sum, row) => sum + (row.quantity || 0) * (costById.get(row.material_id) || 0), 0);
@@ -199,7 +206,7 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
     qtyByMaterial.set(row.material_id, (qtyByMaterial.get(row.material_id) || 0) + row.quantity);
   }
 
-  const alerts = materials
+  const alerts = alertMaterials
     .map((material) => {
       const totalQty = qtyByMaterial.get(material.id) || 0;
       let status: "critical" | "reorder" | null = null;
@@ -211,12 +218,28 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
     .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === "critical" ? -1 : 1))
     .slice(0, 25) as DashboardPayload["alerts"];
 
+  const recent = (txRes.data || []).map(mapTransaction);
+  const recentIds = new Set(recent.map((tx) => tx.material_id));
+  const recentMaterials = alertMaterials.filter((material) => recentIds.has(material.id));
+  if (recentIds.size && recentMaterials.length < recentIds.size) {
+    const missing = Array.from(recentIds).filter((id) => !recentMaterials.some((row) => row.id === id));
+    if (missing.length) {
+      const names = await supabase
+        .from("stockr_materials")
+        .select("id, name, unit, unit_cost, reorder_point, min_stock_level")
+        .eq("company_id", companyId)
+        .in("id", missing);
+      if (names.error) throw new Error(names.error.message);
+      recentMaterials.push(...(names.data || []).map(mapMaterial));
+    }
+  }
+
   return {
     totalItems,
     value,
     vehicles: locations.filter((row) => row.type === "vehicle").length,
     warehouses: locations.filter((row) => row.type === "warehouse").length,
-    materialCount: materials.length,
+    materialCount: materialCountRes.count || costById.size,
     alerts,
     locations: locations.map((location) => {
       const rows = inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
@@ -226,10 +249,8 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
         materialCount: rows.length,
       };
     }),
-    recent: (txRes.data || []).map(mapTransaction),
-    recentMaterials: materials.filter((material) =>
-      (txRes.data || []).some((tx) => tx.material_id === material.id),
-    ),
+    recent,
+    recentMaterials,
   };
 }
 
@@ -293,12 +314,13 @@ export async function listInventory(
     materialQuery = materialQuery.or(`name.ilike.%${q}%,category.ilike.%${q}%,barcode.ilike.%${q}%`);
   }
   if (allowedIds) materialQuery = materialQuery.in("id", allowedIds);
-  const materialsRes = await materialQuery.range(offset, offset + limit - 1);
+  const [materialsRes, locationsRes] = await Promise.all([
+    materialQuery.range(offset, offset + limit - 1),
+    supabase.from("stockr_locations").select("id, name, type, description, assigned_to").eq("company_id", companyId),
+  ]);
   if (materialsRes.error) throw new Error(materialsRes.error.message);
-  const materials = (materialsRes.data || []).map(mapMaterial);
-
-  const locationsRes = await supabase.from("stockr_locations").select("*").eq("company_id", companyId);
   if (locationsRes.error) throw new Error(locationsRes.error.message);
+  const materials = (materialsRes.data || []).map(mapMaterial);
   const locations = (locationsRes.data || []) as Location[];
 
   const inventoryRes = materials.length

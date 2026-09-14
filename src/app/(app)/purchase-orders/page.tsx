@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PageBusy } from "@/components/page-busy";
 import { useStore } from "@/lib/store";
 import { useApi } from "@/lib/use-api";
 import { money } from "@/lib/format";
@@ -43,7 +44,7 @@ export default function PurchaseOrdersPage() {
   const [status, setStatus] = useState("all");
   const params = new URLSearchParams();
   if (status !== "all") params.set("status", status);
-  const { data, reload } = useApi<PurchaseOrderListPayload>(`/api/purchase-orders?${params.toString()}`);
+  const { data, reload, loading } = useApi<PurchaseOrderListPayload>(`/api/purchase-orders?${params.toString()}`);
   const purchaseOrders = data?.rows ?? [];
   const materials = data?.materials ?? [];
   const [createOpen, setCreateOpen] = useState(false);
@@ -149,7 +150,9 @@ export default function PurchaseOrdersPage() {
         </span>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading && !data ? (
+        <PageBusy />
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={<ShoppingCart className="size-12" />}
           title="No purchase orders"

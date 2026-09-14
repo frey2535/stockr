@@ -23,6 +23,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
+import { prefetchTab } from "@/lib/tab-prefetch";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -99,6 +100,8 @@ function NavLink({
     <Link
       href={href}
       onClick={onClick}
+      onPointerEnter={() => prefetchTab(href)}
+      onFocus={() => prefetchTab(href)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -244,6 +247,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     onClick={() => setMoreOpen(false)}
+                    onPointerEnter={() => prefetchTab(item.href)}
                     className="flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-medium"
                     style={{
                       color: active ? "#fff" : "rgba(255,255,255,0.75)",
@@ -276,6 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={item.href}
               onClick={() => setMoreOpen(false)}
+              onPointerEnter={() => prefetchTab(item.href)}
               className="flex flex-1 flex-col items-center gap-1 py-2 text-[11px]"
               style={{ color: active ? "#fff" : "rgba(255,255,255,0.55)" }}
             >

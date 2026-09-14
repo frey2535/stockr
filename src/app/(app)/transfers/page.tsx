@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PageBusy } from "@/components/page-busy";
 import { useStore } from "@/lib/store";
 import { useApi } from "@/lib/use-api";
 import type { ActivityListPayload } from "@/lib/workspace-types";
@@ -25,7 +26,7 @@ export default function TransfersPage() {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (type !== "all") params.set("type", type);
-  const { data } = useApi<ActivityListPayload>(`/api/activity?${params.toString()}`);
+  const { data, loading } = useApi<ActivityListPayload>(`/api/activity?${params.toString()}`);
   const rows = data?.rows || [];
   const materials = Object.entries(data?.materialNames || {}).map(([id, name]) => ({ id, name, unit: "each" }));
 
@@ -63,7 +64,9 @@ export default function TransfersPage() {
         </Select>
       </div>
 
-      {rows.length === 0 ? (
+      {loading && !data ? (
+        <PageBusy />
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={<ArrowLeftRight className="size-12" />}
           title="No transactions found"

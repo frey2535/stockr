@@ -11,6 +11,7 @@ import type {
   Settings,
   WorkspaceShell,
 } from "./types";
+import { invalidateApiCache } from "./api-cache";
 import { createEmptyState } from "./seed";
 import type { StoreCommand } from "./mutations";
 
@@ -116,6 +117,7 @@ export function StoreProvider({
     if (!response.ok || data?.error) {
       return { ok: false, error: data?.error || "Could not save that change." };
     }
+    invalidateApiCache("/api/");
     return { ok: true, created: data?.created };
   }, []);
 

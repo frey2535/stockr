@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { deleteSession, getAccount, getSession } from "./db";
 import { SITE_HOST, isCanonicalHost } from "./site";
@@ -38,11 +39,17 @@ export async function clearSessionCookie() {
   });
 }
 
-export async function getCurrentAccount(): Promise<Account | null> {
+async function readCurrentAccount(includeMembers: boolean): Promise<Account | null> {
   const store = await cookies();
   const sessionId = store.get(SESSION_COOKIE)?.value;
   if (!sessionId) return null;
   const session = await getSession(sessionId);
   if (!session) return null;
-  return getAccount(session.user_id, session.company_id);
+  return getAccount(session.user_id, session.company_id, { members: includeMembers });
 }
+
+/** Dedupe session + account lookups within one RSC/request. */
+export const getCurrentAccount = cache(() => readCurrentAccount(true));
+
+/** API routes do not need the team roster on every tab fetch. */
+export const getCurrentAccountLite = cache(() => readCurrentAccount(false));
