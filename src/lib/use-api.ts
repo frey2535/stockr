@@ -1,42 +1,42 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { fetchApiJson, readApiCache, writeApiCache } from "./api-cache";
 import { WORKSPACE_PAGE_SIZE } from "./types";
 
 export function useApi<T>(url: string | null) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(Boolean(url));
+  const cached = url ? readApiCache<T>(url) : undefined;
+  const [live, setLive] = useState<T | null>(null);
   const [error, setError] = useState("");
   const [nonce, setNonce] = useState(0);
+  const [pending, setPending] = useState(Boolean(url) && cached === undefined);
 
   useEffect(() => {
     if (!url) {
       queueMicrotask(() => {
-        setData(null);
-        setLoading(false);
+        setLive(null);
+        setPending(false);
         setError("");
       });
       return;
     }
 
     let cancelled = false;
-    fetch(url)
-      .then(async (response) => {
-        const json = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+    if (readApiCache<T>(url) === undefined) {
+      queueMicrotask(() => setPending(true));
+    }
+
+    fetchApiJson<T>(url)
+      .then((json) => {
         if (cancelled) return;
-        if (!response.ok) {
-          setError(json && typeof json === "object" && "error" in json ? String(json.error) : "Could not load data.");
-          setLoading(false);
-          return;
-        }
-        setData(json as T);
+        setLive(json);
         setError("");
-        setLoading(false);
+        setPending(false);
       })
-      .catch(() => {
+      .catch((err: Error) => {
         if (cancelled) return;
-        setError("Could not load data.");
-        setLoading(false);
+        setError(err.message || "Could not load data.");
+        setPending(false);
       });
 
     return () => {
@@ -45,26 +45,31 @@ export function useApi<T>(url: string | null) {
   }, [url, nonce]);
 
   const reload = useCallback(() => {
-    setLoading(true);
+    setPending(true);
     setNonce((value) => value + 1);
   }, []);
 
-  return { data, loading, error, reload };
+  return {
+    data: cached ?? live,
+    loading: cached === undefined && pending,
+    error,
+    reload,
+  };
 }
 
 type Paged<R> = { rows: R[]; total: number };
 
 export function usePagedApi<T extends Paged<T["rows"][number]>>(baseUrl: string) {
   const [page, setPage] = useState({ url: baseUrl, offset: 0 });
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
+  const firstUrl = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}limit=${WORKSPACE_PAGE_SIZE}&offset=0`;
+  const cachedFirst = readApiCache<T>(firstUrl);
+  const [live, setLive] = useState<T | null>(null);
   const [error, setError] = useState("");
   const [nonce, setNonce] = useState(0);
+  const [pending, setPending] = useState(cachedFirst === undefined);
 
   if (page.url !== baseUrl) {
     setPage({ url: baseUrl, offset: 0 });
-    setLoading(true);
-    setData(null);
   }
 
   const offset = page.url === baseUrl ? page.offset : 0;
@@ -73,26 +78,27 @@ export function usePagedApi<T extends Paged<T["rows"][number]>>(baseUrl: string)
     const sep = baseUrl.includes("?") ? "&" : "?";
     const url = `${baseUrl}${sep}limit=${WORKSPACE_PAGE_SIZE}&offset=${offset}`;
     let cancelled = false;
-    fetch(url)
-      .then(async (response) => {
-        const json = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
+    if (offset === 0 && readApiCache<T>(url) === undefined) {
+      queueMicrotask(() => setPending(true));
+    }
+
+    fetchApiJson<T>(url)
+      .then((json) => {
         if (cancelled) return;
-        if (!response.ok || !json) {
-          setError(json && typeof json === "object" && "error" in json ? String(json.error) : "Could not load data.");
-          setLoading(false);
-          return;
-        }
-        setData((prev) => {
-          if (!prev || offset === 0) return json;
+        setLive((prev) => {
+          if (!prev || offset === 0) {
+            writeApiCache(url, json);
+            return json;
+          }
           return { ...json, rows: [...prev.rows, ...json.rows] };
         });
         setError("");
-        setLoading(false);
+        setPending(false);
       })
-      .catch(() => {
+      .catch((err: Error) => {
         if (cancelled) return;
-        setError("Could not load data.");
-        setLoading(false);
+        setError(err.message || "Could not load data.");
+        setPending(false);
       });
     return () => {
       cancelled = true;
@@ -100,19 +106,21 @@ export function usePagedApi<T extends Paged<T["rows"][number]>>(baseUrl: string)
   }, [baseUrl, offset, nonce]);
 
   const loadMore = useCallback(() => {
-    setLoading(true);
+    setPending(true);
     setPage((current) => ({ ...current, offset: current.offset + WORKSPACE_PAGE_SIZE }));
   }, []);
 
   const reload = useCallback(() => {
     setPage((current) => ({ ...current, offset: 0 }));
-    setLoading(true);
+    setPending(true);
     setNonce((value) => value + 1);
   }, []);
 
+  const data = offset === 0 ? (cachedFirst ?? live) : live;
+
   return {
     data,
-    loading,
+    loading: (offset === 0 ? cachedFirst === undefined : true) && pending,
     error,
     hasMore: Boolean(data && data.rows.length < data.total),
     loadMore,

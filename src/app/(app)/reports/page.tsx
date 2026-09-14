@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageBusy } from "@/components/page-busy";
 import { useApi } from "@/lib/use-api";
 import { downloadCsv } from "@/lib/inventory";
 import { money, qty } from "@/lib/format";
@@ -21,7 +22,7 @@ function daysAgo(n: number) {
 export default function ReportsPage() {
   const [from, setFrom] = useState(daysAgo(90));
   const [to, setTo] = useState(daysAgo(0));
-  const { data } = useApi<ReportsPayload>(`/api/reports?from=${from}&to=${to}`);
+  const { data, loading } = useApi<ReportsPayload>(`/api/reports?from=${from}&to=${to}`);
   const valuation = data?.valuation || [];
   const grand = data?.grand || 0;
   const usage = data?.usage || [];
@@ -48,6 +49,8 @@ export default function ReportsPage() {
           </div>
         }
       />
+
+      {loading && !data ? <PageBusy /> : null}
 
       <Card>
         <CardHeader className="pb-3">

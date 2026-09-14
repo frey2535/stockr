@@ -6,7 +6,11 @@ export { dataBackend, isSupabaseConfigured } from "./db-config";
 type Adapter = {
   getCompanyState: (companyId: string) => StoreState | Promise<StoreState>;
   setCompanyState: (companyId: string, state: StoreState) => void | Promise<void>;
-  getAccount: (userId: string, companyId: string) => Account | null | Promise<Account | null>;
+  getAccount: (
+    userId: string,
+    companyId: string,
+    options?: { members?: boolean },
+  ) => Account | null | Promise<Account | null>;
   createSession: (userId: string, companyId: string) => { id: string; expiresAt: string } | Promise<{ id: string; expiresAt: string }>;
   getSession: (id: string) => { id: string; user_id: string; company_id: string; expires_at: string } | null | Promise<{ id: string; user_id: string; company_id: string; expires_at: string } | null>;
   deleteSession: (id: string) => void | Promise<void>;
@@ -77,8 +81,8 @@ export async function setCompanyState(companyId: string, state: StoreState) {
   return (await loadAdapter()).setCompanyState(companyId, state);
 }
 
-export async function getAccount(userId: string, companyId: string) {
-  return (await loadAdapter()).getAccount(userId, companyId);
+export async function getAccount(userId: string, companyId: string, options?: { members?: boolean }) {
+  return (await loadAdapter()).getAccount(userId, companyId, options);
 }
 
 export async function createSession(userId: string, companyId: string) {

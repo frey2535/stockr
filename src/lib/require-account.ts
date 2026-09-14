@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentAccount } from "./auth";
+import { getCurrentAccountLite } from "./auth";
 
 export async function requireAccount() {
-  const account = await getCurrentAccount();
+  const account = await getCurrentAccountLite();
   if (!account) {
     return {
       account: null as null,

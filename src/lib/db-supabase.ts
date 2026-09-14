@@ -184,17 +184,24 @@ export async function listMembers(companyId: string): Promise<TeamMember[]> {
   });
 }
 
-export async function getAccount(userId: string, companyId: string): Promise<Account | null> {
-  const user = await getUserById(userId);
-  const company = await getCompany(companyId);
-  const { data: membership, error } = await getSupabaseAdmin()
-    .from("stockr_memberships")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("company_id", companyId)
-    .maybeSingle();
-  throwIfError(error, "Look up membership");
-  if (!user || !company || !membership) return null;
+export async function getAccount(
+  userId: string,
+  companyId: string,
+  options?: { members?: boolean },
+): Promise<Account | null> {
+  const supabase = getSupabaseAdmin();
+  const [user, company, membershipRes] = await Promise.all([
+    getUserById(userId),
+    getCompany(companyId),
+    supabase
+      .from("stockr_memberships")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("company_id", companyId)
+      .maybeSingle(),
+  ]);
+  throwIfError(membershipRes.error, "Look up membership");
+  if (!user || !company || !membershipRes.data) return null;
   return {
     user: { id: user.id, email: user.email, name: user.name },
     company: {
@@ -204,8 +211,8 @@ export async function getAccount(userId: string, companyId: string): Promise<Acc
       plan: company.plan,
       planStatus: company.plan_status,
     },
-    role: membership.role as MemberRole,
-    members: await listMembers(companyId),
+    role: membershipRes.data.role as MemberRole,
+    members: options?.members === false ? [] : await listMembers(companyId),
     dataBackend: "supabase",
     platformOwner: isPlatformOwner(user.email),
   };
@@ -416,25 +423,25 @@ export async function seedDemoTenant() {
 
 export async function ensurePlatformOwner() {
   const email = platformOwnerEmail();
-  const passwordHash = bcrypt.hashSync(platformOwnerPassword(), 10);
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
   let user = await getUserByEmail(email);
+  const resetPassword = Boolean(process.env.PLATFORM_OWNER_PASSWORD?.trim());
   if (!user) {
     const insert = await supabase.from("stockr_users").insert({
       id: PLATFORM_OWNER_USER_ID,
       email,
       name: PLATFORM_OWNER_NAME,
-      password_hash: passwordHash,
+      password_hash: bcrypt.hashSync(platformOwnerPassword(), 10),
       created_at: now,
     });
     throwIfError(insert.error, "Create platform owner");
     user = await getUserByEmail(email);
-  } else {
+  } else if (resetPassword) {
     const update = await supabase
       .from("stockr_users")
-      .update({ password_hash: passwordHash, name: user.name || PLATFORM_OWNER_NAME })
+      .update({ password_hash: bcrypt.hashSync(platformOwnerPassword(), 10) })
       .eq("id", user.id);
     throwIfError(update.error, "Reset platform owner password");
   }

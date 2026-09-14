@@ -137,7 +137,11 @@ export function listMembers(companyId: string): TeamMember[] {
   return plain(rows);
 }
 
-export function getAccount(userId: string, companyId: string): Account | null {
+export function getAccount(
+  userId: string,
+  companyId: string,
+  options?: { members?: boolean },
+): Account | null {
   const user = getUserById(userId);
   const company = getCompany(companyId);
   const membership = db
@@ -154,7 +158,7 @@ export function getAccount(userId: string, companyId: string): Account | null {
       planStatus: company.plan_status,
     },
     role: membership.role,
-    members: listMembers(companyId),
+    members: options?.members === false ? [] : listMembers(companyId),
     dataBackend: "sqlite",
     platformOwner: isPlatformOwner(user.email),
   });
@@ -333,16 +337,25 @@ export function seedDemoTenant() {
 
 export function ensurePlatformOwner() {
   const email = platformOwnerEmail();
-  const passwordHash = bcrypt.hashSync(platformOwnerPassword(), 10);
   const now = new Date().toISOString();
   let user = getUserByEmail(email);
+  const resetPassword = Boolean(process.env.PLATFORM_OWNER_PASSWORD?.trim());
   if (!user) {
     db.prepare(
       "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-    ).run(PLATFORM_OWNER_USER_ID, email, PLATFORM_OWNER_NAME, passwordHash, now);
+    ).run(
+      PLATFORM_OWNER_USER_ID,
+      email,
+      PLATFORM_OWNER_NAME,
+      bcrypt.hashSync(platformOwnerPassword(), 10),
+      now,
+    );
     user = getUserByEmail(email);
-  } else {
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, user.id);
+  } else if (resetPassword) {
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(
+      bcrypt.hashSync(platformOwnerPassword(), 10),
+      user.id,
+    );
   }
   if (!user) throw new Error("Create platform owner: user missing after insert");
 
