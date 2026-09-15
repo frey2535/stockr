@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { createEmptyState, createSeedState, normalizeStoreState } from "./seed";
+import { encodeToolsForPersist, toolsFromProjects } from "./tools-state";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
@@ -137,7 +138,11 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
     purchaseOrders,
     accessCodes: (codesRes.data || []) as AccessCode[],
     projects: (projectsRes.data || []) as Project[],
-    tools: toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]),
+    tools: toolsRes.error
+      ? toolsFromProjects((projectsRes.data || []) as Project[], [])
+      : ((toolsRes.data || []) as Tool[]).length
+        ? ((toolsRes.data || []) as Tool[])
+        : toolsFromProjects((projectsRes.data || []) as Project[], []),
   });
 }
 
@@ -164,13 +169,13 @@ async function saveTools(companyId: string, tools: Tool[]) {
 
 export async function setCompanyState(companyId: string, state: StoreState) {
   const supabase = getSupabaseAdmin();
-  const next = normalizeStoreState(state);
+  const next = encodeToolsForPersist(normalizeStoreState(state));
   const { error } = await supabase.rpc("stockr_replace_company_state", {
     p_company_id: companyId,
     p_state: next,
   });
   throwIfError(error, "Save company workspace");
-  await saveTools(companyId, next.tools);
+  await saveTools(companyId, normalizeStoreState(state).tools);
 }
 
 export async function getUserByEmail(email: string) {

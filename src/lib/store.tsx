@@ -178,9 +178,26 @@ export function StoreProvider({
         if (!result.ok || !result.created || !("assigned_location_id" in result.created)) {
           return { ok: false, error: result.error || "Could not save tool." };
         }
-        return { ok: true, tool: result.created };
+        const saved = result.created;
+        setWorkspace((prev) => {
+          const current = prev.tools || [];
+          const next = current.some((row) => row.id === saved.id)
+            ? current.map((row) => (row.id === saved.id ? saved : row))
+            : [...current, saved];
+          return { ...prev, tools: next, counts: { ...prev.counts, tools: next.length } };
+        });
+        return { ok: true, tool: saved };
       },
-      deleteTool: (id) => send({ type: "deleteTool", id }),
+      deleteTool: async (id) => {
+        const result = await send({ type: "deleteTool", id });
+        if (result.ok) {
+          setWorkspace((prev) => {
+            const next = (prev.tools || []).filter((row) => row.id !== id);
+            return { ...prev, tools: next, counts: { ...prev.counts, tools: next.length } };
+          });
+        }
+        return result;
+      },
       replaceProjects: (projects) => send({ type: "replaceProjects", projects }),
       createAccessCode: async ({ label, type, days }) => {
         const result = await send({ type: "createAccessCode", label, codeType: type, days });
