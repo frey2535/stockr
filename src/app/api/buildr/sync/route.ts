@@ -22,6 +22,15 @@ export async function POST() {
 
   const remote = await fetchBuildrProjects(companyId);
   if (!remote.projects.length) {
+    if (prev.projects.length) {
+      return NextResponse.json({
+        ok: true,
+        source: "existing",
+        count: prev.projects.length,
+        warning: remote.error || "Buildr was unreachable; kept the projects already on this workspace.",
+        workspace: await getWorkspaceShell(account.company.id),
+      });
+    }
     return NextResponse.json(
       {
         error: remote.error || "Buildr did not return any projects.",

@@ -39,7 +39,10 @@ export default function SettingsPage() {
       const data = (await response.json().catch(() => null)) as { error?: string; count?: number } | null;
       if (response.ok) {
         await refreshWorkspace();
-        toast.success(`Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`);
+        const extra = (data as { warning?: string })?.warning;
+        toast.success(
+          extra || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`,
+        );
       } else if (data?.error) {
         toast.error(data.error);
       }
@@ -280,13 +283,16 @@ export default function SettingsPage() {
                 const data = (await response.json().catch(() => null)) as {
                   error?: string;
                   count?: number;
+                  warning?: string;
                 } | null;
                 if (!response.ok) {
                   toast.error(data?.error || "Could not sync Buildr projects.");
                   return;
                 }
                 await refreshWorkspace();
-                toast.success(`Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`);
+                toast.success(
+                  data?.warning || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`,
+                );
               }}
             >
               Sync Buildr projects
