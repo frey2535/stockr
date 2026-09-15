@@ -42,6 +42,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           PLATFORM_OWNER_PASSWORD: ${{ secrets.PLATFORM_OWNER_PASSWORD }}
+          BUILDR_API_URL: ${{ secrets.BUILDR_API_URL }}
+          BUILDR_API_KEY: ${{ secrets.BUILDR_API_KEY }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
             echo "Add GitHub secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (same as The Truth)."
@@ -61,6 +63,10 @@ jobs:
           printf '%s' "1" | npx wrangler pages secret put OPEN_NEXT_CLOUDFLARE --project-name=stockr
           if [ -n "${PLATFORM_OWNER_PASSWORD:-}" ]; then
             put_secret PLATFORM_OWNER_PASSWORD "$PLATFORM_OWNER_PASSWORD"
+          fi
+          printf '%s' "${BUILDR_API_URL:-https://buildrpm.com}" | npx wrangler pages secret put BUILDR_API_URL --project-name=stockr
+          if [ -n "${BUILDR_API_KEY:-}" ]; then
+            put_secret BUILDR_API_KEY "$BUILDR_API_KEY"
           fi
       - name: Deploy to Cloudflare Pages
         env:

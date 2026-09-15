@@ -35,18 +35,28 @@ export default function SettingsPage() {
     setOverrides({});
     toast.success("Branding saved");
     if (draft.buildr_linked && draft.buildr_company_id.trim()) {
-      const response = await fetch("/api/buildr/sync", { method: "POST" });
-      const data = (await response.json().catch(() => null)) as { error?: string; count?: number } | null;
-      if (response.ok) {
-        await refreshWorkspace();
-        const extra = (data as { warning?: string })?.warning;
-        toast.success(
-          extra || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`,
-        );
-      } else if (data?.error) {
-        toast.error(data.error);
-      }
+      await syncBuildrProjects();
     }
+  };
+
+  const syncBuildrProjects = async () => {
+    const response = await fetch("/api/buildr/sync", { method: "POST" });
+    const data = (await response.json().catch(() => null)) as {
+      error?: string;
+      count?: number;
+      warning?: string;
+    } | null;
+    if (!response.ok) {
+      toast.error(
+        data?.error ||
+          (response.status === 530
+            ? "Buildr DNS failed (530). Sync now targets buildrpm.com."
+            : "Could not sync Buildr projects."),
+      );
+      return;
+    }
+    await refreshWorkspace();
+    toast.success(data?.warning || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`);
   };
 
   const onLogo = (file: File | undefined) => {
@@ -244,7 +254,7 @@ export default function SettingsPage() {
             <div>
               <p className="font-medium">Link to Buildr App</p>
               <p className="text-sm text-muted-foreground">
-                Store a Buildr company ID with this workspace
+                Pull jobs from Buildr (buildrpm.com) into the Use-material project list
               </p>
             </div>
             <Switch
@@ -258,10 +268,10 @@ export default function SettingsPage() {
               <Input
                 value={draft.buildr_company_id}
                 onChange={(event) => patchDraft({ buildr_company_id: event.target.value })}
-                placeholder="Find your Company ID in Buildr → Settings → Integrations"
+                placeholder="Company ID from Buildr → Settings"
               />
               <p className="text-xs text-muted-foreground">
-                Saving this ID syncs Buildr projects into the Use-material project dropdown.
+                Sync talks to https://buildrpm.com/projects. Production also needs a BUILDR_API_KEY secret.
               </p>
             </div>
           ) : null}
@@ -279,20 +289,7 @@ export default function SettingsPage() {
                   return;
                 }
                 setOverrides({});
-                const response = await fetch("/api/buildr/sync", { method: "POST" });
-                const data = (await response.json().catch(() => null)) as {
-                  error?: string;
-                  count?: number;
-                  warning?: string;
-                } | null;
-                if (!response.ok) {
-                  toast.error(data?.error || "Could not sync Buildr projects.");
-                  return;
-                }
-                await refreshWorkspace();
-                toast.success(
-                  data?.warning || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`,
-                );
+                await syncBuildrProjects();
               }}
             >
               Sync Buildr projects
