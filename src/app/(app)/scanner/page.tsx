@@ -39,22 +39,18 @@ type Detector = {
 export default function ScannerPage() {
   const { workspace, applyAction, upsertMaterial } = useStore();
   const { locations, projects } = workspace;
-  const prefs = readScannerPrefs();
   const defaultVan =
-    prefs.fromId ||
-    locations.find((row) => row.type === "vehicle")?.id ||
-    locations[0]?.id ||
-    "";
+    locations.find((row) => row.type === "vehicle")?.id || locations[0]?.id || "";
   const [mode, setMode] = useState<"manual" | "camera">("manual");
   const [barcode, setBarcode] = useState("");
   const [cameraError, setCameraError] = useState("");
   const [selected, setSelected] = useState<Material | null>(null);
   const [unknownCode, setUnknownCode] = useState("");
-  const [actionType, setActionType] = useState<TxType>(prefs.actionType || "use");
+  const [actionType, setActionType] = useState<TxType>("use");
   const [quantity, setQuantity] = useState("1");
   const [fromId, setFromId] = useState(defaultVan);
-  const [toId, setToId] = useState(prefs.toId || locations[0]?.id || "");
-  const [project, setProject] = useState(prefs.project || "");
+  const [toId, setToId] = useState(locations[0]?.id || "");
+  const [project, setProject] = useState("");
   const [smart, setSmart] = useState("");
   const [parsedPreview, setParsedPreview] = useState<ReturnType<typeof parseInventoryEnglish> | null>(null);
   const [onHandByLocation, setOnHandByLocation] = useState<Record<string, number>>({});
@@ -98,6 +94,16 @@ export default function ScannerPage() {
       setUnknownCode(trimmed);
     }
   };
+
+  useEffect(() => {
+    const prefs = readScannerPrefs();
+    queueMicrotask(() => {
+      if (prefs.actionType) setActionType(prefs.actionType);
+      if (prefs.fromId) setFromId(prefs.fromId);
+      if (prefs.toId) setToId(prefs.toId);
+      if (prefs.project) setProject(prefs.project);
+    });
+  }, []);
 
   useEffect(() => {
     const syncOnline = () => setOnline(navigator.onLine);
