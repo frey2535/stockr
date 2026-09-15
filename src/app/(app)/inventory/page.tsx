@@ -44,6 +44,11 @@ function InventoryPageInner() {
   const [toId, setToId] = useState("");
   const [project, setProject] = useState("");
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkAction, setBulkAction] = useState<TxType>("add");
+  const openBulk = (type: TxType) => {
+    setBulkAction(type);
+    setBulkOpen(true);
+  };
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (locationId !== "all") params.set("location", locationId);
@@ -79,17 +84,31 @@ function InventoryPageInner() {
         title="Inventory"
         description="All materials across all locations"
         actions={
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setBulkOpen(true)}>
-              Bulk operations
-            </Button>
-            {settings.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-            ) : null}
-          </div>
+          settings.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
+          ) : null
         }
       />
+
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <p className="text-sm font-medium">Bulk add, transfer, use, adjust, or shrink</p>
+          <div className="flex flex-wrap gap-2">
+            {([
+              ["add", "Add"],
+              ["transfer", "Transfer"],
+              ["use", "Use"],
+              ["adjust", "Adjust"],
+              ["shrink", "Shrink"],
+            ] as const).map(([type, label]) => (
+              <Button key={type} variant="outline" onClick={() => openBulk(type)}>
+                Bulk {label}
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex flex-col gap-3">
         <div className="relative">
@@ -260,9 +279,11 @@ function InventoryPageInner() {
         </DialogContent>
       </Dialog>
       <BulkInventoryDialog
+        key={bulkAction}
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         materials={rows.map((row) => row.material)}
+        initialAction={bulkAction}
         onDone={reload}
       />
     </div>

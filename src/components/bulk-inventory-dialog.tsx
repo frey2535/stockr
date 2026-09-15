@@ -30,17 +30,19 @@ export function BulkInventoryDialog({
   onOpenChange,
   materials,
   onDone,
+  initialAction = "add",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   materials: Material[];
   onDone?: () => Promise<void> | void;
+  initialAction?: TxType;
 }) {
   const { workspace, applyBulkActions, upsertMaterial } = useStore();
   const { locations, projects } = workspace;
   const [fetched, setFetched] = useState<Material[]>([]);
   const catalog = fetched.length ? fetched : materials;
-  const [actionType, setActionType] = useState<TxType>("add");
+  const [actionType, setActionType] = useState<TxType>(initialAction);
   const [fromId, setFromId] = useState(locations[0]?.id || "");
   const [toId, setToId] = useState(locations[0]?.id || "");
   const [project, setProject] = useState("");
@@ -91,7 +93,9 @@ export function BulkInventoryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Bulk inventory</DialogTitle>
+          <DialogTitle>
+            Bulk {actionType === "shrink" ? "shrinkage" : actionType}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">

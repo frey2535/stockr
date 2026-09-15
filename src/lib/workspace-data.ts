@@ -17,6 +17,7 @@ import type {
   WorkspaceShell,
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
+import { projectsWithoutToolsBlob, toolsFromProjects } from "./tools-state";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
@@ -118,19 +119,23 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
     buildr_company_id: company.buildr_company_id,
   };
 
+  const rawProjects = (projectsRes.data || []) as Project[];
+  const tableTools = toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]);
+  const tools = tableTools.length ? tableTools : toolsFromProjects(rawProjects);
+
   return {
     settings,
     locations: (locationsRes.data || []) as Location[],
-    projects: (projectsRes.data || []) as Project[],
+    projects: projectsWithoutToolsBlob(rawProjects),
     accessCodes: (codesRes.data || []) as AccessCode[],
-    tools: toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]),
+    tools,
     counts: {
       locations: (locationsRes.data || []).length,
       materials: materials.count || 0,
       inventoryRows: inventory.count || 0,
       transactions: transactions.count || 0,
       purchaseOrders: purchaseOrders.count || 0,
-      tools: toolsRes.error ? 0 : (toolsRes.data || []).length,
+      tools: tools.length,
     },
   };
 }
