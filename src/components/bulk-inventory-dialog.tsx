@@ -187,7 +187,7 @@ export function BulkInventoryDialog({
             </div>
           ))}
           <Button
-            className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
+            className="w-full"
             onClick={commit}
             disabled={busy}
           >

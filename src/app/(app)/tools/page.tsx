@@ -147,9 +147,9 @@ export default function ToolsPage() {
       <PageHeader
         title="Tools"
         description="Every warehouse, vehicle, and assigned employee with the tools on that assignment"
-        icon={<Wrench className="size-7 text-secondary" />}
+        icon={<Wrench className="size-7 text-primary" />}
         actions={
-          <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={() => startAdd()}>
+          <Button onClick={() => startAdd()}>
             <Plus className="mr-2 size-4" />
             Add tool
           </Button>
@@ -185,9 +185,9 @@ export default function ToolsPage() {
                 <div>
                   <CardTitle className="flex items-center gap-2 text-base">
                     {location.type === "vehicle" ? (
-                      <Truck className="size-4 text-secondary" />
+                      <Truck className="size-4 text-primary" />
                     ) : (
-                      <Warehouse className="size-4 text-secondary" />
+                      <Warehouse className="size-4 text-primary" />
                     )}
                     {location.name}
                   </CardTitle>
@@ -317,7 +317,7 @@ export default function ToolsPage() {
                   </Select>
                 </div>
               </div>
-              <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={save}>
+              <Button className="w-full" onClick={save}>
                 Save tool
               </Button>
             </div>

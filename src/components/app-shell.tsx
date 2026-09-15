@@ -22,6 +22,8 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { BrandMark } from "@/components/brand-mark";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
@@ -50,43 +52,6 @@ const MOBILE_NAV = [
   { href: "/activity", label: "Activity", icon: ClipboardList },
 ];
 
-const SIDEBAR = "#0d1117";
-const ACTIVE = "#2563eb";
-const ORANGE = "#f97316";
-
-function Brand({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className="flex items-center gap-2">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/logo.png"
-        alt="Stockr"
-        width={compact ? 28 : 36}
-        height={compact ? 28 : 36}
-        className="rounded-md object-cover"
-        style={{ width: compact ? 28 : 36, height: compact ? 28 : 36 }}
-      />
-      <div>
-        <div
-          style={{
-            fontWeight: 800,
-            fontSize: compact ? 15 : 16,
-            color: "#fff",
-            letterSpacing: 1,
-          }}
-        >
-          STOCK<span style={{ color: ORANGE }}>R</span>
-        </div>
-        {!compact ? (
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-            Inventory Mgmt
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function NavLink({
   href,
   label,
@@ -106,18 +71,12 @@ function NavLink({
       onClick={onClick}
       onPointerEnter={() => prefetchTab(href)}
       onFocus={() => prefetchTab(href)}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "10px 12px",
-        borderRadius: 8,
-        fontSize: 14,
-        fontWeight: 500,
-        color: active ? "#fff" : "rgba(255,255,255,0.65)",
-        background: active ? ACTIVE : "transparent",
-        textDecoration: "none",
-      }}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+        active
+          ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
     >
       <Icon className="size-4 shrink-0" />
       {label}
@@ -144,15 +103,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background">
-      <aside
-        className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col lg:flex"
-        style={{
-          background: SIDEBAR,
-          borderRight: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <div className="flex items-center gap-3 px-5 py-5">
-          <Brand />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
+        <div className="flex items-center justify-between gap-3 px-5 py-5">
+          <BrandMark />
+          <ThemeToggle />
         </div>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {nav.map((item) => (
@@ -163,19 +117,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             />
           ))}
         </nav>
-        <div
-          className="space-y-2 px-3 py-3"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
-        >
+        <div className="space-y-2 border-t border-sidebar-border px-3 py-3">
           {account ? (
             <div className="px-3 py-1">
-              <p className="truncate text-xs font-medium text-white">{account.company.name}</p>
-              <p className="truncate text-[11px] text-white/45">{account.user.email}</p>
+              <p className="truncate text-xs font-medium text-foreground">{account.company.name}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{account.user.email}</p>
               {plan ? (
                 <Link
                   href="/billing"
-                  className="mt-2 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                  style={{ background: ORANGE, color: "#fff" }}
+                  className="mt-2 inline-flex rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold tracking-wide text-brand-foreground uppercase"
                 >
                   {plan.name}
                 </Link>
@@ -186,8 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={signOut}
             disabled={signingOut}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm"
-            style={{ color: "rgba(255,255,255,0.65)" }}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <LogOut className="size-4" />
             {signingOut ? "Signing out…" : "Sign out"}
@@ -195,17 +144,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div
-        className="fixed top-0 right-0 left-0 z-40 flex h-14 items-center justify-between px-4 shadow-lg lg:hidden"
-        style={{ background: SIDEBAR }}
-      >
-        <Brand compact />
+      <div className="fixed top-0 right-0 left-0 z-40 flex h-14 items-center justify-between border-b border-border/60 bg-background/80 px-4 shadow-sm backdrop-blur-xl lg:hidden">
+        <BrandMark compact />
         <div className="flex items-center gap-1">
+          <ThemeToggle />
           <button
             type="button"
             onClick={() => setMoreOpen((open) => !open)}
-            className="p-1.5"
-            style={{ color: moreOpen || moreActive ? "#fff" : "rgba(255,255,255,0.6)" }}
+            className={cn(
+              "rounded-full p-1.5",
+              moreOpen || moreActive ? "text-primary" : "text-muted-foreground",
+            )}
             aria-expanded={moreOpen}
             aria-label={moreOpen ? "Close menu" : "Open menu"}
           >
@@ -215,8 +164,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={signOut}
             disabled={signingOut}
-            className="p-1.5"
-            style={{ color: "rgba(255,255,255,0.6)" }}
+            className="rounded-full p-1.5 text-muted-foreground"
             aria-label="Sign out"
           >
             <LogOut className="size-[18px]" />
@@ -228,18 +176,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="fixed inset-0 z-30 lg:hidden">
           <button
             type="button"
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-foreground/20"
             aria-label="Close menu"
             onClick={() => setMoreOpen(false)}
           />
           <div
-            className="absolute right-0 bottom-0 left-0 rounded-t-2xl px-3 pt-3"
+            className="absolute right-0 bottom-0 left-0 rounded-t-2xl border-t border-border bg-background px-3 pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.12)]"
             style={{
-              background: SIDEBAR,
               paddingBottom: "calc(4.5rem + env(safe-area-inset-bottom))",
             }}
           >
-            <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-white/40 uppercase">
+            <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
               More
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -252,11 +199,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     href={item.href}
                     onClick={() => setMoreOpen(false)}
                     onPointerEnter={() => prefetchTab(item.href)}
-                    className="flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-medium"
-                    style={{
-                      color: active ? "#fff" : "rgba(255,255,255,0.75)",
-                      background: active ? ACTIVE : "rgba(255,255,255,0.06)",
-                    }}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition-all",
+                      active
+                        ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                        : "bg-muted text-muted-foreground",
+                    )}
                   >
                     <Icon className="size-4 shrink-0" />
                     {item.label}
@@ -269,10 +217,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
 
       <nav
-        className="fixed right-0 bottom-0 left-0 z-40 flex lg:hidden"
+        className="fixed right-0 bottom-0 left-0 z-40 flex border-t border-border/60 bg-background/90 shadow-[0_-4px_24px_rgba(0,0,0,0.08)] backdrop-blur-xl lg:hidden"
         style={{
-          background: SIDEBAR,
-          borderTop: "1px solid rgba(255,255,255,0.1)",
           paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
@@ -285,10 +231,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               href={item.href}
               onClick={() => setMoreOpen(false)}
               onPointerEnter={() => prefetchTab(item.href)}
-              className="flex flex-1 flex-col items-center gap-1 py-2 text-[11px]"
-              style={{ color: active ? "#fff" : "rgba(255,255,255,0.55)" }}
+              className={cn(
+                "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-semibold",
+                active ? "text-primary" : "text-muted-foreground",
+              )}
             >
-              <Icon className="size-4" />
+              <div
+                className={cn(
+                  "flex h-6 w-10 items-center justify-center rounded-full transition-all",
+                  active && "bg-primary/15",
+                )}
+              >
+                <Icon className={cn("size-4", active && "scale-110")} />
+              </div>
               {item.label}
             </Link>
           );
@@ -296,11 +251,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setMoreOpen((open) => !open)}
-          className="flex flex-1 flex-col items-center gap-1 py-2 text-[11px]"
-          style={{ color: moreOpen || moreActive ? "#fff" : "rgba(255,255,255,0.55)" }}
+          className={cn(
+            "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-semibold",
+            moreOpen || moreActive ? "text-primary" : "text-muted-foreground",
+          )}
           aria-expanded={moreOpen}
         >
-          <Menu className="size-4" />
+          <div
+            className={cn(
+              "flex h-6 w-10 items-center justify-center rounded-full",
+              (moreOpen || moreActive) && "bg-primary/15",
+            )}
+          >
+            <Menu className="size-4" />
+          </div>
           More
         </button>
       </nav>

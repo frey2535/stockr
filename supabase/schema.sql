@@ -16,7 +16,7 @@ create table if not exists stockr_companies (
   plan text not null,
   plan_status text not null,
   logo_url text not null default '/logo.png',
-  primary_color text not null default '#12203a',
+  primary_color text not null default '#2563eb',
   accent_color text not null default '#f97316',
   buildr_linked boolean not null default false,
   buildr_company_id text not null default '',

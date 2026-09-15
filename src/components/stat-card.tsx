@@ -23,7 +23,7 @@ export function StatCard({
           <p
             className={cn(
               "mt-1 text-2xl font-bold tracking-tight",
-              accent && "text-secondary",
+              accent && "text-primary",
             )}
           >
             {value}
@@ -36,7 +36,7 @@ export function StatCard({
           <div
             className={cn(
               "flex size-9 items-center justify-center rounded-lg",
-              accent ? "bg-secondary/10 text-secondary" : "bg-primary/10 text-primary",
+              "bg-primary/10 text-primary",
             )}
           >
             {icon}

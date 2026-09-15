@@ -82,7 +82,7 @@ export function BulkMaterialImport({
         </p>
       </div>
       {unknown ? (
-        <div className="space-y-2 rounded-lg border border-secondary/40 p-3">
+        <div className="space-y-2 rounded-lg border border-primary/40 p-3">
           <p className="text-sm font-medium">Not in catalog: {unknown.barcode}</p>
           <Input
             value={unknown.name}
@@ -91,7 +91,7 @@ export function BulkMaterialImport({
           />
           <Button
             type="button"
-            className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
+            className="w-full"
             onClick={async () => {
               const created = await onCreate({
                 name: unknown.name.trim() || `Unknown Product - ${unknown.barcode}`,

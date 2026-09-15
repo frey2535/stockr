@@ -26,7 +26,7 @@ export function OpenCompanyButton({ companyId }: { companyId: string }) {
   };
 
   return (
-    <Button size="sm" onClick={open} disabled={busy} className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+    <Button size="sm" onClick={open} disabled={busy}>
       {busy ? "Opening…" : "Open"}
     </Button>
   );

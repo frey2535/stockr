@@ -299,7 +299,7 @@ export default function ScannerPage() {
       <PageHeader
         title="Scanner"
         description="Scan → charge the job → van qty updates. Restock from the dashboard when a truck drops below min."
-        icon={<ScanLine className="size-8 text-secondary" />}
+        icon={<ScanLine className="size-8 text-primary" />}
       />
 
       {!online || queued > 0 ? (
@@ -372,7 +372,7 @@ export default function ScannerPage() {
                 </Button>
                 <Button
                   type="submit"
-                  className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/90"
+                  className="flex-1"
                   disabled={!barcode.trim()}
                 >
                   Look Up
@@ -384,7 +384,7 @@ export default function ScannerPage() {
       </Card>
 
       {unknownCode ? (
-        <Card className="border-secondary/40">
+        <Card className="border-primary/40">
           <CardHeader>
             <CardTitle className="text-base">Unknown barcode {unknownCode}</CardTitle>
           </CardHeader>
@@ -392,7 +392,7 @@ export default function ScannerPage() {
             <p className="text-sm text-muted-foreground">
               This code is not in the catalog yet. Create a material so you can receive it now.
             </p>
-            <Button onClick={createUnknown} className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+            <Button onClick={createUnknown}>
               Create material
             </Button>
           </CardContent>
@@ -521,7 +521,7 @@ export default function ScannerPage() {
               <Button variant="outline" className="flex-1" onClick={() => setSelected(null)}>
                 Cancel
               </Button>
-              <Button className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={commitScan}>
+              <Button className="flex-1" onClick={commitScan}>
                 Commit
               </Button>
             </div>

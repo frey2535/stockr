@@ -114,7 +114,6 @@ export default function CatalogPage() {
             </Button>
             <Button
               size="sm"
-              className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
               onClick={() => setEditing({ ...emptyMaterial })}
             >
               <Plus className="mr-2 size-4" />
@@ -369,7 +368,7 @@ export default function CatalogPage() {
                   />
                 </div>
               </div>
-              <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={save}>
+              <Button className="w-full" onClick={save}>
                 Save Material
               </Button>
             </div>

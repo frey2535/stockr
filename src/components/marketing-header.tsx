@@ -1,41 +1,40 @@
 "use client";
 
 import Link from "next/link";
+import { BrandMark } from "@/components/brand-mark";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 
 export function MarketingHeader({ signedIn = false }: { signedIn?: boolean }) {
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0d1117]/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-        <Link href="/" className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="Stockr" className="size-8 rounded-md object-cover" />
-          <span className="text-base font-extrabold tracking-wide text-white">
-            STOCK<span className="text-[#f97316]">R</span>
-          </span>
+        <Link href="/">
+          <BrandMark compact subtitle="" />
         </Link>
-        <nav className="hidden items-center gap-6 text-sm text-white/70 md:flex">
-          <Link href="/#product" className="hover:text-white">
+        <nav className="hidden items-center gap-6 text-sm font-medium text-muted-foreground md:flex">
+          <Link href="/#product" className="hover:text-foreground">
             Product
           </Link>
-          <Link href="/#pricing" className="hover:text-white">
+          <Link href="/#pricing" className="hover:text-foreground">
             Pricing
           </Link>
-          <Link href="/download" className="hover:text-white">
+          <Link href="/download" className="hover:text-foreground">
             Get the app
           </Link>
         </nav>
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           {signedIn ? (
-            <Button asChild className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+            <Button asChild>
               <Link href="/dashboard">Open app</Link>
             </Button>
           ) : (
             <>
-              <Button asChild variant="ghost" className="text-white hover:bg-white/10 hover:text-white">
+              <Button asChild variant="ghost">
                 <Link href="/login">Sign in</Link>
               </Button>
-              <Button asChild className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+              <Button asChild>
                 <Link href="/signup">Start free</Link>
               </Button>
             </>

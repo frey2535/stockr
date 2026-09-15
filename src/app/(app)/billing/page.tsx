@@ -152,7 +152,7 @@ function BillingPageInner() {
       <PageHeader
         title="Billing"
         description="Pay on the web with Stripe, or use Google Play Billing in the Android app"
-        icon={<CreditCard className="size-8 text-secondary" />}
+        icon={<CreditCard className="size-8 text-primary" />}
       />
 
       <Card>
@@ -192,7 +192,7 @@ function BillingPageInner() {
                 <ul className="space-y-2 text-sm">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex gap-2">
-                      <Check className="mt-0.5 size-4 shrink-0 text-secondary" />
+                      <Check className="mt-0.5 size-4 shrink-0 text-primary" />
                       {feature}
                     </li>
                   ))}

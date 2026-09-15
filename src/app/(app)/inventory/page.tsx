@@ -201,11 +201,7 @@ function InventoryPageInner() {
                           key={type}
                           size="sm"
                           variant={type === "adjust" ? "default" : "outline"}
-                          className={
-                            type === "adjust"
-                              ? "bg-secondary text-secondary-foreground hover:bg-secondary/90 capitalize"
-                              : "capitalize"
-                          }
+                          className="capitalize"
                           onClick={() => {
                             setActive(row.material.id);
                             setActionType(type);
@@ -303,7 +299,7 @@ function InventoryPageInner() {
                 <ProjectSelect projects={projects} value={project} allowNone={false} onChange={setProject} />
               </div>
             ) : null}
-            <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={commit}>
+            <Button className="w-full" onClick={commit}>
               Save
             </Button>
             <div className="space-y-2 rounded-lg border p-3">

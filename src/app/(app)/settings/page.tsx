@@ -77,7 +77,7 @@ export default function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Company branding, team, and invite codes"
-        icon={<Settings className="size-8 text-secondary" />}
+        icon={<Settings className="size-8 text-primary" />}
         actions={
           draft.logo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -111,7 +111,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Users className="size-5 text-secondary" />
+            <Users className="size-5 text-primary" />
             Team
           </CardTitle>
         </CardHeader>
@@ -139,7 +139,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ImagePlus className="size-5 text-secondary" />
+            <ImagePlus className="size-5 text-primary" />
             Company Branding
           </CardTitle>
         </CardHeader>
@@ -236,7 +236,7 @@ export default function SettingsPage() {
               </span>
             </div>
           </div>
-          <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={saveBranding}>
+          <Button className="w-full" onClick={saveBranding}>
             Save Branding
           </Button>
         </CardContent>
@@ -245,7 +245,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Link2 className="size-5 text-secondary" />
+            <Link2 className="size-5 text-primary" />
             Buildr Integration
           </CardTitle>
         </CardHeader>
@@ -301,7 +301,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield className="size-5 text-secondary" />
+            <Shield className="size-5 text-primary" />
             Invite codes
           </CardTitle>
         </CardHeader>
@@ -331,7 +331,7 @@ export default function SettingsPage() {
               </Button>
             </div>
             <Button
-              className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90"
+              className="w-full"
               onClick={async () => {
                 if (!label.trim()) {
                   toast.error("Add a label first.");
