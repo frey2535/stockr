@@ -58,11 +58,18 @@ create table if not exists stockr_materials (
   unit text not null,
   unit_cost numeric,
   barcode text,
+  mpn text,
+  upc text,
+  supplier_number text,
   reorder_point numeric,
   min_stock_level numeric,
   image_url text,
   aliases jsonb not null default '[]'::jsonb
 );
+
+alter table stockr_materials add column if not exists mpn text;
+alter table stockr_materials add column if not exists upc text;
+alter table stockr_materials add column if not exists supplier_number text;
 
 create table if not exists stockr_inventory (
   id text primary key,

@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
+import { needsFrom, needsProject, needsTo } from "@/lib/tx";
 import type { InventoryAction, Material, TxType } from "@/lib/types";
 
 type Line = { material: Material; quantity: number };
@@ -68,13 +69,17 @@ export function BulkInventoryDialog({
       toast.error("Add at least one material.");
       return;
     }
+    if (needsProject(actionType) && !project.trim()) {
+      toast.error("Pick the job this material belongs to.");
+      return;
+    }
     const actions: InventoryAction[] = lines.map((line) => ({
       type: actionType,
       materialId: line.material.id,
       quantity: line.quantity,
-      fromLocationId: actionType === "add" ? null : fromId,
-      toLocationId: actionType === "use" || actionType === "shrink" ? null : toId,
-      project: actionType === "use" ? project : null,
+      fromLocationId: needsFrom(actionType) ? fromId : null,
+      toLocationId: needsTo(actionType) ? toId : null,
+      project: needsProject(actionType) ? project : null,
     }));
     setBusy(true);
     const result = await applyBulkActions(actions);
@@ -105,15 +110,18 @@ export function BulkInventoryDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="add">Add</SelectItem>
+                <SelectItem value="use">Use on job</SelectItem>
+                <SelectItem value="return">Return from job</SelectItem>
+                <SelectItem value="receive">Receive</SelectItem>
                 <SelectItem value="transfer">Transfer</SelectItem>
-                <SelectItem value="use">Use</SelectItem>
+                <SelectItem value="add">Add</SelectItem>
+                <SelectItem value="count">Cycle count</SelectItem>
                 <SelectItem value="adjust">Adjust</SelectItem>
                 <SelectItem value="shrink">Shrinkage</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {actionType !== "add" ? (
+          {needsFrom(actionType) ? (
             <div className="space-y-1">
               <Label className="text-xs">From location</Label>
               <Select value={fromId} onValueChange={setFromId}>
@@ -130,7 +138,7 @@ export function BulkInventoryDialog({
               </Select>
             </div>
           ) : null}
-          {actionType !== "use" && actionType !== "shrink" ? (
+          {needsTo(actionType) ? (
             <div className="space-y-1">
               <Label className="text-xs">To location</Label>
               <Select value={toId} onValueChange={setToId}>
@@ -147,10 +155,10 @@ export function BulkInventoryDialog({
               </Select>
             </div>
           ) : null}
-          {actionType === "use" ? (
+          {needsProject(actionType) ? (
             <div className="space-y-1">
-              <Label className="text-xs">Buildr project</Label>
-              <ProjectSelect projects={projects} value={project} onChange={setProject} />
+              <Label className="text-xs">Job / Buildr project *</Label>
+              <ProjectSelect projects={projects} value={project} allowNone={false} onChange={setProject} />
             </div>
           ) : null}
           <BulkMaterialImport

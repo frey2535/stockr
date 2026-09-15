@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import bcrypt from "bcryptjs";
 import { createEmptyState, createSeedState, normalizeStoreState } from "./seed";
-import { encodeToolsForPersist } from "./tools-state";
+import { encodeStateForPersist } from "./persist-state";
 import { planLimitError } from "./plans";
 import {
   PLATFORM_OWNER_COMPANY_ID,
@@ -104,7 +104,7 @@ export function getCompanyState(companyId: string): StoreState {
 }
 
 export function setCompanyState(companyId: string, state: StoreState) {
-  const next = encodeToolsForPersist(normalizeStoreState(state));
+  const next = encodeStateForPersist(normalizeStoreState(state));
   db.prepare(
     `INSERT INTO company_state (company_id, payload) VALUES (?, ?)
      ON CONFLICT(company_id) DO UPDATE SET payload = excluded.payload`,

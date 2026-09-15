@@ -28,15 +28,20 @@ import {
 import { useStore } from "@/lib/store";
 import { usePagedApi } from "@/lib/use-api";
 import { money, qty } from "@/lib/format";
+import { needsFrom, needsProject, needsTo } from "@/lib/tx";
 import type { TxType } from "@/lib/types";
 import type { InventoryListPayload } from "@/lib/workspace-types";
 
 function InventoryPageInner() {
-  const { workspace, applyAction } = useStore();
+  const { workspace, applyAction, setStockRule } = useStore();
   const { settings, locations, projects } = workspace;
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [locationId, setLocationId] = useState(searchParams.get("location") || "all");
+  const [stock, setStock] = useState(searchParams.get("stock") || "all");
+  const [ruleLocationId, setRuleLocationId] = useState("");
+  const [ruleMin, setRuleMin] = useState("");
+  const [ruleMax, setRuleMax] = useState("");
   const [active, setActive] = useState<string | null>(null);
   const [actionType, setActionType] = useState<TxType>("adjust");
   const [quantity, setQuantity] = useState("");
@@ -52,6 +57,7 @@ function InventoryPageInner() {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (locationId !== "all") params.set("location", locationId);
+  if (stock !== "all") params.set("stock", stock);
   const { data, reload, hasMore, loadMore, loading } = usePagedApi<InventoryListPayload>(
     `/api/inventory?${params.toString()}`,
   );
@@ -60,13 +66,17 @@ function InventoryPageInner() {
 
   const commit = async () => {
     if (!selected) return;
+    if (needsProject(actionType) && !project.trim()) {
+      toast.error("Pick the job this material belongs to.");
+      return;
+    }
     const result = await applyAction({
       type: actionType,
       materialId: selected.id,
       quantity: parseFloat(quantity),
-      fromLocationId: actionType === "add" ? null : fromId,
-      toLocationId: actionType === "use" || actionType === "shrink" ? null : toId,
-      project: actionType === "use" ? project : null,
+      fromLocationId: needsFrom(actionType) ? fromId : null,
+      toLocationId: needsTo(actionType) ? toId : null,
+      project: needsProject(actionType) ? project : null,
     });
     if (!result.ok) {
       toast.error(result.error);
@@ -93,12 +103,15 @@ function InventoryPageInner() {
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">Bulk add, transfer, use, adjust, or shrink</p>
+          <p className="text-sm font-medium">Bulk add, receive, transfer, use, return, count, or shrink</p>
           <div className="flex flex-wrap gap-2">
             {([
-              ["add", "Add"],
-              ["transfer", "Transfer"],
+              ["receive", "Receive"],
               ["use", "Use"],
+              ["return", "Return"],
+              ["transfer", "Transfer"],
+              ["add", "Add"],
+              ["count", "Count"],
               ["adjust", "Adjust"],
               ["shrink", "Shrink"],
             ] as const).map(([type, label]) => (
@@ -116,10 +129,11 @@ function InventoryPageInner() {
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search materials, categories, barcodes..."
+            placeholder="Search name, barcode, MPN, UPC, supplier #..."
             className="pl-9"
           />
         </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
         <Select value={locationId} onValueChange={setLocationId}>
           <SelectTrigger className="w-full sm:w-64">
             <SelectValue placeholder="All Locations" />
@@ -133,6 +147,16 @@ function InventoryPageInner() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={stock} onValueChange={setStock}>
+          <SelectTrigger className="w-full sm:w-48">
+            <SelectValue placeholder="All stock" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All stock</SelectItem>
+            <SelectItem value="low">Below min</SelectItem>
+          </SelectContent>
+        </Select>
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -159,8 +183,9 @@ function InventoryPageInner() {
                         row.byLocation.map((item) => (
                           <div key={item.location.id} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">{item.location.name}</span>
-                            <span className="font-medium">
+                            <span className={item.belowMin ? "font-medium text-orange-700" : "font-medium"}>
                               {qty(item.quantity)} {row.material.unit}
+                              {item.min != null ? ` · min ${qty(item.min)}` : ""}
                             </span>
                           </div>
                         ))
@@ -171,7 +196,7 @@ function InventoryPageInner() {
                     <p className="text-xl font-bold">{qty(row.total)}</p>
                     <p className="text-xs text-muted-foreground">{row.material.unit}</p>
                     <div className="mt-3 flex flex-wrap justify-end gap-1">
-                      {(["use", "transfer", "add", "adjust", "shrink"] as TxType[]).map((type) => (
+                      {(["use", "return", "receive", "transfer", "add", "count", "adjust", "shrink"] as TxType[]).map((type) => (
                         <Button
                           key={type}
                           size="sm"
@@ -186,11 +211,14 @@ function InventoryPageInner() {
                             setActionType(type);
                             setToId(row.byLocation[0]?.location.id || locations[0]?.id || "");
                             setFromId(row.byLocation[0]?.location.id || locations[0]?.id || "");
-                            setQuantity(type === "adjust" ? String(row.byLocation[0]?.quantity || 0) : "1");
+                            setQuantity(type === "adjust" || type === "count" ? String(row.byLocation[0]?.quantity || 0) : "1");
                             setProject("");
+                            setRuleLocationId(row.byLocation[0]?.location.id || locations[0]?.id || "");
+                            setRuleMin(row.byLocation[0]?.min != null ? String(row.byLocation[0].min) : "");
+                            setRuleMax(row.byLocation[0]?.max != null ? String(row.byLocation[0].max) : "");
                           }}
                         >
-                          {type === "shrink" ? "Shrink" : type}
+                          {type === "shrink" ? "Shrink" : type === "count" ? "Count" : type}
                         </Button>
                       ))}
                     </div>
@@ -208,7 +236,7 @@ function InventoryPageInner() {
       )}
 
       <Dialog open={!!selected} onOpenChange={(open) => !open && setActive(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Update {selected?.name}</DialogTitle>
           </DialogHeader>
@@ -220,11 +248,14 @@ function InventoryPageInner() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="add">Add</SelectItem>
-                  <SelectItem value="transfer">Transfer</SelectItem>
-                  <SelectItem value="use">Use</SelectItem>
-                  <SelectItem value="adjust">Adjust</SelectItem>
-                  <SelectItem value="shrink">Shrinkage</SelectItem>
+                  <SelectItem value="use">Use on job</SelectItem>
+                    <SelectItem value="return">Return from job</SelectItem>
+                    <SelectItem value="receive">Receive</SelectItem>
+                    <SelectItem value="transfer">Transfer</SelectItem>
+                    <SelectItem value="add">Add</SelectItem>
+                    <SelectItem value="count">Cycle count</SelectItem>
+                    <SelectItem value="adjust">Adjust</SelectItem>
+                    <SelectItem value="shrink">Shrinkage</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -232,7 +263,7 @@ function InventoryPageInner() {
               <Label className="text-xs">Quantity</Label>
               <Input type="number" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
             </div>
-            {actionType !== "add" ? (
+            {needsFrom(actionType) ? (
               <div className="space-y-1">
                 <Label className="text-xs">From Location</Label>
                 <Select value={fromId} onValueChange={setFromId}>
@@ -249,7 +280,7 @@ function InventoryPageInner() {
                 </Select>
               </div>
             ) : null}
-            {actionType !== "use" && actionType !== "shrink" ? (
+            {needsTo(actionType) ? (
               <div className="space-y-1">
                 <Label className="text-xs">To Location</Label>
                 <Select value={toId} onValueChange={setToId}>
@@ -266,15 +297,55 @@ function InventoryPageInner() {
                 </Select>
               </div>
             ) : null}
-            {actionType === "use" ? (
+            {needsProject(actionType) ? (
               <div className="space-y-1">
-                <Label className="text-xs">Buildr project</Label>
-                <ProjectSelect projects={projects} value={project} onChange={setProject} />
+                <Label className="text-xs">Job / Buildr project *</Label>
+                <ProjectSelect projects={projects} value={project} allowNone={false} onChange={setProject} />
               </div>
             ) : null}
             <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={commit}>
               Save
             </Button>
+            <div className="space-y-2 rounded-lg border p-3">
+              <p className="text-xs font-medium">Location min / max</p>
+              <Select value={ruleLocationId} onValueChange={setRuleLocationId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={location.id} value={location.id}>
+                      {location.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="number" placeholder="Min" value={ruleMin} onChange={(event) => setRuleMin(event.target.value)} />
+                <Input type="number" placeholder="Max" value={ruleMax} onChange={(event) => setRuleMax(event.target.value)} />
+              </div>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  if (!selected || !ruleLocationId) return;
+                  const result = await setStockRule({
+                    material_id: selected.id,
+                    location_id: ruleLocationId,
+                    min: Number(ruleMin),
+                    max: ruleMax ? Number(ruleMax) : null,
+                  });
+                  if (!result.ok) {
+                    toast.error(result.error || "Could not save min/max.");
+                    return;
+                  }
+                  toast.success("Min/max saved. Restock board will use this rule.");
+                  await reload();
+                }}
+              >
+                Save min / max
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

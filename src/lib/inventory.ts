@@ -1,4 +1,4 @@
-import type { InventoryItem, StoreState, TxType } from "./types";
+import type { InventoryItem, Material, StoreState, TxType } from "./types";
 
 export function onHand(state: StoreState, materialId: string, locationId?: string) {
   return state.inventory
@@ -46,16 +46,16 @@ export function bumpQty(
   return next.filter((row) => row.quantity > 0);
 }
 
-export const TX_META: Record<
-  TxType,
-  { label: string; color: string }
-> = {
+export const TX_META: Record<TxType, { label: string; color: string }> = {
   add: { label: "Added", color: "bg-green-100 text-green-700 border-green-200" },
+  receive: { label: "Received", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  return: { label: "Returned", color: "bg-teal-100 text-teal-700 border-teal-200" },
   transfer: {
     label: "Transfer",
     color: "bg-blue-100 text-blue-700 border-blue-200",
   },
   use: { label: "Used", color: "bg-orange-100 text-orange-700 border-orange-200" },
+  count: { label: "Counted", color: "bg-indigo-100 text-indigo-700 border-indigo-200" },
   adjust: {
     label: "Adjusted",
     color: "bg-yellow-100 text-yellow-700 border-yellow-200",
@@ -65,6 +65,39 @@ export const TX_META: Record<
     color: "bg-red-100 text-red-700 border-red-200",
   },
 };
+
+export function txMeta(type: string) {
+  return TX_META[type as TxType] || { label: type, color: "bg-muted text-foreground border" };
+}
+
+export function materialMatchesQuery(material: Material, q: string) {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    material.name.toLowerCase().includes(needle) ||
+    (material.category || "").toLowerCase().includes(needle) ||
+    (material.sub_category || "").toLowerCase().includes(needle) ||
+    (material.manufacturer || "").toLowerCase().includes(needle) ||
+    (material.supplier || "").toLowerCase().includes(needle) ||
+    (material.barcode || "").toLowerCase().includes(needle) ||
+    (material.mpn || "").toLowerCase().includes(needle) ||
+    (material.upc || "").toLowerCase().includes(needle) ||
+    (material.supplier_number || "").toLowerCase().includes(needle) ||
+    (material.aliases || []).some((alias) => alias.toLowerCase().includes(needle))
+  );
+}
+
+export function materialMatchesCode(material: Material, code: string) {
+  const value = code.trim();
+  if (!value) return false;
+  return (
+    material.barcode === value ||
+    material.upc === value ||
+    material.mpn === value ||
+    material.supplier_number === value ||
+    (material.aliases || []).includes(value)
+  );
+}
 
 export function actorLabel(email?: string | null) {
   if (!email) return "System";

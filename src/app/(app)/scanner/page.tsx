@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, ScanLine, Sparkles } from "lucide-react";
+import { Keyboard, ScanLine, Sparkles, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,17 @@ import { Badge } from "@/components/ui/badge";
 import { ProjectSelect } from "@/components/project-select";
 import { useStore } from "@/lib/store";
 import { materialBarcode } from "@/lib/id";
+import { qty } from "@/lib/format";
 import { matchLocation, matchMaterial, parseInventoryEnglish } from "@/lib/nlp";
-import type { Material, TxType } from "@/lib/types";
+import {
+  enqueueOfflineAction,
+  flushOfflineQueue,
+  readOfflineQueue,
+  readScannerPrefs,
+  writeScannerPrefs,
+} from "@/lib/offline-queue";
+import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
+import type { InventoryAction, Material, TxType } from "@/lib/types";
 
 type Detector = {
   detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]>;
@@ -30,41 +39,88 @@ type Detector = {
 export default function ScannerPage() {
   const { workspace, applyAction, upsertMaterial } = useStore();
   const { locations, projects } = workspace;
+  const prefs = readScannerPrefs();
+  const defaultVan =
+    prefs.fromId ||
+    locations.find((row) => row.type === "vehicle")?.id ||
+    locations[0]?.id ||
+    "";
   const [mode, setMode] = useState<"manual" | "camera">("manual");
   const [barcode, setBarcode] = useState("");
   const [cameraError, setCameraError] = useState("");
   const [selected, setSelected] = useState<Material | null>(null);
   const [unknownCode, setUnknownCode] = useState("");
-  const [actionType, setActionType] = useState<TxType>("add");
+  const [actionType, setActionType] = useState<TxType>(prefs.actionType || "use");
   const [quantity, setQuantity] = useState("1");
-  const [fromId, setFromId] = useState("");
-  const [toId, setToId] = useState(locations[0]?.id || "");
-  const [project, setProject] = useState("");
+  const [fromId, setFromId] = useState(defaultVan);
+  const [toId, setToId] = useState(prefs.toId || locations[0]?.id || "");
+  const [project, setProject] = useState(prefs.project || "");
   const [smart, setSmart] = useState("");
   const [parsedPreview, setParsedPreview] = useState<ReturnType<typeof parseInventoryEnglish> | null>(null);
+  const [onHandByLocation, setOnHandByLocation] = useState<Record<string, number>>({});
+  const [queued, setQueued] = useState(() => readOfflineQueue().length);
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<Detector | null>(null);
   const scanningRef = useRef(false);
+  const qtyRef = useRef<HTMLInputElement>(null);
+
+  const rememberPrefs = (next?: Partial<{ actionType: TxType; fromId: string; toId: string; project: string }>) => {
+    writeScannerPrefs({
+      actionType: next?.actionType ?? actionType,
+      fromId: next?.fromId ?? fromId,
+      toId: next?.toId ?? toId,
+      project: next?.project ?? project,
+    });
+  };
 
   const lookup = async (code: string) => {
     const trimmed = code.trim();
     if (!trimmed) return;
     const response = await fetch(`/api/materials?barcode=${encodeURIComponent(trimmed)}&q=${encodeURIComponent(trimmed)}`);
-    const data = (await response.json().catch(() => null)) as { rows?: Material[] } | null;
+    const data = (await response.json().catch(() => null)) as {
+      rows?: Material[];
+      onHandByLocation?: Record<string, number>;
+    } | null;
     const found =
-      data?.rows?.find((row) => row.barcode === trimmed || materialBarcode(row) === trimmed) ||
+      data?.rows?.find((row) => row.barcode === trimmed || row.upc === trimmed || row.mpn === trimmed || materialBarcode(row) === trimmed) ||
       data?.rows?.[0];
     if (found) {
       setSelected(found);
+      setOnHandByLocation(data?.onHandByLocation || {});
       setUnknownCode("");
       setBarcode("");
       toast.success(`Found ${found.name}`);
+      window.setTimeout(() => qtyRef.current?.focus(), 50);
     } else {
       setSelected(null);
       setUnknownCode(trimmed);
     }
   };
+
+  useEffect(() => {
+    const syncOnline = () => setOnline(navigator.onLine);
+    window.addEventListener("online", syncOnline);
+    window.addEventListener("offline", syncOnline);
+    return () => {
+      window.removeEventListener("online", syncOnline);
+      window.removeEventListener("offline", syncOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!online) return;
+    let cancelled = false;
+    void flushOfflineQueue(applyAction).then((result) => {
+      if (cancelled) return;
+      if (result.flushed) toast.success(`Synced ${result.flushed} offline scan${result.flushed === 1 ? "" : "s"}`);
+      setQueued(result.remaining);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyAction, online]);
 
   useEffect(() => {
     if (mode !== "camera") {
@@ -138,15 +194,36 @@ export default function ScannerPage() {
     }
   })();
 
+  const commitAction = async (action: InventoryAction) => {
+    if (!online || (typeof navigator !== "undefined" && !navigator.onLine)) {
+      enqueueOfflineAction(action);
+      setQueued(readOfflineQueue().length);
+      toast.message("Saved offline. It will sync when you are back online.");
+      return { ok: true as const, offline: true };
+    }
+    const result = await applyAction(action);
+    if (!result.ok && result.error === "offline") {
+      enqueueOfflineAction(action);
+      setQueued(readOfflineQueue().length);
+      toast.message("Saved offline. It will sync when you are back online.");
+      return { ok: true as const, offline: true };
+    }
+    return result;
+  };
+
   const commitScan = async () => {
     if (!selected) return;
-    const result = await applyAction({
+    if (needsProject(actionType) && !project.trim()) {
+      toast.error("Pick the job this material belongs to.");
+      return;
+    }
+    const result = await commitAction({
       type: actionType,
       materialId: selected.id,
       quantity: parseFloat(quantity),
-      fromLocationId: actionType === "add" ? null : fromId,
-      toLocationId: actionType === "use" || actionType === "shrink" ? null : toId,
-      project: actionType === "use" ? project : null,
+      fromLocationId: needsFrom(actionType) ? fromId : null,
+      toLocationId: needsTo(actionType) ? toId : null,
+      project: needsProject(actionType) ? project : null,
     });
     if (!result.ok) {
       toast.error(result.error);
@@ -156,15 +233,18 @@ export default function ScannerPage() {
       const next = [project, ...recentProjects.filter((name) => name !== project)].slice(0, 5);
       localStorage.setItem("stockr_recent_projects", JSON.stringify(next));
     }
-    toast.success(`${actionType === "add" ? "Added" : actionType === "transfer" ? "Transferred" : actionType === "use" ? "Used" : "Updated"} ${quantity} ${selected.name}`);
+    rememberPrefs();
+    toast.success(`${actionVerb(actionType)} ${quantity} ${selected.name}`);
     setSelected(null);
     setQuantity("1");
+    setOnHandByLocation({});
   };
 
   const createUnknown = async () => {
     const created = await upsertMaterial({
       name: `Unknown Product - ${unknownCode}`,
       barcode: unknownCode,
+      upc: unknownCode,
       unit: "each",
     });
     if (!created.ok) {
@@ -205,13 +285,25 @@ export default function ScannerPage() {
     toast.success("Parsed. Review the fields, then commit.");
   };
 
+  const vanQty = fromId ? onHandByLocation[fromId] : undefined;
+  const destQty = toId ? onHandByLocation[toId] : undefined;
+
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
         title="Scanner"
-        description="Search, select, and update inventory in seconds"
+        description="Scan → charge the job → van qty updates. Restock from the dashboard when a truck drops below min."
         icon={<ScanLine className="size-8 text-secondary" />}
       />
+
+      {!online || queued > 0 ? (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <WifiOff className="size-4" />
+          {online
+            ? `${queued} scan${queued === 1 ? "" : "s"} waiting to sync`
+            : `Offline${queued ? ` · ${queued} queued` : ""}. Scans save on this device.`}
+        </div>
+      ) : null}
 
       <Card>
         {mode === "camera" ? (
@@ -251,7 +343,7 @@ export default function ScannerPage() {
               <p className="text-center text-sm text-destructive">{cameraError}</p>
             ) : null}
             <p className="text-center text-sm text-muted-foreground">
-              Type or paste the barcode number
+              Barcode, UPC, MPN, or supplier number
             </p>
             <form
               className="space-y-3"
@@ -263,10 +355,9 @@ export default function ScannerPage() {
               <Input
                 value={barcode}
                 onChange={(event) => setBarcode(event.target.value)}
-                placeholder="e.g. 012345678901"
+                placeholder="e.g. 012345678901 or EMT-075-10"
                 className="h-12 text-center text-lg tracking-widest"
                 autoFocus
-                inputMode="numeric"
               />
               <div className="flex gap-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setMode("camera")}>
@@ -307,22 +398,43 @@ export default function ScannerPage() {
           <CardHeader>
             <CardTitle className="text-base">{selected.name}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {selected.manufacturer ? `${selected.manufacturer} · ` : ""}
-              {selected.category || "Uncategorized"} · {materialBarcode(selected)}
+              {[selected.manufacturer, selected.mpn || selected.category, materialBarcode(selected)]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
+            {needsFrom(actionType) && fromId ? (
+              <p className="text-sm font-medium">
+                Van / source on hand: {qty(vanQty || 0)} {selected.unit}
+              </p>
+            ) : null}
+            {needsTo(actionType) && destQty != null ? (
+              <p className="text-sm text-muted-foreground">
+                Destination on hand: {qty(destQty)} {selected.unit}
+              </p>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Action</Label>
-                <Select value={actionType} onValueChange={(value) => setActionType(value as TxType)}>
+                <Select
+                  value={actionType}
+                  onValueChange={(value) => {
+                    const next = value as TxType;
+                    setActionType(next);
+                    rememberPrefs({ actionType: next });
+                  }}
+                >
                   <SelectTrigger className="h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="add">Add</SelectItem>
+                    <SelectItem value="use">Use on job</SelectItem>
+                    <SelectItem value="return">Return from job</SelectItem>
+                    <SelectItem value="receive">Receive</SelectItem>
                     <SelectItem value="transfer">Transfer</SelectItem>
-                    <SelectItem value="use">Use</SelectItem>
+                    <SelectItem value="add">Add</SelectItem>
+                    <SelectItem value="count">Cycle count</SelectItem>
                     <SelectItem value="adjust">Adjust</SelectItem>
                     <SelectItem value="shrink">Shrinkage</SelectItem>
                   </SelectContent>
@@ -331,6 +443,7 @@ export default function ScannerPage() {
               <div className="space-y-1">
                 <Label className="text-xs">Quantity</Label>
                 <Input
+                  ref={qtyRef}
                   type="number"
                   min="0"
                   value={quantity}
@@ -338,10 +451,16 @@ export default function ScannerPage() {
                 />
               </div>
             </div>
-            {actionType !== "add" ? (
+            {needsFrom(actionType) ? (
               <div className="space-y-1">
                 <Label className="text-xs">From Location</Label>
-                <Select value={fromId} onValueChange={setFromId}>
+                <Select
+                  value={fromId}
+                  onValueChange={(value) => {
+                    setFromId(value);
+                    rememberPrefs({ fromId: value });
+                  }}
+                >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select source" />
                   </SelectTrigger>
@@ -355,10 +474,16 @@ export default function ScannerPage() {
                 </Select>
               </div>
             ) : null}
-            {actionType !== "use" && actionType !== "shrink" ? (
+            {needsTo(actionType) ? (
               <div className="space-y-1">
                 <Label className="text-xs">To Location</Label>
-                <Select value={toId} onValueChange={setToId}>
+                <Select
+                  value={toId}
+                  onValueChange={(value) => {
+                    setToId(value);
+                    rememberPrefs({ toId: value });
+                  }}
+                >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select destination" />
                   </SelectTrigger>
@@ -372,10 +497,18 @@ export default function ScannerPage() {
                 </Select>
               </div>
             ) : null}
-            {actionType === "use" ? (
+            {needsProject(actionType) ? (
               <div className="space-y-1">
-                <Label className="text-xs">Buildr project</Label>
-                <ProjectSelect projects={projects} value={project} onChange={setProject} />
+                <Label className="text-xs">Job / Buildr project *</Label>
+                <ProjectSelect
+                  projects={projects}
+                  value={project}
+                  allowNone={false}
+                  onChange={(value) => {
+                    setProject(value);
+                    rememberPrefs({ project: value });
+                  }}
+                />
               </div>
             ) : null}
             <div className="flex gap-2">
@@ -404,7 +537,7 @@ export default function ScannerPage() {
           <Textarea
             value={smart}
             onChange={(event) => setSmart(event.target.value)}
-            placeholder={`e.g. "add 25 boxes of screws to Main Warehouse" or "transfer 10 units from Truck 12 to Shop"`}
+            placeholder={`e.g. "use 10 emt from Truck 12 on Riverside" or "return 4 breakers to Truck 12 for Oak Street"`}
             className="min-h-[72px]"
             onKeyDown={(event) => {
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) processSmart();

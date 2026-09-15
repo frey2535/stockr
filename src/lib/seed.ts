@@ -1,3 +1,4 @@
+import { decodeStateFromPersist } from "./persist-state";
 import type {
   AccessCode,
   InventoryItem,
@@ -6,11 +7,11 @@ import type {
   Project,
   PurchaseOrder,
   Settings,
+  StockRule,
   StoreState,
   Tool,
   Transaction,
 } from "./types";
-import { decodeToolsFromPersist } from "./tools-state";
 
 function isoDaysAgo(days: number, hours = 10) {
   const d = new Date();
@@ -69,6 +70,9 @@ const materials: Material[] = [
     unit: "ft",
     unit_cost: 1.12,
     barcode: "012345678901",
+    mpn: "EMT-075-10",
+    upc: "012345678901",
+    supplier_number: "CE-EMT34",
     reorder_point: 400,
     min_stock_level: 200,
     aliases: ["emt", "3/4 emt", "conduit"],
@@ -84,6 +88,9 @@ const materials: Material[] = [
     unit: "ft",
     unit_cost: 0.64,
     barcode: "012345678918",
+    mpn: "PVC-050-40",
+    upc: "012345678918",
+    supplier_number: "CE-PVC12",
     reorder_point: 250,
     min_stock_level: 100,
     aliases: ["pvc", "plastic conduit"],
@@ -99,6 +106,9 @@ const materials: Material[] = [
     unit: "ft",
     unit_cost: 0.28,
     barcode: "045678912345",
+    mpn: "THHN-12-BLK",
+    upc: "045678912345",
+    supplier_number: "CE-THHN12",
     reorder_point: 1500,
     min_stock_level: 500,
     aliases: ["thhn", "number 12", "#12"],
@@ -114,6 +124,9 @@ const materials: Material[] = [
     unit: "ft",
     unit_cost: 0.72,
     barcode: "045678912352",
+    mpn: "NMB-122-250",
+    upc: "045678912352",
+    supplier_number: "CE-ROMEX122",
     reorder_point: 800,
     min_stock_level: 250,
     aliases: ["romex", "nm-b", "12/2"],
@@ -129,6 +142,9 @@ const materials: Material[] = [
     unit: "each",
     unit_cost: 8.45,
     barcode: "078912345678",
+    mpn: "QO120",
+    upc: "078912345678",
+    supplier_number: "CE-QO120",
     reorder_point: 24,
     min_stock_level: 8,
     aliases: ["breaker", "20a breaker"],
@@ -144,6 +160,9 @@ const materials: Material[] = [
     unit: "each",
     unit_cost: 1.85,
     barcode: "078912345685",
+    mpn: "RACO-190",
+    upc: "078912345685",
+    supplier_number: "CE-BOX4",
     reorder_point: 80,
     min_stock_level: 30,
     aliases: ["square box", "4 square"],
@@ -159,6 +178,9 @@ const materials: Material[] = [
     unit: "each",
     unit_cost: 2.4,
     barcode: "081234567890",
+    mpn: "T5320-I",
+    upc: "081234567890",
+    supplier_number: "CE-DUP20",
     reorder_point: 50,
     min_stock_level: 20,
     aliases: ["receptacle", "outlet", "duplex"],
@@ -174,6 +196,9 @@ const materials: Material[] = [
     unit: "each",
     unit_cost: 68,
     barcode: "081234567907",
+    mpn: "GTL-2X4-40",
+    upc: "081234567907",
+    supplier_number: "CE-TROFFER24",
     reorder_point: 8,
     min_stock_level: 2,
     aliases: ["troffer", "2x4", "fixture"],
@@ -189,6 +214,9 @@ const materials: Material[] = [
     unit: "box",
     unit_cost: 6.1,
     barcode: "099887766554",
+    mpn: "ST-10-075",
+    upc: "099887766554",
+    supplier_number: "FA-SCR10",
     reorder_point: 12,
     min_stock_level: 4,
     aliases: ["screws", "tapping screws"],
@@ -204,6 +232,9 @@ const materials: Material[] = [
     unit: "box",
     unit_cost: 18.5,
     barcode: "099887766561",
+    mpn: "WN-500-ASY",
+    upc: "099887766561",
+    supplier_number: "CE-WN500",
     reorder_point: 6,
     min_stock_level: 2,
     aliases: ["wire nuts", "connectors"],
@@ -445,8 +476,17 @@ const tools: Tool[] = [
   },
 ];
 
+const stockRules: StockRule[] = [
+  { id: "rule-emt-t12", material_id: "mat-emt-34", location_id: "loc-truck-12", min: 80, max: 160 },
+  { id: "rule-nuts-t12", material_id: "mat-nuts", location_id: "loc-truck-12", min: 2, max: 4 },
+  { id: "rule-screws-t7", material_id: "mat-screws", location_id: "loc-truck-7", min: 6, max: 12 },
+  { id: "rule-brk-t12", material_id: "mat-brk-20", location_id: "loc-truck-12", min: 8, max: 16 },
+  { id: "rule-duplex-wh", material_id: "mat-duplex", location_id: "loc-wh-main", min: 20, max: 50 },
+  { id: "rule-romex-wh", material_id: "mat-romex", location_id: "loc-wh-main", min: 400, max: 800 },
+];
+
 export function normalizeStoreState(state: StoreState): StoreState {
-  return decodeToolsFromPersist({
+  return decodeStateFromPersist({
     ...state,
     settings: state.settings,
     locations: state.locations || [],
@@ -457,6 +497,7 @@ export function normalizeStoreState(state: StoreState): StoreState {
     accessCodes: state.accessCodes || [],
     projects: state.projects || [],
     tools: state.tools || [],
+    stockRules: state.stockRules || [],
   });
 }
 
@@ -471,6 +512,7 @@ export function createSeedState(): StoreState {
     accessCodes: structuredClone(accessCodes),
     projects: structuredClone(projects),
     tools: structuredClone(tools),
+    stockRules: structuredClone(stockRules),
   };
 }
 
@@ -492,5 +534,6 @@ export function createEmptyState(companyName: string): StoreState {
     accessCodes: [],
     projects: [],
     tools: [],
+    stockRules: [],
   };
 }

@@ -9,7 +9,9 @@ import type {
   Material,
   Project,
   PurchaseOrder,
+  RestockApply,
   Settings,
+  StockRule,
   Tool,
   WorkspaceShell,
 } from "./types";
@@ -58,6 +60,11 @@ type StoreApi = {
     tool: Partial<Tool> & { id?: string },
   ) => Promise<{ ok: true; tool: Tool } | { ok: false; error: string }>;
   deleteTool: (id: string) => Promise<CommandResult>;
+  setStockRule: (
+    rule: Partial<StockRule> & { material_id: string; location_id: string },
+  ) => Promise<CommandResult>;
+  deleteStockRule: (id: string) => Promise<CommandResult>;
+  applyRestock: (restock: RestockApply) => Promise<CommandResult>;
   replaceProjects: (projects: Project[]) => Promise<CommandResult>;
   createAccessCode: (input: {
     label: string;
@@ -79,6 +86,7 @@ function emptyWorkspace(name = "Stockr"): WorkspaceShell {
     projects: empty.projects,
     accessCodes: empty.accessCodes,
     tools: empty.tools,
+    stockRules: empty.stockRules,
     counts: {
       locations: empty.locations.length,
       materials: 0,
@@ -113,28 +121,32 @@ export function StoreProvider({
   }, []);
 
   const send = useCallback(async (command: StoreCommand): Promise<CommandResult> => {
-    const response = await fetch("/api/state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command }),
-    });
-    const data = (await response.json().catch(() => null)) as {
-      workspace?: WorkspaceShell;
-      account?: Account;
-      error?: string;
-      created?: Material | AccessCode | Tool;
-    } | null;
-    if (response.status === 401) {
-      window.location.href = "/login";
-      return { ok: false, error: "Sign in required." };
+    try {
+      const response = await fetch("/api/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        workspace?: WorkspaceShell;
+        account?: Account;
+        error?: string;
+        created?: Material | AccessCode | Tool;
+      } | null;
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return { ok: false, error: "Sign in required." };
+      }
+      if (data?.workspace) setWorkspace(data.workspace);
+      if (data?.account) setAccount(data.account);
+      if (!response.ok || data?.error) {
+        return { ok: false, error: data?.error || "Could not save that change." };
+      }
+      invalidateApiCache("/api/");
+      return { ok: true, created: data?.created };
+    } catch {
+      return { ok: false, error: "offline" };
     }
-    if (data?.workspace) setWorkspace(data.workspace);
-    if (data?.account) setAccount(data.account);
-    if (!response.ok || data?.error) {
-      return { ok: false, error: data?.error || "Could not save that change." };
-    }
-    invalidateApiCache("/api/");
-    return { ok: true, created: data?.created };
   }, []);
 
   const api = useMemo<StoreApi>(
@@ -198,6 +210,24 @@ export function StoreProvider({
         }
         return result;
       },
+      setStockRule: async (rule) => {
+        const result = await send({ type: "setStockRule", rule });
+        if (result.ok) {
+          await refreshWorkspace();
+        }
+        return result;
+      },
+      deleteStockRule: async (id) => {
+        const result = await send({ type: "deleteStockRule", id });
+        if (result.ok) {
+          setWorkspace((prev) => ({
+            ...prev,
+            stockRules: (prev.stockRules || []).filter((row) => row.id !== id),
+          }));
+        }
+        return result;
+      },
+      applyRestock: (restock) => send({ type: "applyRestock", restock }),
       replaceProjects: (projects) => send({ type: "replaceProjects", projects }),
       createAccessCode: async ({ label, type, days }) => {
         const result = await send({ type: "createAccessCode", label, codeType: type, days });
@@ -243,6 +273,9 @@ export function MarketingStoreFallback({ children }: { children: React.ReactNode
         deletePurchaseOrder: async () => ({ ok: false }),
         upsertTool: async () => ({ ok: false, error: "Sign in required." }),
         deleteTool: async () => ({ ok: false }),
+        setStockRule: async () => ({ ok: false }),
+        deleteStockRule: async () => ({ ok: false }),
+        applyRestock: async () => ({ ok: false }),
         replaceProjects: async () => ({ ok: false }),
         createAccessCode: async () => ({ ok: false, error: "Sign in required." }),
         toggleAccessCode: async () => ({ ok: false }),

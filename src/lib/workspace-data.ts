@@ -1,7 +1,10 @@
 import { isSupabaseConfigured } from "./db-config";
 import { getCompanyState } from "./db";
 import { getSupabaseAdmin } from "./supabase-admin";
-import { onHand, totalValue } from "./inventory";
+import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from "./inventory";
+import { opsFromProjects } from "./ops-state";
+import { visibleProjects } from "./persist-state";
+import { listRestockNeeds } from "./replenish";
 import { WORKSPACE_PAGE_SIZE } from "./types";
 import type {
   AccessCode,
@@ -11,13 +14,14 @@ import type {
   Project,
   PurchaseOrder,
   Settings,
+  StockRule,
   StoreState,
   Tool,
   Transaction,
   WorkspaceShell,
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
-import { projectsWithoutToolsBlob, toolsFromProjects } from "./tools-state";
+import { toolsFromProjects } from "./tools-state";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
@@ -33,8 +37,31 @@ function mapMaterial(row: Record<string, unknown>): Material {
     unit_cost: row.unit_cost == null ? null : Number(row.unit_cost),
     reorder_point: row.reorder_point == null ? null : Number(row.reorder_point),
     min_stock_level: row.min_stock_level == null ? null : Number(row.min_stock_level),
+    mpn: String(row.mpn || ""),
+    upc: String(row.upc || ""),
+    supplier_number: String(row.supplier_number || ""),
     aliases: Array.isArray(row.aliases) ? (row.aliases as string[]) : [],
   };
+}
+
+function stockRulesFromProjects(projects: Project[], fallback: StockRule[] = []) {
+  return opsFromProjects(projects, { stockRules: fallback, catalogIds: [] }).stockRules;
+}
+
+function attachLocationRules(
+  byLocation: { location: Location; quantity: number }[],
+  materialId: string,
+  rules: StockRule[],
+) {
+  return byLocation.map((row) => {
+    const rule = rules.find((item) => item.material_id === materialId && item.location_id === row.location.id);
+    return {
+      ...row,
+      min: rule?.min ?? null,
+      max: rule?.max ?? null,
+      belowMin: rule ? row.quantity < rule.min : false,
+    };
+  });
 }
 
 function mapInventory(row: Record<string, unknown>): InventoryItem {
@@ -60,6 +87,7 @@ function shellFromState(state: StoreState): WorkspaceShell {
     projects: state.projects,
     accessCodes: state.accessCodes,
     tools: state.tools || [],
+    stockRules: state.stockRules || [],
     counts: {
       locations: state.locations.length,
       materials: state.materials.length,
@@ -106,6 +134,7 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
       projects: [],
       accessCodes: [],
       tools: [],
+      stockRules: [],
       counts: { locations: 0, materials: 0, inventoryRows: 0, transactions: 0, purchaseOrders: 0, tools: 0 },
     };
   }
@@ -122,13 +151,15 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
   const rawProjects = (projectsRes.data || []) as Project[];
   const tableTools = toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]);
   const tools = tableTools.length ? tableTools : toolsFromProjects(rawProjects);
+  const stockRules = stockRulesFromProjects(rawProjects);
 
   return {
     settings,
     locations: (locationsRes.data || []) as Location[],
-    projects: projectsWithoutToolsBlob(rawProjects),
+    projects: visibleProjects(rawProjects),
     accessCodes: (codesRes.data || []) as AccessCode[],
     tools,
+    stockRules,
     counts: {
       locations: (locationsRes.data || []).length,
       materials: materials.count || 0,
@@ -174,13 +205,14 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
       recentMaterials: state.materials.filter((material) =>
         state.transactions.slice(0, 10).some((tx) => tx.material_id === material.id),
       ),
+      restock: listRestockNeeds(state),
     };
   }
 
   const supabase = getSupabaseAdmin();
-  const [inventoryRes, costRes, alertRes, locationsRes, txRes, materialCountRes] = await Promise.all([
+  const [inventoryRes, costRes, alertRes, locationsRes, txRes, materialCountRes, projectsRes] = await Promise.all([
     supabase.from("stockr_inventory").select("material_id, location_id, quantity").eq("company_id", companyId),
-    supabase.from("stockr_materials").select("id, unit_cost").eq("company_id", companyId),
+    supabase.from("stockr_materials").select("id, unit_cost, name, unit, supplier").eq("company_id", companyId),
     supabase
       .from("stockr_materials")
       .select("id, name, unit, unit_cost, reorder_point, min_stock_level")
@@ -194,6 +226,7 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
       .order("created_at", { ascending: false })
       .limit(10),
     supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+    supabase.from("stockr_projects").select("*").eq("company_id", companyId),
   ]);
 
   if (inventoryRes.error) throw new Error(inventoryRes.error.message);
@@ -263,6 +296,12 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
     }),
     recent,
     recentMaterials,
+    restock: listRestockNeeds({
+      materials: (costRes.data || []).map(mapMaterial),
+      locations,
+      inventory,
+      stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
+    }),
   };
 }
 
@@ -274,36 +313,49 @@ export type InventoryRow = {
 
 export async function listInventory(
   companyId: string,
-  opts: { q?: string; locationId?: string; limit?: number; offset?: number },
+  opts: { q?: string; locationId?: string; stock?: string; limit?: number; offset?: number },
 ) {
   const limit = clampLimit(opts.limit);
   const offset = Math.max(opts.offset || 0, 0);
   const q = sanitizeFilter((opts.q || "").trim().toLowerCase());
   const locationId = opts.locationId && opts.locationId !== "all" ? opts.locationId : "";
+  const lowOnly = opts.stock === "low";
 
   if (!isSupabaseConfigured()) {
     const state = await getCompanyState(companyId);
     const rows = state.materials
       .map((material) => {
-        const byLocation = state.locations
-          .map((location) => ({ location, quantity: onHand(state, material.id, location.id) }))
-          .filter((row) => row.quantity > 0);
+        const byLocation = attachLocationRules(
+          state.locations
+            .map((location) => ({ location, quantity: onHand(state, material.id, location.id) }))
+            .filter((row) => row.quantity > 0 || (state.stockRules || []).some((rule) => rule.material_id === material.id && rule.location_id === row.location.id)),
+          material.id,
+          state.stockRules || [],
+        ).filter((row) => row.quantity > 0 || row.belowMin);
         return { material, byLocation, total: byLocation.reduce((sum, row) => sum + row.quantity, 0) };
       })
       .filter((row) => {
         if (locationId && !row.byLocation.some((item) => item.location.id === locationId)) return false;
+        if (lowOnly && !row.byLocation.some((item) => item.belowMin)) return false;
         if (!q) return true;
-        return (
-          row.material.name.toLowerCase().includes(q) ||
-          (row.material.category || "").toLowerCase().includes(q) ||
-          (row.material.barcode || "").includes(q)
-        );
+        return materialMatchesQuery(row.material, q);
       })
       .sort((a, b) => a.material.name.localeCompare(b.material.name));
     return { rows: rows.slice(offset, offset + limit), total: rows.length };
   }
 
   const supabase = getSupabaseAdmin();
+  const [projectsRes, locationsRes] = await Promise.all([
+    supabase.from("stockr_projects").select("*").eq("company_id", companyId),
+    supabase.from("stockr_locations").select("id, name, type, description, assigned_to").eq("company_id", companyId),
+  ]);
+  if (locationsRes.error) throw new Error(locationsRes.error.message);
+  const ops = opsFromProjects((projectsRes.data || []) as Project[], { stockRules: [], catalogIds: [] });
+  const extraIds = q
+    ? ops.catalogIds.filter((row) =>
+        [row.mpn, row.upc, row.supplier_number].some((value) => (value || "").toLowerCase().includes(q)),
+      ).map((row) => row.id)
+    : [];
   let allowedIds: string[] | null = null;
   if (locationId) {
     const atLocation = await supabase
@@ -313,7 +365,15 @@ export async function listInventory(
       .eq("location_id", locationId)
       .gt("quantity", 0);
     if (atLocation.error) throw new Error(atLocation.error.message);
-    allowedIds = Array.from(new Set((atLocation.data || []).map((row) => row.material_id)));
+    const atIds = Array.from(new Set((atLocation.data || []).map((row) => row.material_id)));
+    if (atIds.length === 0) return { rows: [], total: 0 };
+    allowedIds = atIds;
+    if (allowedIds.length === 0) return { rows: [], total: 0 };
+  }
+  if (lowOnly) {
+    const lowIds = Array.from(new Set(ops.stockRules.map((row) => row.material_id)));
+    if (!lowIds.length) return { rows: [], total: 0 };
+    allowedIds = allowedIds ? allowedIds.filter((id) => lowIds.includes(id)) : lowIds;
     if (allowedIds.length === 0) return { rows: [], total: 0 };
   }
 
@@ -323,16 +383,26 @@ export async function listInventory(
     .eq("company_id", companyId)
     .order("name");
   if (q) {
-    materialQuery = materialQuery.or(`name.ilike.%${q}%,category.ilike.%${q}%,barcode.ilike.%${q}%`);
+    const search = `name.ilike.%${q}%,category.ilike.%${q}%,barcode.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%`;
+    materialQuery = extraIds.length
+      ? materialQuery.or(`${search},id.in.(${extraIds.join(",")})`)
+      : materialQuery.or(search);
   }
   if (allowedIds) materialQuery = materialQuery.in("id", allowedIds);
-  const [materialsRes, locationsRes] = await Promise.all([
-    materialQuery.range(offset, offset + limit - 1),
-    supabase.from("stockr_locations").select("id, name, type, description, assigned_to").eq("company_id", companyId),
-  ]);
+  const materialsRes = await materialQuery.range(offset, offset + limit - 1);
   if (materialsRes.error) throw new Error(materialsRes.error.message);
-  if (locationsRes.error) throw new Error(locationsRes.error.message);
-  const materials = (materialsRes.data || []).map(mapMaterial);
+  const materials = (materialsRes.data || []).map((row) => {
+    const mapped = mapMaterial(row);
+    const extra = ops.catalogIds.find((item) => item.id === mapped.id);
+    return extra
+      ? {
+          ...mapped,
+          mpn: mapped.mpn || extra.mpn || "",
+          upc: mapped.upc || extra.upc || "",
+          supplier_number: mapped.supplier_number || extra.supplier_number || "",
+        }
+      : mapped;
+  });
   const locations = (locationsRes.data || []) as Location[];
 
   const inventoryRes = materials.length
@@ -348,17 +418,21 @@ export async function listInventory(
   if (inventoryRes.error) throw new Error(inventoryRes.error.message);
   const inventory = (inventoryRes.data || []).map(mapInventory);
 
-  const rows = materials.map((material) => {
-    const byLocation = locations
-      .map((location) => ({
-        location,
-        quantity: inventory
-          .filter((row) => row.material_id === material.id && row.location_id === location.id)
-          .reduce((sum, row) => sum + row.quantity, 0),
-      }))
-      .filter((row) => row.quantity > 0);
-    return { material, byLocation, total: byLocation.reduce((sum, row) => sum + row.quantity, 0) };
-  });
+  const rows = materials
+    .map((material) => {
+      const byLocation = attachLocationRules(
+        locations.map((location) => ({
+          location,
+          quantity: inventory
+            .filter((row) => row.material_id === material.id && row.location_id === location.id)
+            .reduce((sum, row) => sum + row.quantity, 0),
+        })),
+        material.id,
+        ops.stockRules,
+      ).filter((row) => row.quantity > 0 || row.belowMin);
+      return { material, byLocation, total: byLocation.reduce((sum, row) => sum + row.quantity, 0) };
+    })
+    .filter((row) => !lowOnly || row.byLocation.some((item) => item.belowMin));
 
   return { rows, total: materialsRes.count || rows.length };
 }
@@ -442,11 +516,7 @@ export async function listCatalog(
       if (category && row.category !== category) return false;
       if (sub && row.sub_category !== sub) return false;
       if (!q) return true;
-      return (
-        row.name.toLowerCase().includes(q) ||
-        (row.manufacturer || "").toLowerCase().includes(q) ||
-        (row.barcode || "").includes(q)
-      );
+      return materialMatchesQuery(row, q);
     });
     return {
       rows: rows.slice(offset, offset + limit),
@@ -468,7 +538,7 @@ export async function listCatalog(
   let query = supabase.from("stockr_materials").select("*", { count: "exact" }).eq("company_id", companyId).order("name");
   if (category) query = query.eq("category", category);
   if (sub) query = query.eq("sub_category", sub);
-  if (q) query = query.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,barcode.ilike.%${q}%`);
+  if (q) query = query.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
   const { data, error, count } = await query.range(offset, offset + limit - 1);
   if (error) throw new Error(error.message);
   const rows = (data || []).map(mapMaterial);
@@ -519,40 +589,105 @@ export async function lookupMaterials(companyId: string, opts: { barcode?: strin
     const state = await getCompanyState(companyId);
     if (barcode) {
       const found = state.materials.find(
-        (row) => row.barcode === barcode || `STK${row.id.replace(/\W/g, "").slice(-10)}` === barcode,
+        (row) =>
+          materialMatchesCode(row, barcode) || `STK${row.id.replace(/\W/g, "").slice(-10)}` === barcode,
       );
-      return { rows: found ? [found] : [] };
+      return {
+        rows: found ? [found] : [],
+        onHandByLocation: found
+          ? Object.fromEntries(state.locations.map((location) => [location.id, onHand(state, found.id, location.id)]))
+          : {},
+      };
     }
     if (!q) return { rows: state.materials.slice(0, limit) };
     return {
-      rows: state.materials
-        .filter(
-          (row) =>
-            row.name.toLowerCase().includes(q) ||
-            (row.barcode || "").includes(q) ||
-            (row.aliases || []).some((alias) => alias.toLowerCase().includes(q)),
-        )
-        .slice(0, limit),
+      rows: state.materials.filter((row) => materialMatchesQuery(row, q)).slice(0, limit),
     };
   }
 
   const supabase = getSupabaseAdmin();
+  const projectsRes = await supabase.from("stockr_projects").select("*").eq("company_id", companyId);
+  const ops = opsFromProjects((projectsRes.data || []) as Project[], { stockRules: [], catalogIds: [] });
+  const merge = (rows: Material[]) =>
+    rows.map((material) => {
+      const extra = ops.catalogIds.find((item) => item.id === material.id);
+      return extra
+        ? {
+            ...material,
+            mpn: material.mpn || extra.mpn || "",
+            upc: material.upc || extra.upc || "",
+            supplier_number: material.supplier_number || extra.supplier_number || "",
+          }
+        : material;
+    });
+
   if (barcode) {
+    const extraMatch = ops.catalogIds.find(
+      (row) => row.upc === barcode || row.mpn === barcode || row.supplier_number === barcode,
+    );
     const { data, error } = await supabase
       .from("stockr_materials")
       .select("*")
       .eq("company_id", companyId)
-      .eq("barcode", barcode)
+      .or(extraMatch ? `barcode.eq.${barcode},id.eq.${extraMatch.id}` : `barcode.eq.${barcode}`)
       .limit(5);
     if (error) throw new Error(error.message);
-    return { rows: (data || []).map(mapMaterial) };
+    const rows = merge((data || []).map(mapMaterial));
+    const found = rows[0];
+    if (!found) return { rows: [], onHandByLocation: {} };
+    const inv = await supabase
+      .from("stockr_inventory")
+      .select("location_id, quantity")
+      .eq("company_id", companyId)
+      .eq("material_id", found.id);
+    if (inv.error) throw new Error(inv.error.message);
+    const onHandByLocation: Record<string, number> = {};
+    for (const row of inv.data || []) {
+      onHandByLocation[String(row.location_id)] =
+        (onHandByLocation[String(row.location_id)] || 0) + Number(row.quantity);
+    }
+    return { rows, onHandByLocation };
   }
 
+  const extraIds = q
+    ? ops.catalogIds
+        .filter((row) =>
+          [row.mpn, row.upc, row.supplier_number].some((value) => (value || "").toLowerCase().includes(q)),
+        )
+        .map((row) => row.id)
+    : [];
   let query = supabase.from("stockr_materials").select("*").eq("company_id", companyId).order("name").limit(limit);
-  if (q) query = query.or(`name.ilike.%${q}%,barcode.ilike.%${q}%,manufacturer.ilike.%${q}%`);
+  if (q) {
+    const search = `name.ilike.%${q}%,barcode.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%`;
+    query = extraIds.length ? query.or(`${search},id.in.(${extraIds.join(",")})`) : query.or(search);
+  }
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return { rows: (data || []).map(mapMaterial) };
+  return { rows: merge((data || []).map(mapMaterial)) };
+}
+
+export async function listRestock(companyId: string) {
+  if (!isSupabaseConfigured()) {
+    return { rows: listRestockNeeds(await getCompanyState(companyId)) };
+  }
+  const supabase = getSupabaseAdmin();
+  const [materialsRes, locationsRes, inventoryRes, projectsRes] = await Promise.all([
+    supabase.from("stockr_materials").select("id, name, unit, supplier").eq("company_id", companyId),
+    supabase.from("stockr_locations").select("*").eq("company_id", companyId),
+    supabase.from("stockr_inventory").select("material_id, location_id, quantity").eq("company_id", companyId),
+    supabase.from("stockr_projects").select("*").eq("company_id", companyId),
+  ]);
+  if (materialsRes.error) throw new Error(materialsRes.error.message);
+  if (locationsRes.error) throw new Error(locationsRes.error.message);
+  if (inventoryRes.error) throw new Error(inventoryRes.error.message);
+  return {
+    rows: listRestockNeeds({
+      materials: (materialsRes.data || []).map(mapMaterial),
+      locations: (locationsRes.data || []) as Location[],
+      inventory: (inventoryRes.data || []).map(mapInventory),
+      stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
+    }),
+  };
 }
 
 export async function listPurchaseOrders(companyId: string, opts: { status?: string; limit?: number; offset?: number }) {

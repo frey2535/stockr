@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { createEmptyState, createSeedState, normalizeStoreState } from "./seed";
-import { encodeToolsForPersist, toolsFromProjects } from "./tools-state";
+import { encodeStateForPersist } from "./persist-state";
+import { toolsFromProjects } from "./tools-state";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
@@ -143,6 +144,7 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
       : ((toolsRes.data || []) as Tool[]).length
         ? ((toolsRes.data || []) as Tool[])
         : toolsFromProjects((projectsRes.data || []) as Project[], []),
+    stockRules: [],
   });
 }
 
@@ -169,7 +171,7 @@ async function saveTools(companyId: string, tools: Tool[]) {
 
 export async function setCompanyState(companyId: string, state: StoreState) {
   const supabase = getSupabaseAdmin();
-  const next = encodeToolsForPersist(normalizeStoreState(state));
+  const next = encodeStateForPersist(normalizeStoreState(state));
   const { error } = await supabase.rpc("stockr_replace_company_state", {
     p_company_id: companyId,
     p_state: next,

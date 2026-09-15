@@ -1,5 +1,5 @@
 export type ParsedAction = {
-  action: "add" | "transfer" | "use" | "find" | null;
+  action: "add" | "receive" | "return" | "transfer" | "use" | "count" | "find" | null;
   quantity: number | null;
   itemQuery: string;
   toLocationName: string;
@@ -30,9 +30,18 @@ export function parseInventoryEnglish(input: string): ParsedAction {
     projectName: "",
   };
 
-  if (/^(add|added|adding|put|stock|receive|received)\b/i.test(n)) {
+  if (/^(receive|received|receiving)\b/i.test(n)) {
+    r.action = "receive";
+    n = n.replace(/^(receive|received|receiving)\s*/i, "");
+  } else if (/^(return|returned|returning)\b/i.test(n)) {
+    r.action = "return";
+    n = n.replace(/^(return|returned|returning)\s*/i, "");
+  } else if (/^(count|counted|cycle)\b/i.test(n)) {
+    r.action = "count";
+    n = n.replace(/^(count|counted|cycle(?:\s+count)?)\s*/i, "");
+  } else if (/^(add|added|adding|put|stock)\b/i.test(n)) {
     r.action = "add";
-    n = n.replace(/^(add|added|adding|put|stock|receive|received)\s*/i, "");
+    n = n.replace(/^(add|added|adding|put|stock)\s*/i, "");
   } else if (/^(transfer|move|moved|send|sent)\b/i.test(n)) {
     r.action = "transfer";
     n = n.replace(/^(transfer|move|moved|send|sent)\s*/i, "");
@@ -74,7 +83,7 @@ export function parseInventoryEnglish(input: string): ParsedAction {
   const project = n.match(
     /\b(?:on|for)\s+(?:project\s+)?([a-z0-9\s#_-]+?)(?:\s+from\s+|\s+to\s+|$)/i,
   );
-  if (project && r.action === "use") {
+  if (project && (r.action === "use" || r.action === "return")) {
     r.projectName = project[1].trim();
     n = n.replace(project[0], " ").trim();
   }

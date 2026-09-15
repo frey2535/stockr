@@ -8,6 +8,7 @@ import { ActivityItem } from "@/components/activity-item";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RestockBoard } from "@/components/restock-board";
 import { useStore } from "@/lib/store";
 import { useApi } from "@/lib/use-api";
 import { money, qty } from "@/lib/format";
@@ -16,7 +17,7 @@ import type { DashboardPayload } from "@/lib/workspace-types";
 export default function DashboardPage() {
   const { workspace } = useStore();
   const { settings, locations } = workspace;
-  const { data, loading } = useApi<DashboardPayload>("/api/dashboard");
+  const { data, loading, reload } = useApi<DashboardPayload>("/api/dashboard");
 
   const alerts = data?.alerts || [];
   const criticalCount = alerts.filter((row) => row.status === "critical").length;
@@ -85,6 +86,10 @@ export default function DashboardPage() {
           accent
         />
       </div>
+
+      {(data?.restock || []).length > 0 ? (
+        <RestockBoard rows={data?.restock || []} compact onDone={reload} />
+      ) : null}
 
       {alerts.length > 0 ? (
         <Card>

@@ -4,6 +4,9 @@ export type CsvMaterialRow = {
   name: string;
   unit: string;
   barcode: string;
+  mpn: string;
+  upc: string;
+  supplier_number: string;
   category: string;
   manufacturer: string;
   supplier: string;
@@ -54,7 +57,10 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
   const rows = looksLikeHeader ? lines.slice(1) : lines;
 
   const nameIdx = headerIndex(headers, ["name", "material", "item", "description"]);
-  const barcodeIdx = headerIndex(headers, ["barcode", "sku", "upc", "code"]);
+  const barcodeIdx = headerIndex(headers, ["barcode", "sku", "code"]);
+  const upcIdx = headerIndex(headers, ["upc"]);
+  const mpnIdx = headerIndex(headers, ["mpn", "part", "part_number", "manufacturer_part"]);
+  const supplierNoIdx = headerIndex(headers, ["supplier_number", "vendor_number", "catalog_number"]);
   const qtyIdx = headerIndex(headers, ["qty", "quantity", "expected", "count"]);
   const unitIdx = headerIndex(headers, ["unit", "uom"]);
   const categoryIdx = headerIndex(headers, ["category", "cat"]);
@@ -67,10 +73,16 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
       const cells = splitCsvLine(line);
       const name = (nameIdx >= 0 ? cells[nameIdx] : cells[0]) || "";
       const barcode = (barcodeIdx >= 0 ? cells[barcodeIdx] : cells[1] || "") || "";
+      const upc = (upcIdx >= 0 ? cells[upcIdx] : "") || barcode;
+      const mpn = (mpnIdx >= 0 ? cells[mpnIdx] : "") || "";
+      const supplier_number = (supplierNoIdx >= 0 ? cells[supplierNoIdx] : "") || "";
       const quantity = Number(qtyIdx >= 0 ? cells[qtyIdx] : cells[2] || 1) || 1;
       return {
         name: name || (barcode ? `Unknown Product - ${barcode}` : ""),
         barcode,
+        mpn,
+        upc,
+        supplier_number,
         quantity,
         unit: (unitIdx >= 0 ? cells[unitIdx] : "each") || "each",
         category: (categoryIdx >= 0 ? cells[categoryIdx] : "") || "",
@@ -86,6 +98,9 @@ export function materialFromCsv(row: CsvMaterialRow): Partial<Material> {
   return {
     name: row.name,
     barcode: row.barcode,
+    mpn: row.mpn,
+    upc: row.upc,
+    supplier_number: row.supplier_number,
     unit: row.unit || "each",
     category: row.category,
     manufacturer: row.manufacturer,
