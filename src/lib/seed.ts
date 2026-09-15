@@ -10,6 +10,7 @@ import type {
   Tool,
   Transaction,
 } from "./types";
+import { decodeToolsFromPersist } from "./tools-state";
 
 function isoDaysAgo(days: number, hours = 10) {
   const d = new Date();
@@ -445,7 +446,7 @@ const tools: Tool[] = [
 ];
 
 export function normalizeStoreState(state: StoreState): StoreState {
-  return {
+  return decodeToolsFromPersist({
     ...state,
     settings: state.settings,
     locations: state.locations || [],
@@ -456,7 +457,7 @@ export function normalizeStoreState(state: StoreState): StoreState {
     accessCodes: state.accessCodes || [],
     projects: state.projects || [],
     tools: state.tools || [],
-  };
+  });
 }
 
 export function createSeedState(): StoreState {
