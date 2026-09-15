@@ -33,6 +33,10 @@ export function prefetchTab(href: string) {
     prefetchApi("/api/purchase-orders");
     return;
   }
+  if (page === "/tools") {
+    prefetchApi("/api/workspace");
+    return;
+  }
   if (page === "/reports") {
     prefetchApi(`/api/reports?from=${daysAgo(90)}&to=${daysAgo(0)}`);
   }

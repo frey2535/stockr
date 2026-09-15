@@ -2,16 +2,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import bcrypt from "bcryptjs";
-import { createEmptyState, createSeedState } from "./seed";
+import { createEmptyState, createSeedState, normalizeStoreState } from "./seed";
 import { planLimitError } from "./plans";
 import {
   PLATFORM_OWNER_COMPANY_ID,
   PLATFORM_OWNER_COMPANY_NAME,
-  PLATFORM_OWNER_NAME,
-  PLATFORM_OWNER_USER_ID,
   isPlatformOwner,
-  platformOwnerEmail,
-  platformOwnerPassword,
+  seededOwnersToProvision,
 } from "./platform";
 import type { Account, MemberRole, PlanId, PlatformCompany, StoreState, TeamMember } from "./types";
 import { uid } from "./id";
@@ -102,7 +99,7 @@ export function getCompanyState(companyId: string): StoreState {
     .prepare("SELECT payload FROM company_state WHERE company_id = ?")
     .get(companyId) as { payload: string } | undefined;
   if (!row) return createEmptyState("New company");
-  return plain(JSON.parse(row.payload) as StoreState);
+  return normalizeStoreState(plain(JSON.parse(row.payload) as StoreState));
 }
 
 export function setCompanyState(companyId: string, state: StoreState) {
@@ -336,29 +333,7 @@ export function seedDemoTenant() {
 }
 
 export function ensurePlatformOwner() {
-  const email = platformOwnerEmail();
   const now = new Date().toISOString();
-  let user = getUserByEmail(email);
-  const resetPassword = Boolean(process.env.PLATFORM_OWNER_PASSWORD?.trim());
-  if (!user) {
-    db.prepare(
-      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-    ).run(
-      PLATFORM_OWNER_USER_ID,
-      email,
-      PLATFORM_OWNER_NAME,
-      bcrypt.hashSync(platformOwnerPassword(), 10),
-      now,
-    );
-    user = getUserByEmail(email);
-  } else if (resetPassword) {
-    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(
-      bcrypt.hashSync(platformOwnerPassword(), 10),
-      user.id,
-    );
-  }
-  if (!user) throw new Error("Create platform owner: user missing after insert");
-
   let company = getCompany(PLATFORM_OWNER_COMPANY_ID);
   if (!company) {
     db.prepare(
@@ -375,7 +350,23 @@ export function ensurePlatformOwner() {
     company = getCompany(PLATFORM_OWNER_COMPANY_ID);
   }
   if (!company) throw new Error("Create CurrentFlow company: company missing after insert");
-  ensureCompanyMembership(user.id, company.id, "owner");
+
+  for (const owner of seededOwnersToProvision()) {
+    let user = getUserByEmail(owner.email);
+    if (!user) {
+      db.prepare(
+        "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+      ).run(owner.userId, owner.email, owner.name, bcrypt.hashSync(owner.resolvedPassword, 10), now);
+      user = getUserByEmail(owner.email);
+    } else if (owner.resetPassword) {
+      db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(
+        bcrypt.hashSync(owner.resolvedPassword, 10),
+        user.id,
+      );
+    }
+    if (!user) throw new Error(`Create platform owner: ${owner.email} missing after insert`);
+    ensureCompanyMembership(user.id, company.id, "owner");
+  }
 }
 
 seedDemoTenant();

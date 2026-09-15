@@ -3,6 +3,7 @@ export type TxType = "add" | "transfer" | "use" | "adjust" | "shrink";
 export type POStatus = "draft" | "ordered" | "partial" | "received" | "cancelled";
 export type AccessCodeType = "trial" | "permanent";
 export type ProjectStatus = "active" | "bidding" | "completed";
+export type ToolStatus = "available" | "checked_out" | "maintenance";
 
 export type Settings = {
   company_name: string;
@@ -92,6 +93,17 @@ export type Project = {
   status: ProjectStatus;
 };
 
+export type Tool = {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  barcode?: string;
+  assigned_location_id: string;
+  assigned_to?: string;
+  status: ToolStatus;
+};
+
 export type StoreState = {
   settings: Settings;
   locations: Location[];
@@ -101,6 +113,7 @@ export type StoreState = {
   purchaseOrders: PurchaseOrder[];
   accessCodes: AccessCode[];
   projects: Project[];
+  tools: Tool[];
 };
 
 export type WorkspaceCounts = {
@@ -109,6 +122,7 @@ export type WorkspaceCounts = {
   inventoryRows: number;
   transactions: number;
   purchaseOrders: number;
+  tools: number;
 };
 
 export type WorkspaceShell = {
@@ -116,6 +130,7 @@ export type WorkspaceShell = {
   locations: Location[];
   projects: Project[];
   accessCodes: AccessCode[];
+  tools: Tool[];
   counts: WorkspaceCounts;
 };
 

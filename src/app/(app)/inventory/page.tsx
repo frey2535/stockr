@@ -4,7 +4,9 @@ import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
+import { BulkInventoryDialog } from "@/components/bulk-inventory-dialog";
 import { PageHeader } from "@/components/page-header";
+import { ProjectSelect } from "@/components/project-select";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,7 +33,7 @@ import type { InventoryListPayload } from "@/lib/workspace-types";
 
 function InventoryPageInner() {
   const { workspace, applyAction } = useStore();
-  const { settings, locations } = workspace;
+  const { settings, locations, projects } = workspace;
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [locationId, setLocationId] = useState(searchParams.get("location") || "all");
@@ -40,6 +42,8 @@ function InventoryPageInner() {
   const [quantity, setQuantity] = useState("");
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
+  const [project, setProject] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (locationId !== "all") params.set("location", locationId);
@@ -57,6 +61,7 @@ function InventoryPageInner() {
       quantity: parseFloat(quantity),
       fromLocationId: actionType === "add" ? null : fromId,
       toLocationId: actionType === "use" || actionType === "shrink" ? null : toId,
+      project: actionType === "use" ? project : null,
     });
     if (!result.ok) {
       toast.error(result.error);
@@ -74,10 +79,15 @@ function InventoryPageInner() {
         title="Inventory"
         description="All materials across all locations"
         actions={
-          settings.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-          ) : null
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setBulkOpen(true)}>
+              Bulk operations
+            </Button>
+            {settings.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
+            ) : null}
+          </div>
         }
       />
 
@@ -141,19 +151,30 @@ function InventoryPageInner() {
                   <div className="text-right">
                     <p className="text-xl font-bold">{qty(row.total)}</p>
                     <p className="text-xs text-muted-foreground">{row.material.unit}</p>
-                    <Button
-                      size="sm"
-                      className="mt-3 bg-secondary text-secondary-foreground hover:bg-secondary/90"
-                      onClick={() => {
-                        setActive(row.material.id);
-                        setActionType("adjust");
-                        setToId(row.byLocation[0]?.location.id || locations[0]?.id || "");
-                        setFromId(row.byLocation[0]?.location.id || locations[0]?.id || "");
-                        setQuantity(String(row.byLocation[0]?.quantity || 0));
-                      }}
-                    >
-                      Adjust
-                    </Button>
+                    <div className="mt-3 flex flex-wrap justify-end gap-1">
+                      {(["use", "transfer", "add", "adjust", "shrink"] as TxType[]).map((type) => (
+                        <Button
+                          key={type}
+                          size="sm"
+                          variant={type === "adjust" ? "default" : "outline"}
+                          className={
+                            type === "adjust"
+                              ? "bg-secondary text-secondary-foreground hover:bg-secondary/90 capitalize"
+                              : "capitalize"
+                          }
+                          onClick={() => {
+                            setActive(row.material.id);
+                            setActionType(type);
+                            setToId(row.byLocation[0]?.location.id || locations[0]?.id || "");
+                            setFromId(row.byLocation[0]?.location.id || locations[0]?.id || "");
+                            setQuantity(type === "adjust" ? String(row.byLocation[0]?.quantity || 0) : "1");
+                            setProject("");
+                          }}
+                        >
+                          {type === "shrink" ? "Shrink" : type}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -226,12 +247,24 @@ function InventoryPageInner() {
                 </Select>
               </div>
             ) : null}
+            {actionType === "use" ? (
+              <div className="space-y-1">
+                <Label className="text-xs">Buildr project</Label>
+                <ProjectSelect projects={projects} value={project} onChange={setProject} />
+              </div>
+            ) : null}
             <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={commit}>
               Save
             </Button>
           </div>
         </DialogContent>
       </Dialog>
+      <BulkInventoryDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        materials={rows.map((row) => row.material)}
+        onDone={reload}
+      />
     </div>
   );
 }

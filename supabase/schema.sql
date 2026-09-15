@@ -126,6 +126,18 @@ create table if not exists stockr_projects (
   status text not null
 );
 
+create table if not exists stockr_tools (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  name text not null,
+  description text,
+  category text,
+  barcode text,
+  assigned_location_id text not null,
+  assigned_to text,
+  status text not null default 'available'
+);
+
 create index if not exists stockr_memberships_company_idx on stockr_memberships (company_id);
 create index if not exists stockr_sessions_expires_idx on stockr_sessions (expires_at);
 create index if not exists stockr_locations_company_idx on stockr_locations (company_id);
@@ -136,6 +148,7 @@ create index if not exists stockr_transactions_company_idx on stockr_transaction
 create index if not exists stockr_pos_company_idx on stockr_purchase_orders (company_id);
 create unique index if not exists stockr_access_codes_code_idx on stockr_access_codes (lower(code));
 create index if not exists stockr_projects_company_idx on stockr_projects (company_id);
+create index if not exists stockr_tools_company_idx on stockr_tools (company_id);
 
 alter table stockr_users enable row level security;
 alter table stockr_companies enable row level security;
@@ -149,6 +162,7 @@ alter table stockr_purchase_orders enable row level security;
 alter table stockr_purchase_order_lines enable row level security;
 alter table stockr_access_codes enable row level security;
 alter table stockr_projects enable row level security;
+alter table stockr_tools enable row level security;
 
 -- No anon/authenticated policies. The Next.js server uses the service role, which bypasses RLS.
 
@@ -175,6 +189,7 @@ begin
   delete from stockr_transactions where company_id = p_company_id;
   delete from stockr_access_codes where company_id = p_company_id;
   delete from stockr_projects where company_id = p_company_id;
+  delete from stockr_tools where company_id = p_company_id;
   delete from stockr_materials where company_id = p_company_id;
   delete from stockr_locations where company_id = p_company_id;
 
@@ -285,6 +300,21 @@ begin
     elem->>'project_number',
     coalesce(elem->>'status', 'active')
   from jsonb_array_elements(coalesce(p_state->'projects', '[]'::jsonb)) elem;
+
+  insert into stockr_tools (
+    id, company_id, name, description, category, barcode, assigned_location_id, assigned_to, status
+  )
+  select
+    elem->>'id',
+    p_company_id,
+    coalesce(nullif(elem->>'name', ''), 'Untitled tool'),
+    elem->>'description',
+    elem->>'category',
+    elem->>'barcode',
+    coalesce(elem->>'assigned_location_id', ''),
+    elem->>'assigned_to',
+    coalesce(elem->>'status', 'available')
+  from jsonb_array_elements(coalesce(p_state->'tools', '[]'::jsonb)) elem;
 end;
 $$;
 

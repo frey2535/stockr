@@ -49,6 +49,17 @@ export async function POST(request: Request) {
       if (limit) return NextResponse.json({ error: limit }, { status: 403 });
     }
   }
+  if (command.type === "upsertMaterials") {
+    const newCount = command.materials.filter((row) => !row.id).length;
+    for (let i = 0; i < newCount; i += 1) {
+      const limit = planLimitError(
+        account.company.plan,
+        { ...counts, materials: counts.materials + i },
+        "material",
+      );
+      if (limit) return NextResponse.json({ error: limit }, { status: 403 });
+    }
+  }
 
   const prev = await getCompanyState(account.company.id);
   const seed =

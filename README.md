@@ -2,7 +2,7 @@
 
 Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not reuse the NECalcul8r or The Truth project — those apps have their own databases. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. Stripe is not required — plan upgrades use a mock checkout.
+Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not reuse the NECalcul8r or The Truth project — those apps have their own databases. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. PWA and web checkout use Stripe when `STRIPE_SECRET_KEY` and price IDs are set; the Android app uses Google Play Billing. Preview without those keys still activates a plan so you can test limits.
 
 ## GitHub
 
@@ -29,7 +29,7 @@ Production hostname is **https://stockr.currentflowconsulting.org**. Point that 
 
 ### Platform owner
 
-`currentflowconsultingllc@gmail.com` is the CurrentFlow platform owner. That mailbox is created on boot (it is not a leftover Base44 login). After sign-in it opens **Platform** (`/admin`) so you can open any company workspace. Set GitHub / Pages secret `PLATFORM_OWNER_PASSWORD` to replace the bootstrap password in `src/lib/platform.ts`.
+`currentflowconsultingllc@gmail.com` and `marcus.a.frey@gmail.com` are CurrentFlow platform owners. Those mailboxes are created on boot (they are not leftover Base44 logins). After sign-in they open **Platform** (`/admin`) so you can open any company workspace. Set GitHub / Pages secret `PLATFORM_OWNER_PASSWORD` to replace the CurrentFlow bootstrap password in `src/lib/platform.ts`.
 
 ### New company
 
@@ -43,21 +43,22 @@ Sign up from the marketing page to create an empty Starter workspace (2 location
 | Pro     | $49   | 15        | 2,000     | 15    |
 | Fleet   | $149  | Unlimited | Unlimited | Unlimited |
 
-Upgrade from **Billing**. In this repo the checkout immediately activates the plan.
+Upgrade from **Billing**. Web/PWA users pay with Stripe Checkout. The Play Store app uses Google Play Billing (`stockr_pro` / `stockr_fleet`). Without Stripe keys, choosing a paid plan still activates it in preview.
 
 ## What is included
 
 - **Marketing, login, signup** — company workspace or join via invite code
 - **Dashboard** — on-hand totals, estimated value, low-stock alerts, recent activity
 - **Scanner** — camera barcode (Chromium `BarcodeDetector`), manual lookup, and plain-English actions (`add 25 screws to Main Warehouse`)
-- **Inventory** — quantities by location, add / transfer / use / adjust / shrink
+- **Inventory** — quantities by location, use / transfer / add / adjust / shrink from each row, plus bulk operations
 - **Locations** — warehouses and vehicles
-- **Transfers & Activity Log** — full audit trail with CSV export
-- **Catalog** — materials, barcodes, reorder points, printable CODE128 labels
-- **Purchase Orders** — draft through received, with receive-into-location
+- **Tools** — tools assigned to a warehouse or vehicle
+- **Transfers & Activity Log** — full audit trail with CSV export and bulk moves
+- **Catalog** — materials, barcodes, reorder points, printable CODE128 labels, camera/CSV bulk create
+- **Purchase Orders** — draft through received, cancel and delete, camera receive, bulk line create when an item is not in the catalog
 - **Reports** — valuation by location, usage by project, shrinkage
-- **Billing** — plan and seat/location limits
-- **Settings** — branding, team list, invite codes, optional Buildr company ID
+- **Billing** — Stripe for PWA/web, Google Play Billing for the Android app
+- **Settings** — branding, team list, invite codes, Buildr company ID sync into the Use-material project dropdown
 
 Camera scanning needs HTTPS or `localhost` and a browser that implements `BarcodeDetector`. Demo barcodes include `012345678901` (3/4" EMT) and `099887766554` (screws).
 
@@ -105,6 +106,9 @@ Add these GitHub Actions secrets (repo **Settings → Secrets and variables → 
 | `CLOUDFLARE_ACCOUNT_ID` | Same account as The Truth |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_REF.supabase.co` (not the dashboard URL) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Stockr service-role key (server only) |
+| `STRIPE_SECRET_KEY` | Stripe secret or restricted key for PWA checkout |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret for `/api/billing/webhook` |
+| `STRIPE_PRICE_PRO` / `STRIPE_PRICE_FLEET` | Recurring Price IDs |
 
 CI and Deploy turn off automatic Git builds on Pages project `stockr`. Actions uploads the Next.js build; do not reconnect the old Vite/Base44 Git builder.
 
@@ -120,7 +124,7 @@ Package name (type this in Play Console, never change it):
 org.currentflowconsulting.stockr
 ```
 
-The Android app is a Capacitor wrapper that opens the live site. People subscribe on the website (Starter / Pro / Fleet). Play is only the install channel.
+The Android app is a Capacitor wrapper that opens the live site. PWA and web users subscribe with Stripe. The Play build uses Google Play Billing products `stockr_pro` and `stockr_fleet` (implement the `PlayBilling` Capacitor plugin on the native side). Preview without Stripe or Play credentials still activates a plan so limits can be tested.
 
 ### One-time machine setup
 

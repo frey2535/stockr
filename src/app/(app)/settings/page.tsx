@@ -15,7 +15,7 @@ import { useStore } from "@/lib/store";
 import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
 
 export default function SettingsPage() {
-  const { workspace, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode } = useStore();
+  const { workspace, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode, refreshWorkspace } = useStore();
   const { settings, accessCodes } = workspace;
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
   const draft = { ...settings, ...overrides };
@@ -34,6 +34,19 @@ export default function SettingsPage() {
     }
     setOverrides({});
     toast.success("Branding saved");
+    if (draft.buildr_linked && draft.buildr_company_id.trim()) {
+      const response = await fetch("/api/buildr/sync", { method: "POST" });
+      const data = (await response.json().catch(() => null)) as { error?: string; count?: number } | null;
+      if (response.ok) {
+        await refreshWorkspace();
+        const extra = (data as { warning?: string })?.warning;
+        toast.success(
+          extra || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`,
+        );
+      } else if (data?.error) {
+        toast.error(data.error);
+      }
+    }
   };
 
   const onLogo = (file: File | undefined) => {
@@ -248,13 +261,43 @@ export default function SettingsPage() {
                 placeholder="Find your Company ID in Buildr → Settings → Integrations"
               />
               <p className="text-xs text-muted-foreground">
-                Saved on this company workspace. Live Buildr project sync is optional.
+                Saving this ID syncs Buildr projects into the Use-material project dropdown.
               </p>
             </div>
           ) : null}
-          <Button variant="outline" onClick={saveBranding}>
-            Save integration
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={saveBranding}>
+              Save integration
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!draft.buildr_linked || !draft.buildr_company_id.trim()}
+              onClick={async () => {
+                const saved = await updateSettings(draft);
+                if (!saved.ok) {
+                  toast.error(saved.error || "Could not save the Buildr company ID.");
+                  return;
+                }
+                setOverrides({});
+                const response = await fetch("/api/buildr/sync", { method: "POST" });
+                const data = (await response.json().catch(() => null)) as {
+                  error?: string;
+                  count?: number;
+                  warning?: string;
+                } | null;
+                if (!response.ok) {
+                  toast.error(data?.error || "Could not sync Buildr projects.");
+                  return;
+                }
+                await refreshWorkspace();
+                toast.success(
+                  data?.warning || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`,
+                );
+              }}
+            >
+              Sync Buildr projects
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

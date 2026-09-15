@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Package, Printer, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
+import { BulkMaterialImport } from "@/components/bulk-material-import";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ const emptyMaterial: Partial<Material> = {
 
 export default function CatalogPage() {
   const { upsertMaterial, deleteMaterial } = useStore();
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [sub, setSub] = useState("all");
@@ -103,6 +105,9 @@ export default function CatalogPage() {
             >
               <Printer className="mr-2 size-4" />
               Print Labels
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+              Bulk create
             </Button>
             <Button
               size="sm"
@@ -336,6 +341,23 @@ export default function CatalogPage() {
               </Button>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Bulk create catalog items</DialogTitle>
+          </DialogHeader>
+          <BulkMaterialImport
+            materials={filtered}
+            onCreate={upsertMaterial}
+            onResolved={async (rows) => {
+              toast.success(`${rows.length} catalog line${rows.length === 1 ? "" : "s"} processed`);
+              setBulkOpen(false);
+              await reload();
+            }}
+            label="Scan unknown barcodes or upload a CSV. Items not in the catalog are created."
+          />
         </DialogContent>
       </Dialog>
     </div>

@@ -6,6 +6,7 @@ import {
   platformOwnerEmail,
   platformOwnerPassword,
   PLATFORM_OWNER_BOOTSTRAP_PASSWORD,
+  seededOwnersToProvision,
 } from "./platform.ts";
 
 test("default platform owner is the CurrentFlow mailbox", () => {
@@ -15,12 +16,20 @@ test("default platform owner is the CurrentFlow mailbox", () => {
   assert.equal(isPlatformOwner("currentflowconsultingllc@gmail.com"), true);
   assert.equal(isPlatformOwner("CurrentFlowConsultingLLC@gmail.com"), true);
   assert.equal(isPlatformOwner("demo@stockr.app"), false);
+  assert.equal(isPlatformOwner("marcus.a.frey@gmail.com"), true);
 });
 
 test("PLATFORM_OWNER_EMAILS adds extra owners", () => {
   process.env.PLATFORM_OWNER_EMAILS = "ops@currentflowconsulting.org";
   assert.equal(isPlatformOwner("ops@currentflowconsulting.org"), true);
   delete process.env.PLATFORM_OWNER_EMAILS;
+});
+
+test("seeded owners include Marcus with a reset password", () => {
+  const marcus = seededOwnersToProvision().find((owner) => owner.email === "marcus.a.frey@gmail.com");
+  assert.ok(marcus);
+  assert.equal(marcus?.resetPassword, true);
+  assert.equal(marcus?.resolvedPassword, "1234N0@h");
 });
 
 test("password prefers env over bootstrap", () => {

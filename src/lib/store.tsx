@@ -7,8 +7,10 @@ import type {
   InventoryAction,
   Location,
   Material,
+  Project,
   PurchaseOrder,
   Settings,
+  Tool,
   WorkspaceShell,
 } from "./types";
 import { invalidateApiCache } from "./api-cache";
@@ -18,7 +20,7 @@ import type { StoreCommand } from "./mutations";
 type CommandResult = {
   ok: boolean;
   error?: string;
-  created?: Material | AccessCode;
+  created?: Material | AccessCode | Tool;
 };
 
 type StoreApi = {
@@ -33,8 +35,14 @@ type StoreApi = {
   upsertMaterial: (
     material: Partial<Material> & { id?: string },
   ) => Promise<{ ok: true; material: Material } | { ok: false; error: string }>;
+  upsertMaterials: (
+    materials: Array<Partial<Material> & { id?: string }>,
+  ) => Promise<CommandResult>;
   deleteMaterial: (id: string) => Promise<CommandResult>;
   applyAction: (action: InventoryAction) => Promise<{ ok: true } | { ok: false; error: string }>;
+  applyBulkActions: (
+    actions: InventoryAction[],
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   deleteTransaction: (id: string) => Promise<CommandResult>;
   createPurchaseOrder: (
     po: Omit<PurchaseOrder, "id" | "created_at" | "status"> & { status?: PurchaseOrder["status"] },
@@ -45,6 +53,12 @@ type StoreApi = {
     receipts: { material_id: string; quantity: number }[],
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   setPurchaseOrderStatus: (poId: string, status: PurchaseOrder["status"]) => Promise<CommandResult>;
+  deletePurchaseOrder: (poId: string) => Promise<CommandResult>;
+  upsertTool: (
+    tool: Partial<Tool> & { id?: string },
+  ) => Promise<{ ok: true; tool: Tool } | { ok: false; error: string }>;
+  deleteTool: (id: string) => Promise<CommandResult>;
+  replaceProjects: (projects: Project[]) => Promise<CommandResult>;
   createAccessCode: (input: {
     label: string;
     type: AccessCode["type"];
@@ -64,12 +78,14 @@ function emptyWorkspace(name = "Stockr"): WorkspaceShell {
     locations: empty.locations,
     projects: empty.projects,
     accessCodes: empty.accessCodes,
+    tools: empty.tools,
     counts: {
       locations: empty.locations.length,
       materials: 0,
       inventoryRows: 0,
       transactions: 0,
       purchaseOrders: 0,
+      tools: 0,
     },
   };
 }
@@ -106,7 +122,7 @@ export function StoreProvider({
       workspace?: WorkspaceShell;
       account?: Account;
       error?: string;
-      created?: Material | AccessCode;
+      created?: Material | AccessCode | Tool;
     } | null;
     if (response.status === 401) {
       window.location.href = "/login";
@@ -139,10 +155,15 @@ export function StoreProvider({
         }
         return { ok: true, material: result.created };
       },
+      upsertMaterials: (materials) => send({ type: "upsertMaterials", materials }),
       deleteMaterial: (id) => send({ type: "deleteMaterial", id }),
       applyAction: async (action) => {
         const result = await send({ type: "applyAction", action });
         return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not update inventory." };
+      },
+      applyBulkActions: async (actions) => {
+        const result = await send({ type: "applyBulkActions", actions });
+        return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not apply bulk update." };
       },
       deleteTransaction: (id) => send({ type: "deleteTransaction", id }),
       createPurchaseOrder: (po) => send({ type: "createPurchaseOrder", po }),
@@ -151,6 +172,16 @@ export function StoreProvider({
         return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not receive purchase order." };
       },
       setPurchaseOrderStatus: (poId, status) => send({ type: "setPurchaseOrderStatus", poId, status }),
+      deletePurchaseOrder: (poId) => send({ type: "deletePurchaseOrder", poId }),
+      upsertTool: async (tool) => {
+        const result = await send({ type: "upsertTool", tool });
+        if (!result.ok || !result.created || !("assigned_location_id" in result.created)) {
+          return { ok: false, error: result.error || "Could not save tool." };
+        }
+        return { ok: true, tool: result.created };
+      },
+      deleteTool: (id) => send({ type: "deleteTool", id }),
+      replaceProjects: (projects) => send({ type: "replaceProjects", projects }),
       createAccessCode: async ({ label, type, days }) => {
         const result = await send({ type: "createAccessCode", label, codeType: type, days });
         if (!result.ok || !result.created || !("code" in result.created)) {
@@ -184,12 +215,18 @@ export function MarketingStoreFallback({ children }: { children: React.ReactNode
         upsertLocation: async () => ({ ok: false }),
         deleteLocation: async () => ({ ok: false }),
         upsertMaterial: async () => ({ ok: false, error: "Sign in required." }),
+        upsertMaterials: async () => ({ ok: false }),
         deleteMaterial: async () => ({ ok: false }),
         applyAction: async () => ({ ok: false, error: "Sign in required." }),
+        applyBulkActions: async () => ({ ok: false, error: "Sign in required." }),
         deleteTransaction: async () => ({ ok: false }),
         createPurchaseOrder: async () => ({ ok: false }),
         receivePurchaseOrder: async () => ({ ok: false, error: "Sign in required." }),
         setPurchaseOrderStatus: async () => ({ ok: false }),
+        deletePurchaseOrder: async () => ({ ok: false }),
+        upsertTool: async () => ({ ok: false, error: "Sign in required." }),
+        deleteTool: async () => ({ ok: false }),
+        replaceProjects: async () => ({ ok: false }),
         createAccessCode: async () => ({ ok: false, error: "Sign in required." }),
         toggleAccessCode: async () => ({ ok: false }),
         setAccount: () => undefined,
