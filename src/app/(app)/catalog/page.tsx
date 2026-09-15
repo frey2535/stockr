@@ -42,6 +42,9 @@ const emptyMaterial: Partial<Material> = {
   reorder_point: null,
   min_stock_level: null,
   barcode: "",
+  mpn: "",
+  upc: "",
+  supplier_number: "",
   description: "",
 };
 
@@ -127,7 +130,7 @@ export default function CatalogPage() {
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search catalog..."
+            placeholder="Search name, MPN, UPC, supplier #, barcode..."
             className="pl-9"
           />
         </div>
@@ -187,7 +190,9 @@ export default function CatalogPage() {
                             {[material.manufacturer, material.sub_category].filter(Boolean).join(" · ") || "No manufacturer"}
                           </p>
                           <p className="mt-1 font-mono text-xs text-muted-foreground">
-                            {material.barcode || materialBarcode(material)}
+                            {[material.mpn && `MPN ${material.mpn}`, material.upc && `UPC ${material.upc}`, material.supplier_number && `# ${material.supplier_number}`, material.barcode || materialBarcode(material)]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </p>
                           <p className="mt-2 text-sm">
                             On hand {onHandMap[material.id] || 0} {material.unit}
@@ -328,13 +333,41 @@ export default function CatalogPage() {
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Barcode</Label>
-                <Input
-                  value={editing.barcode || ""}
-                  onChange={(event) => setEditing({ ...editing, barcode: event.target.value })}
-                  placeholder="Leave blank to auto-assign STK code"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">MPN</Label>
+                  <Input
+                    value={editing.mpn || ""}
+                    onChange={(event) => setEditing({ ...editing, mpn: event.target.value })}
+                    placeholder="Manufacturer part #"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Supplier #</Label>
+                  <Input
+                    value={editing.supplier_number || ""}
+                    onChange={(event) => setEditing({ ...editing, supplier_number: event.target.value })}
+                    placeholder="Vendor catalog #"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">UPC</Label>
+                  <Input
+                    value={editing.upc || ""}
+                    onChange={(event) => setEditing({ ...editing, upc: event.target.value })}
+                    placeholder="Universal product code"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Barcode</Label>
+                  <Input
+                    value={editing.barcode || ""}
+                    onChange={(event) => setEditing({ ...editing, barcode: event.target.value })}
+                    placeholder="Leave blank to auto-assign STK code"
+                  />
+                </div>
               </div>
               <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={save}>
                 Save Material

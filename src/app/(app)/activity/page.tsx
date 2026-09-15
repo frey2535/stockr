@@ -48,7 +48,7 @@ export default function ActivityPage() {
       ["When", "Type", "Material", "Qty", "From", "To", "Project", "Notes", "User"],
       rows.map((tx) => [
         formatDate(tx.created_at),
-        TX_META[tx.type].label,
+        (TX_META[tx.type] || { label: tx.type }).label,
         materialNames[tx.material_id] || "",
         tx.quantity,
         locations.find((row) => row.id === tx.from_location_id)?.name || "",
@@ -94,6 +94,9 @@ export default function ActivityPage() {
             <SelectItem value="add">Added</SelectItem>
             <SelectItem value="transfer">Transfers</SelectItem>
             <SelectItem value="use">Usage</SelectItem>
+            <SelectItem value="receive">Received</SelectItem>
+            <SelectItem value="return">Returned</SelectItem>
+            <SelectItem value="count">Counted</SelectItem>
             <SelectItem value="adjust">Adjusted</SelectItem>
             <SelectItem value="shrink">Shrinkage</SelectItem>
           </SelectContent>
@@ -123,7 +126,7 @@ export default function ActivityPage() {
             </TableHeader>
             <TableBody>
               {rows.map((tx) => {
-                const meta = TX_META[tx.type];
+                const meta = TX_META[tx.type] || { label: tx.type, color: "bg-muted text-foreground border" };
                 return (
                   <TableRow key={tx.id}>
                     <TableCell className="whitespace-nowrap text-xs">

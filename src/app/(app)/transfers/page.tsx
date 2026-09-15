@@ -66,6 +66,9 @@ export default function TransfersPage() {
             <SelectItem value="add">Added</SelectItem>
             <SelectItem value="transfer">Transfers</SelectItem>
             <SelectItem value="use">Usage</SelectItem>
+            <SelectItem value="receive">Received</SelectItem>
+            <SelectItem value="return">Returned</SelectItem>
+            <SelectItem value="count">Counted</SelectItem>
             <SelectItem value="adjust">Adjusted</SelectItem>
             <SelectItem value="shrink">Shrinkage</SelectItem>
           </SelectContent>

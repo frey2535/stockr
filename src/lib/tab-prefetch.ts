@@ -17,6 +17,11 @@ export function prefetchTab(href: string) {
     prefetchApi(`/api/inventory?limit=${WORKSPACE_PAGE_SIZE}&offset=0`);
     return;
   }
+  if (page === "/restock") {
+    prefetchApi("/api/restock");
+    prefetchApi("/api/dashboard");
+    return;
+  }
   if (page === "/activity") {
     prefetchApi(`/api/activity?limit=${WORKSPACE_PAGE_SIZE}&offset=0`);
     return;

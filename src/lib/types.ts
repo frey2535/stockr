@@ -1,5 +1,13 @@
 export type LocationType = "warehouse" | "vehicle";
-export type TxType = "add" | "transfer" | "use" | "adjust" | "shrink";
+export type TxType =
+  | "add"
+  | "receive"
+  | "return"
+  | "transfer"
+  | "use"
+  | "adjust"
+  | "count"
+  | "shrink";
 export type POStatus = "draft" | "ordered" | "partial" | "received" | "cancelled";
 export type AccessCodeType = "trial" | "permanent";
 export type ProjectStatus = "active" | "bidding" | "completed";
@@ -33,10 +41,44 @@ export type Material = {
   unit: string;
   unit_cost?: number | null;
   barcode?: string;
+  mpn?: string;
+  upc?: string;
+  supplier_number?: string;
   reorder_point?: number | null;
   min_stock_level?: number | null;
   image_url?: string;
   aliases?: string[];
+};
+
+export type StockRule = {
+  id: string;
+  material_id: string;
+  location_id: string;
+  min: number;
+  max?: number | null;
+};
+
+export type RestockNeed = {
+  id: string;
+  materialId: string;
+  materialName: string;
+  unit: string;
+  locationId: string;
+  locationName: string;
+  locationType: LocationType;
+  onHand: number;
+  min: number;
+  max: number;
+  need: number;
+  suggestion:
+    | {
+        kind: "transfer";
+        fromLocationId: string;
+        fromLocationName: string;
+        quantity: number;
+        available: number;
+      }
+    | { kind: "draft_po"; supplier: string; quantity: number };
 };
 
 export type InventoryItem = {
@@ -114,6 +156,7 @@ export type StoreState = {
   accessCodes: AccessCode[];
   projects: Project[];
   tools: Tool[];
+  stockRules: StockRule[];
 };
 
 export type WorkspaceCounts = {
@@ -131,6 +174,7 @@ export type WorkspaceShell = {
   projects: Project[];
   accessCodes: AccessCode[];
   tools: Tool[];
+  stockRules: StockRule[];
   counts: WorkspaceCounts;
 };
 
@@ -144,6 +188,15 @@ export type InventoryAction = {
   toLocationId?: string | null;
   project?: string | null;
   notes?: string;
+};
+
+export type RestockApply = {
+  kind: "transfer" | "draft_po";
+  materialId: string;
+  locationId: string;
+  quantity: number;
+  fromLocationId?: string;
+  supplier?: string;
 };
 
 export type PlanId = "starter" | "pro" | "fleet";

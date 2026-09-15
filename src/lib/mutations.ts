@@ -1,6 +1,7 @@
 import { bumpQty } from "./inventory";
 import { uid } from "./id";
 import { normalizeStoreState } from "./seed";
+import { needsProject } from "./tx";
 import type {
   AccessCode,
   InventoryAction,
@@ -8,10 +9,20 @@ import type {
   Material,
   Project,
   PurchaseOrder,
+  RestockApply,
   Settings,
+  StockRule,
   StoreState,
   Tool,
 } from "./types";
+
+function withCatalogAliases(material: Partial<Material>) {
+  const aliases = new Set(material.aliases || []);
+  for (const value of [material.mpn, material.upc, material.supplier_number, material.barcode]) {
+    if (value) aliases.add(String(value));
+  }
+  return Array.from(aliases);
+}
 
 export type StoreCommand =
   | { type: "updateSettings"; patch: Partial<Settings> }
@@ -39,6 +50,9 @@ export type StoreCommand =
   | { type: "deletePurchaseOrder"; poId: string }
   | { type: "upsertTool"; tool: Partial<Tool> & { id?: string } }
   | { type: "deleteTool"; id: string }
+  | { type: "setStockRule"; rule: Partial<StockRule> & { material_id: string; location_id: string } }
+  | { type: "deleteStockRule"; id: string }
+  | { type: "applyRestock"; restock: RestockApply }
   | { type: "replaceProjects"; projects: Project[] }
   | { type: "createAccessCode"; label: string; codeType: AccessCode["type"]; days?: number }
   | { type: "toggleAccessCode"; id: string }
@@ -88,9 +102,11 @@ export function applyCommand(
 
   if (command.type === "upsertMaterial") {
     if (command.material.id && prev.materials.some((row) => row.id === command.material.id)) {
+      const current = prev.materials.find((row) => row.id === command.material.id)!;
       const saved = {
-        ...prev.materials.find((row) => row.id === command.material.id)!,
+        ...current,
         ...command.material,
+        aliases: withCatalogAliases({ ...current, ...command.material }),
       };
       return {
         state: {
@@ -111,10 +127,13 @@ export function applyCommand(
       supplier: command.material.supplier || "",
       unit_cost: command.material.unit_cost ?? null,
       barcode: command.material.barcode || "",
+      mpn: command.material.mpn || "",
+      upc: command.material.upc || "",
+      supplier_number: command.material.supplier_number || "",
       reorder_point: command.material.reorder_point ?? null,
       min_stock_level: command.material.min_stock_level ?? null,
       image_url: command.material.image_url || "",
-      aliases: command.material.aliases || [],
+      aliases: withCatalogAliases(command.material),
     };
     return { state: { ...prev, materials: [...prev.materials, saved] }, created: saved };
   }
@@ -146,9 +165,12 @@ export function applyCommand(
     const qty = Number(action.quantity);
     if (!action.materialId) return { state: prev, error: "Select a material." };
     if (!qty || qty <= 0) return { state: prev, error: "Quantity must be greater than zero." };
+    if (needsProject(action.type) && !String(action.project || "").trim()) {
+      return { state: prev, error: "Job / project is required." };
+    }
 
     let inventory = prev.inventory.map((row) => ({ ...row }));
-    if (action.type === "add") {
+    if (action.type === "add" || action.type === "receive" || action.type === "return") {
       if (!action.toLocationId) return { state: prev, error: "Destination location required." };
       inventory = bumpQty(inventory, action.materialId, action.toLocationId, qty);
     } else if (action.type === "use" || action.type === "shrink") {
@@ -175,7 +197,7 @@ export function applyCommand(
       if (have < qty) return { state: prev, error: `Only ${have} on hand at the source location.` };
       inventory = bumpQty(inventory, action.materialId, action.fromLocationId, -qty);
       inventory = bumpQty(inventory, action.materialId, action.toLocationId, qty);
-    } else if (action.type === "adjust") {
+    } else if (action.type === "adjust" || action.type === "count") {
       const locationId = action.toLocationId || action.fromLocationId;
       if (!locationId) return { state: prev, error: "Location required." };
       inventory = inventory.filter(
@@ -357,6 +379,115 @@ export function applyCommand(
         tools: prev.tools.filter((row) => row.id !== command.id),
       },
     };
+  }
+
+  if (command.type === "setStockRule") {
+    const min = Number(command.rule.min);
+    if (!command.rule.material_id || !command.rule.location_id) {
+      return { state: prev, error: "Material and location required." };
+    }
+    if (!Number.isFinite(min) || min < 0) return { state: prev, error: "Min quantity required." };
+    const max =
+      command.rule.max == null || command.rule.max === ("" as unknown)
+        ? null
+        : Number(command.rule.max);
+    if (max != null && (!Number.isFinite(max) || max < min)) {
+      return { state: prev, error: "Max must be greater than or equal to min." };
+    }
+    const existing = (prev.stockRules || []).find(
+      (row) =>
+        row.id === command.rule.id ||
+        (row.material_id === command.rule.material_id && row.location_id === command.rule.location_id),
+    );
+    const saved: StockRule = {
+      id: existing?.id || command.rule.id || uid("rule"),
+      material_id: command.rule.material_id,
+      location_id: command.rule.location_id,
+      min,
+      max,
+    };
+    const stockRules = existing
+      ? (prev.stockRules || []).map((row) => (row.id === existing.id ? saved : row))
+      : [...(prev.stockRules || []), saved];
+    return { state: { ...prev, stockRules } };
+  }
+
+  if (command.type === "deleteStockRule") {
+    return {
+      state: {
+        ...prev,
+        stockRules: (prev.stockRules || []).filter((row) => row.id !== command.id),
+      },
+    };
+  }
+
+  if (command.type === "applyRestock") {
+    const restock = command.restock;
+    if (restock.kind === "transfer") {
+      if (!restock.fromLocationId) return { state: prev, error: "Source location required." };
+      return applyCommand(
+        prev,
+        {
+          type: "applyAction",
+          action: {
+            type: "transfer",
+            materialId: restock.materialId,
+            quantity: restock.quantity,
+            fromLocationId: restock.fromLocationId,
+            toLocationId: restock.locationId,
+            notes: "Truck restock",
+          },
+        },
+        actor,
+        seed,
+      );
+    }
+    const material = prev.materials.find((row) => row.id === restock.materialId);
+    if (!material) return { state: prev, error: "Material not found." };
+    const supplier = restock.supplier || material.supplier || "Supplier";
+    const existing = prev.purchaseOrders.find((row) => row.status === "draft" && row.supplier === supplier);
+    if (existing) {
+      const lines = existing.lines.map((line) => ({ ...line }));
+      const line = lines.find((row) => row.material_id === restock.materialId);
+      if (line) line.expected_quantity += restock.quantity;
+      else {
+        lines.push({
+          material_id: restock.materialId,
+          expected_quantity: restock.quantity,
+          received_quantity: 0,
+          unit_cost: material.unit_cost || undefined,
+        });
+      }
+      return {
+        state: {
+          ...prev,
+          purchaseOrders: prev.purchaseOrders.map((row) =>
+            row.id === existing.id ? { ...row, lines } : row,
+          ),
+        },
+      };
+    }
+    return applyCommand(
+      prev,
+      {
+        type: "createPurchaseOrder",
+        po: {
+          po_number: `PO-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${uid("po").slice(-4).toUpperCase()}`,
+          supplier,
+          status: "draft",
+          lines: [
+            {
+              material_id: restock.materialId,
+              expected_quantity: restock.quantity,
+              received_quantity: 0,
+              unit_cost: material.unit_cost || undefined,
+            },
+          ],
+        },
+      },
+      actor,
+      seed,
+    );
   }
 
   if (command.type === "replaceProjects") {

@@ -1,13 +1,17 @@
-import { ArrowLeftRight, Minus, Plus, TriangleAlert, Wrench } from "lucide-react";
+import { ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, ListChecks, Minus, Plus, TriangleAlert, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { TX_META, actorLabel } from "@/lib/inventory";
+import { actorLabel, txMeta } from "@/lib/inventory";
 import { formatDate, qty } from "@/lib/format";
-import type { Location, Material, Transaction } from "@/lib/types";
+import type { Location, Material, Transaction, TxType } from "@/lib/types";
+import type { LucideIcon } from "lucide-react";
 
-const ICONS = {
+const ICONS: Record<TxType, LucideIcon> = {
   add: Plus,
+  receive: ArrowDownToLine,
+  return: ArrowUpFromLine,
   transfer: ArrowLeftRight,
   use: Wrench,
+  count: ListChecks,
   adjust: TriangleAlert,
   shrink: Minus,
 };
@@ -21,8 +25,8 @@ export function ActivityItem({
   materials: Material[];
   locations: Location[];
 }) {
-  const meta = TX_META[tx.type];
-  const Icon = ICONS[tx.type];
+  const meta = txMeta(tx.type);
+  const Icon = ICONS[tx.type] || TriangleAlert;
   const material = materials.find((row) => row.id === tx.material_id);
   const from = locations.find((row) => row.id === tx.from_location_id);
   const to = locations.find((row) => row.id === tx.to_location_id);
@@ -39,7 +43,7 @@ export function ActivityItem({
         <p className="truncate text-xs text-muted-foreground">
           {tx.type === "transfer"
             ? `${from?.name || "Unknown"} → ${to?.name || "Unknown"}`
-            : tx.type === "add" || tx.type === "adjust"
+            : tx.type === "add" || tx.type === "adjust" || tx.type === "receive" || tx.type === "return" || tx.type === "count"
               ? to?.name || from?.name || "Location"
               : from?.name || "Location"}
           {tx.project ? ` · ${tx.project}` : ""}

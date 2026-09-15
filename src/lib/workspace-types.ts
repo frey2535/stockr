@@ -1,4 +1,4 @@
-import type { Location, Material, Transaction } from "./types";
+import type { Location, Material, RestockNeed, Transaction } from "./types";
 
 export type DashboardPayload = {
   totalItems: number;
@@ -10,12 +10,19 @@ export type DashboardPayload = {
   locations: Array<Location & { units: number; materialCount: number }>;
   recent: Transaction[];
   recentMaterials: Material[];
+  restock: RestockNeed[];
 };
 
 export type InventoryListPayload = {
   rows: {
     material: Material;
-    byLocation: { location: Location; quantity: number }[];
+    byLocation: {
+      location: Location;
+      quantity: number;
+      min?: number | null;
+      max?: number | null;
+      belowMin?: boolean;
+    }[];
     total: number;
   }[];
   total: number;
@@ -37,6 +44,11 @@ export type CatalogListPayload = {
 
 export type MaterialLookupPayload = {
   rows: Material[];
+  onHandByLocation?: Record<string, number>;
+};
+
+export type RestockPayload = {
+  rows: RestockNeed[];
 };
 
 export type PurchaseOrderListPayload = {

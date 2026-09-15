@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     await listInventory(account.company.id, {
       q: url.searchParams.get("q") || "",
       locationId: url.searchParams.get("location") || "",
+      stock: url.searchParams.get("stock") || "",
       limit: Number(url.searchParams.get("limit") || 50),
       offset: Number(url.searchParams.get("offset") || 0),
     }),
