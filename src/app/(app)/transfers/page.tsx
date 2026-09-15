@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
+import { BulkInventoryDialog } from "@/components/bulk-inventory-dialog";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { ActivityItem } from "@/components/activity-item";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -26,9 +28,10 @@ export default function TransfersPage() {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (type !== "all") params.set("type", type);
-  const { data, loading } = useApi<ActivityListPayload>(`/api/activity?${params.toString()}`);
+  const { data, loading, reload } = useApi<ActivityListPayload>(`/api/activity?${params.toString()}`);
   const rows = data?.rows || [];
   const materials = Object.entries(data?.materialNames || {}).map(([id, name]) => ({ id, name, unit: "each" }));
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   return (
     <div className="space-y-6">
@@ -36,10 +39,15 @@ export default function TransfersPage() {
         title="Transfers"
         description="All inventory movements and usage records"
         actions={
-          settings.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-          ) : null
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setBulkOpen(true)}>
+              Bulk transfer / add / use
+            </Button>
+            {settings.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
+            ) : null}
+          </div>
         }
       />
 
@@ -79,6 +87,12 @@ export default function TransfersPage() {
           ))}
         </div>
       )}
+      <BulkInventoryDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        materials={materials}
+        onDone={reload}
+      />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type {
   PurchaseOrder,
   Settings,
   StoreState,
+  Tool,
   Transaction,
 } from "./types";
 
@@ -412,6 +413,52 @@ const projects: Project[] = [
   },
 ];
 
+const tools: Tool[] = [
+  {
+    id: "tool-meter",
+    name: "Fluke 117 Multimeter",
+    description: "True-RMS digital multimeter",
+    category: "Meters",
+    barcode: "TOOL117001",
+    assigned_location_id: "loc-truck-12",
+    assigned_to: "Mike Alvarez",
+    status: "available",
+  },
+  {
+    id: "tool-drill",
+    name: "Milwaukee Hammer Drill",
+    description: "M18 Fuel 1/2 in hammer drill",
+    category: "Power tools",
+    barcode: "TOOLDRL018",
+    assigned_location_id: "loc-wh-main",
+    status: "available",
+  },
+  {
+    id: "tool-toner",
+    name: "Ideal Circuit Tracer",
+    category: "Testing",
+    barcode: "TOOLTRC220",
+    assigned_location_id: "loc-truck-7",
+    assigned_to: "Dana Cho",
+    status: "checked_out",
+  },
+];
+
+export function normalizeStoreState(state: StoreState): StoreState {
+  return {
+    ...state,
+    settings: state.settings,
+    locations: state.locations || [],
+    materials: state.materials || [],
+    inventory: state.inventory || [],
+    transactions: state.transactions || [],
+    purchaseOrders: state.purchaseOrders || [],
+    accessCodes: state.accessCodes || [],
+    projects: state.projects || [],
+    tools: state.tools || [],
+  };
+}
+
 export function createSeedState(): StoreState {
   return {
     settings: { ...defaultSettings },
@@ -422,6 +469,7 @@ export function createSeedState(): StoreState {
     purchaseOrders: structuredClone(purchaseOrders),
     accessCodes: structuredClone(accessCodes),
     projects: structuredClone(projects),
+    tools: structuredClone(tools),
   };
 }
 
@@ -442,5 +490,6 @@ export function createEmptyState(companyName: string): StoreState {
     purchaseOrders: [],
     accessCodes: [],
     projects: [],
+    tools: [],
   };
 }

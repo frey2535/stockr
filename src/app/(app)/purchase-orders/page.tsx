@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, ShoppingCart } from "lucide-react";
+import { Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { BulkMaterialImport } from "@/components/bulk-material-import";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { BarcodeScanButton } from "@/components/barcode-scan-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,7 +41,7 @@ const STATUS: Record<POStatus, string> = {
 };
 
 export default function PurchaseOrdersPage() {
-  const { workspace, createPurchaseOrder, receivePurchaseOrder, setPurchaseOrderStatus } = useStore();
+  const { workspace, createPurchaseOrder, receivePurchaseOrder, setPurchaseOrderStatus, deletePurchaseOrder, upsertMaterial } = useStore();
   const { locations } = workspace;
   const [status, setStatus] = useState("all");
   const params = new URLSearchParams();
@@ -204,10 +206,39 @@ export default function PurchaseOrdersPage() {
                         </Button>
                       ) : null}
                       {po.status === "ordered" || po.status === "draft" ? (
-                        <Button size="sm" variant="outline" onClick={() => setPurchaseOrderStatus(po.id, "cancelled")}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const result = await setPurchaseOrderStatus(po.id, "cancelled");
+                            if (!result.ok) {
+                              toast.error(result.error || "Could not cancel this PO.");
+                              return;
+                            }
+                            toast.success(`${po.po_number} cancelled`);
+                            await reload();
+                          }}
+                        >
                           Cancel
                         </Button>
                       ) : null}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={async () => {
+                          const result = await deletePurchaseOrder(po.id);
+                          if (!result.ok) {
+                            toast.error(result.error || "Could not delete this PO.");
+                            return;
+                          }
+                          toast.success(`${po.po_number} deleted`);
+                          await reload();
+                        }}
+                      >
+                        <Trash2 className="mr-1 size-3.5" />
+                        Delete
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -237,6 +268,22 @@ export default function PurchaseOrdersPage() {
               <Label className="text-xs">Expected Delivery</Label>
               <Input type="date" value={expected} onChange={(event) => setExpected(event.target.value)} />
             </div>
+            <BulkMaterialImport
+              materials={materials}
+              onCreate={upsertMaterial}
+              onResolved={(rows) => {
+                setLines((prev) => [
+                  ...prev,
+                  ...rows.map((row) => ({
+                    material_id: row.material.id,
+                    expected_quantity: row.quantity,
+                    received_quantity: 0,
+                    unit_cost: row.material.unit_cost || 0,
+                  })),
+                ]);
+              }}
+              label="Scan purchased material or upload a CSV. Missing catalog items are created."
+            />
             <div className="flex items-center justify-between">
               <Label className="text-xs">Line Items</Label>
               <Button type="button" variant="outline" size="sm" className="h-7" onClick={addLine}>
@@ -336,6 +383,25 @@ export default function PurchaseOrdersPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <BarcodeScanButton
+                label="Scan received barcode"
+                onCode={(code) => {
+                  const match = materials.find((row) => row.barcode === code);
+                  const line = receiving.lines.find((row) =>
+                    match ? row.material_id === match.id : false,
+                  );
+                  if (!line) {
+                    toast.error("That barcode is not on this PO.");
+                    return;
+                  }
+                  const remaining = line.expected_quantity - line.received_quantity;
+                  setReceipts((prev) => ({
+                    ...prev,
+                    [line.material_id]: Math.min(remaining, (prev[line.material_id] || 0) + 1),
+                  }));
+                  toast.success(`Scanned ${match?.name || code}`);
+                }}
+              />
               {receiving.lines.map((line) => {
                 const remaining = line.expected_quantity - line.received_quantity;
                 return (

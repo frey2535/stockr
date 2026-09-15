@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { ProjectSelect } from "@/components/project-select";
 import { useStore } from "@/lib/store";
 import { materialBarcode } from "@/lib/id";
 import { matchLocation, matchMaterial, parseInventoryEnglish } from "@/lib/nlp";
@@ -373,18 +374,8 @@ export default function ScannerPage() {
             ) : null}
             {actionType === "use" ? (
               <div className="space-y-1">
-                <Label className="text-xs">Project (optional)</Label>
-                <Input
-                  value={project}
-                  onChange={(event) => setProject(event.target.value)}
-                  placeholder="e.g. Riverside Electrical"
-                  list="project-list"
-                />
-                <datalist id="project-list">
-                  {projects.map((row) => (
-                    <option key={row.id} value={row.name} />
-                  ))}
-                </datalist>
+                <Label className="text-xs">Buildr project</Label>
+                <ProjectSelect projects={projects} value={project} onChange={setProject} />
               </div>
             ) : null}
             <div className="flex gap-2">

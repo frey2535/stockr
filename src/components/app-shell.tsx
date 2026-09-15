@@ -17,6 +17,7 @@ import {
   ShoppingCart,
   Shield,
   Warehouse,
+  Wrench,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -33,6 +34,7 @@ const NAV = [
   { href: "/transfers", label: "Transfers", icon: ArrowLeftRight },
   { href: "/activity", label: "Activity Log", icon: ClipboardList },
   { href: "/catalog", label: "Catalog", icon: Package },
+  { href: "/tools", label: "Tools", icon: Wrench },
   { href: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/billing", label: "Billing", icon: CreditCard },

@@ -12,6 +12,7 @@ import type {
   PurchaseOrder,
   Settings,
   StoreState,
+  Tool,
   Transaction,
   WorkspaceShell,
 } from "./types";
@@ -57,12 +58,14 @@ function shellFromState(state: StoreState): WorkspaceShell {
     locations: state.locations,
     projects: state.projects,
     accessCodes: state.accessCodes,
+    tools: state.tools || [],
     counts: {
       locations: state.locations.length,
       materials: state.materials.length,
       inventoryRows: state.inventory.length,
       transactions: state.transactions.length,
       purchaseOrders: state.purchaseOrders.length,
+      tools: (state.tools || []).length,
     },
   };
 }
@@ -73,12 +76,13 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
   }
 
   const supabase = getSupabaseAdmin();
-  const [companyRes, locationsRes, projectsRes, codesRes, materials, inventory, transactions, purchaseOrders] =
+  const [companyRes, locationsRes, projectsRes, codesRes, toolsRes, materials, inventory, transactions, purchaseOrders] =
     await Promise.all([
       supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
       supabase.from("stockr_locations").select("*").eq("company_id", companyId),
       supabase.from("stockr_projects").select("*").eq("company_id", companyId),
       supabase.from("stockr_access_codes").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
+      supabase.from("stockr_tools").select("*").eq("company_id", companyId),
       supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
       supabase.from("stockr_inventory").select("id", { count: "exact", head: true }).eq("company_id", companyId),
       supabase.from("stockr_transactions").select("id", { count: "exact", head: true }).eq("company_id", companyId),
@@ -100,7 +104,8 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
       locations: [],
       projects: [],
       accessCodes: [],
-      counts: { locations: 0, materials: 0, inventoryRows: 0, transactions: 0, purchaseOrders: 0 },
+      tools: [],
+      counts: { locations: 0, materials: 0, inventoryRows: 0, transactions: 0, purchaseOrders: 0, tools: 0 },
     };
   }
 
@@ -118,12 +123,14 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
     locations: (locationsRes.data || []) as Location[],
     projects: (projectsRes.data || []) as Project[],
     accessCodes: (codesRes.data || []) as AccessCode[],
+    tools: toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]),
     counts: {
       locations: (locationsRes.data || []).length,
       materials: materials.count || 0,
       inventoryRows: inventory.count || 0,
       transactions: transactions.count || 0,
       purchaseOrders: purchaseOrders.count || 0,
+      tools: toolsRes.error ? 0 : (toolsRes.data || []).length,
     },
   };
 }

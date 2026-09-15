@@ -1,16 +1,13 @@
 import bcrypt from "bcryptjs";
-import { createEmptyState, createSeedState } from "./seed";
+import { createEmptyState, createSeedState, normalizeStoreState } from "./seed";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
 import {
   PLATFORM_OWNER_COMPANY_ID,
   PLATFORM_OWNER_COMPANY_NAME,
-  PLATFORM_OWNER_NAME,
-  PLATFORM_OWNER_USER_ID,
   isPlatformOwner,
-  platformOwnerEmail,
-  platformOwnerPassword,
+  seededOwnersToProvision,
 } from "./platform";
 import type {
   AccessCode,
@@ -25,6 +22,7 @@ import type {
   PurchaseOrder,
   StoreState,
   TeamMember,
+  Tool,
   Transaction,
 } from "./types";
 
@@ -66,7 +64,7 @@ function throwIfError(error: { message: string } | null, action: string) {
 
 export async function getCompanyState(companyId: string): Promise<StoreState> {
   const supabase = getSupabaseAdmin();
-  const [companyRes, locationsRes, materialsRes, inventoryRes, txRes, poRes, lineRes, codesRes, projectsRes] =
+  const [companyRes, locationsRes, materialsRes, inventoryRes, txRes, poRes, lineRes, codesRes, projectsRes, toolsRes] =
     await Promise.all([
       supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
       supabase.from("stockr_locations").select("*").eq("company_id", companyId),
@@ -77,6 +75,7 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
       supabase.from("stockr_purchase_order_lines").select("*").eq("company_id", companyId),
       supabase.from("stockr_access_codes").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
       supabase.from("stockr_projects").select("*").eq("company_id", companyId),
+      supabase.from("stockr_tools").select("*").eq("company_id", companyId),
     ]);
 
   for (const result of [companyRes, locationsRes, materialsRes, inventoryRes, txRes, poRes, lineRes, codesRes, projectsRes]) {
@@ -108,7 +107,7 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
     lines: linesByPo.get(row.id) || [],
   }));
 
-  return {
+  return normalizeStoreState({
     settings: {
       company_name: company.name,
       logo_url: company.logo_url,
@@ -138,16 +137,40 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
     purchaseOrders,
     accessCodes: (codesRes.data || []) as AccessCode[],
     projects: (projectsRes.data || []) as Project[],
-  };
+    tools: toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]),
+  });
+}
+
+async function saveTools(companyId: string, tools: Tool[]) {
+  const supabase = getSupabaseAdmin();
+  const del = await supabase.from("stockr_tools").delete().eq("company_id", companyId);
+  if (del.error) return;
+  if (!tools.length) return;
+  const insert = await supabase.from("stockr_tools").insert(
+    tools.map((tool) => ({
+      id: tool.id,
+      company_id: companyId,
+      name: tool.name,
+      description: tool.description || "",
+      category: tool.category || "",
+      barcode: tool.barcode || "",
+      assigned_location_id: tool.assigned_location_id,
+      assigned_to: tool.assigned_to || "",
+      status: tool.status,
+    })),
+  );
+  if (insert.error) throwIfError(insert.error, "Save tools");
 }
 
 export async function setCompanyState(companyId: string, state: StoreState) {
   const supabase = getSupabaseAdmin();
+  const next = normalizeStoreState(state);
   const { error } = await supabase.rpc("stockr_replace_company_state", {
     p_company_id: companyId,
-    p_state: state,
+    p_state: next,
   });
   throwIfError(error, "Save company workspace");
+  await saveTools(companyId, next.tools);
 }
 
 export async function getUserByEmail(email: string) {
@@ -422,30 +445,8 @@ export async function seedDemoTenant() {
 }
 
 export async function ensurePlatformOwner() {
-  const email = platformOwnerEmail();
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
-
-  let user = await getUserByEmail(email);
-  const resetPassword = Boolean(process.env.PLATFORM_OWNER_PASSWORD?.trim());
-  if (!user) {
-    const insert = await supabase.from("stockr_users").insert({
-      id: PLATFORM_OWNER_USER_ID,
-      email,
-      name: PLATFORM_OWNER_NAME,
-      password_hash: bcrypt.hashSync(platformOwnerPassword(), 10),
-      created_at: now,
-    });
-    throwIfError(insert.error, "Create platform owner");
-    user = await getUserByEmail(email);
-  } else if (resetPassword) {
-    const update = await supabase
-      .from("stockr_users")
-      .update({ password_hash: bcrypt.hashSync(platformOwnerPassword(), 10) })
-      .eq("id", user.id);
-    throwIfError(update.error, "Reset platform owner password");
-  }
-  if (!user) throw new Error("Create platform owner: user missing after insert");
 
   let company = await getCompany(PLATFORM_OWNER_COMPANY_ID);
   if (!company) {
@@ -463,5 +464,26 @@ export async function ensurePlatformOwner() {
   }
   if (!company) throw new Error("Create CurrentFlow company: company missing after insert");
 
-  await ensureCompanyMembership(user.id, company.id, "owner");
+  for (const owner of seededOwnersToProvision()) {
+    let user = await getUserByEmail(owner.email);
+    if (!user) {
+      const insert = await supabase.from("stockr_users").insert({
+        id: owner.userId,
+        email: owner.email,
+        name: owner.name,
+        password_hash: bcrypt.hashSync(owner.resolvedPassword, 10),
+        created_at: now,
+      });
+      throwIfError(insert.error, `Create platform owner ${owner.email}`);
+      user = await getUserByEmail(owner.email);
+    } else if (owner.resetPassword) {
+      const update = await supabase
+        .from("stockr_users")
+        .update({ password_hash: bcrypt.hashSync(owner.resolvedPassword, 10) })
+        .eq("id", user.id);
+      throwIfError(update.error, `Reset platform owner password ${owner.email}`);
+    }
+    if (!user) throw new Error(`Create platform owner: ${owner.email} missing after insert`);
+    await ensureCompanyMembership(user.id, company.id, "owner");
+  }
 }

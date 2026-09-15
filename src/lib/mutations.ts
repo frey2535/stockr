@@ -1,13 +1,16 @@
 import { bumpQty } from "./inventory";
 import { uid } from "./id";
+import { normalizeStoreState } from "./seed";
 import type {
   AccessCode,
   InventoryAction,
   Location,
   Material,
+  Project,
   PurchaseOrder,
   Settings,
   StoreState,
+  Tool,
 } from "./types";
 
 export type StoreCommand =
@@ -15,8 +18,10 @@ export type StoreCommand =
   | { type: "upsertLocation"; location: Partial<Location> & { id?: string } }
   | { type: "deleteLocation"; id: string }
   | { type: "upsertMaterial"; material: Partial<Material> & { id?: string } }
+  | { type: "upsertMaterials"; materials: Array<Partial<Material> & { id?: string }> }
   | { type: "deleteMaterial"; id: string }
   | { type: "applyAction"; action: InventoryAction }
+  | { type: "applyBulkActions"; actions: InventoryAction[] }
   | { type: "deleteTransaction"; id: string }
   | {
       type: "createPurchaseOrder";
@@ -31,6 +36,10 @@ export type StoreCommand =
       receipts: { material_id: string; quantity: number }[];
     }
   | { type: "setPurchaseOrderStatus"; poId: string; status: PurchaseOrder["status"] }
+  | { type: "deletePurchaseOrder"; poId: string }
+  | { type: "upsertTool"; tool: Partial<Tool> & { id?: string } }
+  | { type: "deleteTool"; id: string }
+  | { type: "replaceProjects"; projects: Project[] }
   | { type: "createAccessCode"; label: string; codeType: AccessCode["type"]; days?: number }
   | { type: "toggleAccessCode"; id: string }
   | { type: "resetDemo" };
@@ -40,7 +49,8 @@ export function applyCommand(
   command: StoreCommand,
   actor: string,
   seed?: StoreState,
-): { state: StoreState; error?: string; created?: Material | AccessCode } {
+): { state: StoreState; error?: string; created?: Material | AccessCode | Tool } {
+  prev = normalizeStoreState(prev);
   if (command.type === "updateSettings") {
     return { state: { ...prev, settings: { ...prev.settings, ...command.patch } } };
   }
@@ -107,6 +117,18 @@ export function applyCommand(
       aliases: command.material.aliases || [],
     };
     return { state: { ...prev, materials: [...prev.materials, saved] }, created: saved };
+  }
+
+  if (command.type === "upsertMaterials") {
+    let current = prev;
+    let last: Material | undefined;
+    for (const material of command.materials) {
+      const result = applyCommand(current, { type: "upsertMaterial", material }, actor, seed);
+      if (result.error) return result;
+      current = result.state;
+      if (result.created && "unit" in result.created) last = result.created;
+    }
+    return { state: current, created: last };
   }
 
   if (command.type === "deleteMaterial") {
@@ -192,6 +214,19 @@ export function applyCommand(
     };
   }
 
+  if (command.type === "applyBulkActions") {
+    if (!command.actions.length) return { state: prev, error: "Add at least one line." };
+    let current = prev;
+    for (const [index, action] of command.actions.entries()) {
+      const result = applyCommand(current, { type: "applyAction", action }, actor, seed);
+      if (result.error) {
+        return { state: prev, error: `Line ${index + 1}: ${result.error}` };
+      }
+      current = result.state;
+    }
+    return { state: current };
+  }
+
   if (command.type === "deleteTransaction") {
     return {
       state: {
@@ -260,6 +295,8 @@ export function applyCommand(
   }
 
   if (command.type === "setPurchaseOrderStatus") {
+    const existing = prev.purchaseOrders.find((row) => row.id === command.poId);
+    if (!existing) return { state: prev, error: "Purchase order not found." };
     return {
       state: {
         ...prev,
@@ -268,6 +305,62 @@ export function applyCommand(
         ),
       },
     };
+  }
+
+  if (command.type === "deletePurchaseOrder") {
+    if (!prev.purchaseOrders.some((row) => row.id === command.poId)) {
+      return { state: prev, error: "Purchase order not found." };
+    }
+    return {
+      state: {
+        ...prev,
+        purchaseOrders: prev.purchaseOrders.filter((row) => row.id !== command.poId),
+      },
+    };
+  }
+
+  if (command.type === "upsertTool") {
+    if (command.tool.id && prev.tools.some((row) => row.id === command.tool.id)) {
+      const saved = {
+        ...prev.tools.find((row) => row.id === command.tool.id)!,
+        ...command.tool,
+        id: command.tool.id,
+      };
+      return {
+        state: {
+          ...prev,
+          tools: prev.tools.map((row) => (row.id === command.tool.id ? saved : row)),
+        },
+        created: saved,
+      };
+    }
+    if (!command.tool.assigned_location_id) {
+      return { state: prev, error: "Assign the tool to a warehouse or vehicle." };
+    }
+    const created: Tool = {
+      id: uid("tool"),
+      name: command.tool.name || "Untitled tool",
+      description: command.tool.description || "",
+      category: command.tool.category || "",
+      barcode: command.tool.barcode || "",
+      assigned_location_id: command.tool.assigned_location_id,
+      assigned_to: command.tool.assigned_to || "",
+      status: command.tool.status || "available",
+    };
+    return { state: { ...prev, tools: [...prev.tools, created] }, created };
+  }
+
+  if (command.type === "deleteTool") {
+    return {
+      state: {
+        ...prev,
+        tools: prev.tools.filter((row) => row.id !== command.id),
+      },
+    };
+  }
+
+  if (command.type === "replaceProjects") {
+    return { state: { ...prev, projects: command.projects } };
   }
 
   if (command.type === "createAccessCode") {
