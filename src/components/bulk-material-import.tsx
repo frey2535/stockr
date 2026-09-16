@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { materialFromCsv, parseMaterialCsv, type CsvMaterialRow } from "@/lib/csv";
-import type { Material } from "@/lib/types";
+import { codesMatch } from "@/lib/barcode";
+import type { IdentifiedProduct, Material } from "@/lib/types";
 
 export function BulkMaterialImport({
   materials,
@@ -53,13 +54,33 @@ export function BulkMaterialImport({
   };
 
   const handleCode = async (code: string) => {
-    const found = materials.find((material) => material.barcode === code);
+    const found = materials.find(
+      (material) =>
+        codesMatch(material.barcode, code) ||
+        codesMatch(material.upc, code) ||
+        material.mpn === code ||
+        material.supplier_number === code,
+    );
     if (found) {
       onResolved([{ material: found, quantity: 1 }]);
       toast.success(`Added ${found.name}`);
       return;
     }
-    setUnknown({ barcode: code, name: `Unknown Product - ${code}` });
+    const response = await fetch(`/api/materials?barcode=${encodeURIComponent(code)}`);
+    const data = (await response.json().catch(() => null)) as {
+      rows?: Material[];
+      identified?: IdentifiedProduct | null;
+    } | null;
+    const remote = data?.rows?.[0];
+    if (remote) {
+      onResolved([{ material: remote, quantity: 1 }]);
+      toast.success(`Added ${remote.name}`);
+      return;
+    }
+    setUnknown({
+      barcode: code,
+      name: data?.identified?.name || `Unknown Product - ${code}`,
+    });
   };
 
   return (

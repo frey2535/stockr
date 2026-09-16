@@ -30,7 +30,9 @@ export default async function PrivacyPage() {
         <h2 className="text-xl font-semibold text-foreground">Camera</h2>
         <p>
           The scanner can use the device camera to read barcodes. Frames are processed on the
-          device. We do not upload photos or video from the camera.
+          device. We do not upload photos or video from the camera. If a code is not already in
+          your catalog, Stockr may look up those digits in public product databases to identify
+          the item.
         </p>
         <h2 className="text-xl font-semibold text-foreground">Where data lives</h2>
         <p>

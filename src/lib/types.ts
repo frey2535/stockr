@@ -50,6 +50,19 @@ export type Material = {
   aliases?: string[];
 };
 
+export type IdentifiedProduct = {
+  name: string;
+  brand?: string;
+  manufacturer?: string;
+  category?: string;
+  description?: string;
+  image_url?: string;
+  barcode: string;
+  upc?: string;
+  mpn?: string;
+  source: string;
+};
+
 export type StockRule = {
   id: string;
   material_id: string;
