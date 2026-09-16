@@ -24,6 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Write build version
+        run: |
+          printf '{"sha":"%s","builtAt":"%s"}\n' "$GITHUB_SHA" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > public/build-version.json
       - name: Turn off Cloudflare Pages Git auto-builds
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -34,6 +37,7 @@ jobs:
         env:
           NEXT_PUBLIC_STOCKR_HOST: stockr.currentflowconsulting.org
           NEXT_PUBLIC_APP_URL: https://stockr.currentflowconsulting.org
+          NEXT_PUBLIC_STOCKR_BUILD_SHA: ${{ github.sha }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
       - name: Bind Pages secrets
         env:
@@ -68,6 +72,8 @@ jobs:
           if [ -n "${BUILDR_API_KEY:-}" ]; then
             put_secret BUILDR_API_KEY "$BUILDR_API_KEY"
           fi
+          put_secret STOCKR_BUILD_ID "${GITHUB_SHA}"
+          put_secret STOCKR_BUILT_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
