@@ -23,7 +23,7 @@ function isoDaysAgo(days: number, hours = 10) {
 export const defaultSettings: Settings = {
   company_name: "Summit Electric",
   logo_url: "/logo.png",
-  primary_color: "#12203a",
+  primary_color: "#2563eb",
   accent_color: "#f97316",
   buildr_linked: true,
   buildr_company_id: "co_summit_demo",
@@ -521,7 +521,7 @@ export function createEmptyState(companyName: string): StoreState {
     settings: {
       company_name: companyName,
       logo_url: "/logo.png",
-      primary_color: "#12203a",
+      primary_color: "#2563eb",
       accent_color: "#f97316",
       buildr_linked: false,
       buildr_company_id: "",

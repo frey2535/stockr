@@ -47,10 +47,10 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117]">
+    <div className="min-h-screen bg-background">
       <MarketingHeader />
       <div className="mx-auto max-w-md px-4 py-16">
-        <Card className="border-white/10 bg-white">
+        <Card>
           <CardHeader>
             <CardTitle>{mode === "company" ? "Create a company workspace" : "Join with an invite code"}</CardTitle>
           </CardHeader>
@@ -129,7 +129,7 @@ export default function SignupPage() {
                   />
                 </div>
               )}
-              <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" disabled={busy}>
+              <Button className="w-full" disabled={busy}>
                 {busy ? "Creating account…" : mode === "company" ? "Create workspace" : "Join company"}
               </Button>
               <p className="text-center text-sm text-muted-foreground">

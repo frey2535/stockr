@@ -37,7 +37,7 @@ export default function DashboardPage() {
                 className="h-14 w-auto max-w-[200px] object-contain"
               />
             ) : null}
-            <Button asChild className="bg-secondary text-secondary-foreground shadow-lg shadow-secondary/20 hover:bg-secondary/90">
+            <Button asChild>
               <Link href="/scanner">
                 <ScanLine className="mr-2 size-4" />
                 Scan Material
@@ -48,7 +48,7 @@ export default function DashboardPage() {
       />
 
       {locations.length === 0 && (data?.materialCount || 0) === 0 ? (
-        <Card className="border-secondary/40 bg-secondary/5">
+        <Card className="border-primary/40 bg-primary/5">
           <CardContent className="flex flex-col gap-3 p-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="font-semibold">Your shop is empty</p>
@@ -57,7 +57,7 @@ export default function DashboardPage() {
                 locations and 50 items.
               </p>
             </div>
-            <Button asChild className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+            <Button asChild>
               <Link href="/locations">Add a location</Link>
             </Button>
           </CardContent>
@@ -135,7 +135,7 @@ export default function DashboardPage() {
         <Card className="md:col-span-1">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
-              <MapPin className="size-5 text-secondary" />
+              <MapPin className="size-5 text-primary" />
               Locations
             </CardTitle>
           </CardHeader>
@@ -156,13 +156,13 @@ export default function DashboardPage() {
                       className={
                         location.type === "warehouse"
                           ? "flex size-9 items-center justify-center rounded-lg bg-primary/10"
-                          : "flex size-9 items-center justify-center rounded-lg bg-secondary/10"
+                          : "flex size-9 items-center justify-center rounded-lg bg-primary/10"
                       }
                     >
                       {location.type === "warehouse" ? (
                         <Warehouse className="size-4 text-primary" />
                       ) : (
-                        <Truck className="size-4 text-secondary" />
+                        <Truck className="size-4 text-primary" />
                       )}
                     </div>
                     <div>

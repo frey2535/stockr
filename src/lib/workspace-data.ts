@@ -125,7 +125,7 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
       settings: {
         company_name: "New company",
         logo_url: "",
-        primary_color: "#12203a",
+        primary_color: "#2563eb",
         accent_color: "#f97316",
         buildr_linked: false,
         buildr_company_id: "",

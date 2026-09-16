@@ -35,7 +35,7 @@ export default function ReportsPage() {
       <PageHeader
         title="Reports"
         description="Valuation, usage, and shrinkage — export to CSV"
-        icon={<BarChart3 className="size-7 text-secondary" />}
+        icon={<BarChart3 className="size-7 text-primary" />}
         actions={
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
@@ -55,7 +55,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Wallet className="size-5 text-secondary" />
+            <Wallet className="size-5 text-primary" />
             Inventory Valuation by Location
             <Button
               variant="outline"
@@ -90,9 +90,9 @@ export default function ReportsPage() {
                   <p className="font-semibold">${money(row.totalValue)}</p>
                 </div>
               ))}
-              <div className="flex items-center justify-between rounded-xl border border-secondary/20 bg-secondary/5 p-3">
+              <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 p-3">
                 <span className="text-sm font-bold">Total Valuation</span>
-                <span className="text-lg font-bold text-secondary">${money(grand)}</span>
+                <span className="text-lg font-bold text-primary">${money(grand)}</span>
               </div>
             </div>
           )}
@@ -102,7 +102,7 @@ export default function ReportsPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Wrench className="size-5 text-secondary" />
+            <Wrench className="size-5 text-primary" />
             Usage by Project
             <span className="ml-1 text-xs font-normal text-muted-foreground">
               ({fromDate?.toLocaleDateString(undefined, { month: "short", day: "numeric" })} –{" "}

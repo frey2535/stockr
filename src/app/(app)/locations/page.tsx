@@ -94,13 +94,13 @@ export default function LocationsPage() {
                 className={
                   location.type === "warehouse"
                     ? "flex size-10 items-center justify-center rounded-lg bg-primary/10"
-                    : "flex size-10 items-center justify-center rounded-lg bg-secondary/10"
+                    : "flex size-10 items-center justify-center rounded-lg bg-primary/10"
                 }
               >
                 {location.type === "warehouse" ? (
                   <Warehouse className="size-5 text-primary" />
                 ) : (
-                  <Truck className="size-5 text-secondary" />
+                  <Truck className="size-5 text-primary" />
                 )}
               </div>
               <div>
@@ -148,7 +148,7 @@ export default function LocationsPage() {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
             ) : null}
-            <Button onClick={startCreate} className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+            <Button onClick={startCreate}>
               <Plus className="mr-2 size-4" />
               Add Location
             </Button>
@@ -161,7 +161,7 @@ export default function LocationsPage() {
           icon={<MapPin className="size-12" />}
           title="No locations yet. Add a warehouse or vehicle to get started."
           action={
-            <Button onClick={startCreate} className="bg-secondary text-secondary-foreground hover:bg-secondary/90">
+            <Button onClick={startCreate}>
               Add Location
             </Button>
           }
@@ -184,7 +184,7 @@ export default function LocationsPage() {
           {vehicles.length > 0 ? (
             <section className="space-y-4">
               <h2 className="flex items-center gap-2 text-lg font-semibold">
-                <Truck className="size-5 text-secondary" />
+                <Truck className="size-5 text-primary" />
                 Vehicles
               </h2>
               <div className="grid gap-4 md:grid-cols-3">
@@ -249,7 +249,7 @@ export default function LocationsPage() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={save}>
+            <Button onClick={save}>
               {editing ? "Update" : "Add Location"}
             </Button>
           </DialogFooter>

@@ -104,7 +104,6 @@ export function RestockBoard({
             </div>
             <Button
               size="sm"
-              className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
               onClick={() => apply(row)}
             >
               {row.suggestion.kind === "transfer" ? (

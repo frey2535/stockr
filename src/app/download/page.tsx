@@ -22,15 +22,15 @@ export default async function DownloadPage() {
   const hasApk = apkOnDisk();
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <MarketingHeader signedIn={Boolean(account)} />
 
       <section className="mx-auto max-w-6xl px-4 py-16">
-        <p className="text-sm font-semibold tracking-wide text-[#f97316]">Get Stockr</p>
+        <p className="text-sm font-semibold tracking-wide text-brand">Get Stockr</p>
         <h1 className="mt-3 max-w-3xl text-4xl font-extrabold tracking-tight sm:text-5xl">
           Sell and run inventory on the phone, without living inside Google Play.
         </h1>
-        <p className="mt-4 max-w-2xl text-lg text-white/70">
+        <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
           Companies subscribe on this site. The Android app is a wrapper around the same
           workspace, so a crew can install from Play or sideload the APK and still pay you
           here — not through a store cut.
@@ -38,46 +38,46 @@ export default async function DownloadPage() {
       </section>
 
       <section className="mx-auto grid max-w-6xl gap-6 px-4 pb-16 lg:grid-cols-3">
-        <article className="flex flex-col rounded-2xl border border-white/10 bg-white/5 p-6">
-          <Globe className="size-8 text-[#f97316]" />
+        <article className="flex flex-col rounded-2xl border border-border bg-card p-6">
+          <Globe className="size-8 text-brand" />
           <h2 className="mt-4 text-xl font-semibold">Use it in the browser</h2>
-          <p className="mt-2 flex-1 text-sm leading-6 text-white/65">
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">
             Best for the office. Create the company, pick a plan, and invite the crew. Camera
             scan works on HTTPS phones that support BarcodeDetector.
           </p>
-          <Button asChild className="mt-6 bg-secondary text-secondary-foreground hover:bg-secondary/90">
+          <Button asChild className="mt-6">
             <Link href={account ? "/dashboard" : "/signup"}>
               {account ? "Open workspace" : "Start free on the web"}
             </Link>
           </Button>
         </article>
 
-        <article className="flex flex-col rounded-2xl border border-[#f97316] bg-[#f97316]/10 p-6">
-          <Download className="size-8 text-[#f97316]" />
+        <article className="flex flex-col rounded-2xl border border-brand bg-brand/10 p-6">
+          <Download className="size-8 text-brand" />
           <h2 className="mt-4 text-xl font-semibold">Android APK (sideload)</h2>
-          <p className="mt-2 flex-1 text-sm leading-6 text-white/65">
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">
             Install beside Play, or on devices that never open the store. Package{" "}
-            <span className="font-mono text-white">{ANDROID_PACKAGE_NAME}</span>. Allow
+            <span className="font-mono text-foreground">{ANDROID_PACKAGE_NAME}</span>. Allow
             installs from this browser, then open the file.
           </p>
           {hasApk ? (
-            <Button asChild className="mt-6 bg-secondary text-secondary-foreground hover:bg-secondary/90">
+            <Button asChild className="mt-6">
               <a href={ANDROID_APK_PATH} download="stockr.apk">
                 Download Stockr APK
               </a>
             </Button>
           ) : (
-            <p className="mt-6 rounded-lg border border-white/15 bg-black/20 p-3 text-sm text-white/70">
+            <p className="mt-6 rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
               The release APK is built with <span className="font-mono">npm run android:apk</span>{" "}
               and published at <span className="font-mono">{ANDROID_APK_PATH}</span>.
             </p>
           )}
         </article>
 
-        <article className="flex flex-col rounded-2xl border border-white/10 bg-white/5 p-6">
-          <Smartphone className="size-8 text-[#f97316]" />
+        <article className="flex flex-col rounded-2xl border border-border bg-card p-6">
+          <Smartphone className="size-8 text-brand" />
           <h2 className="mt-4 text-xl font-semibold">Google Play</h2>
-          <p className="mt-2 flex-1 text-sm leading-6 text-white/65">
+          <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">
             Same package name. Upload the AAB from{" "}
             <span className="font-mono">npm run android:bundle</span> in Play Console. People
             who prefer the store can install from there.
@@ -85,7 +85,7 @@ export default async function DownloadPage() {
           <Button
             asChild
             variant="outline"
-            className="mt-6 border-white/20 bg-transparent text-white hover:bg-white/10"
+            className="mt-6"
           >
             <a href={PLAY_STORE_URL} rel="noreferrer">
               Open Play listing
@@ -94,10 +94,10 @@ export default async function DownloadPage() {
         </article>
       </section>
 
-      <section id="pricing" className="border-t border-white/10 bg-[#111827] py-16">
+      <section id="pricing" className="border-t border-border bg-muted/50 py-16">
         <div className="mx-auto max-w-6xl px-4">
           <h2 className="text-center text-3xl font-extrabold">Sell the subscription here</h2>
-          <p className="mx-auto mt-3 max-w-2xl text-center text-white/65">
+          <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
             Play can distribute the app. Plans stay on Stockr so you can invoice, trial, and
             upgrade without a store account. Checkout is mocked until Stripe is connected.
           </p>
@@ -107,25 +107,25 @@ export default async function DownloadPage() {
                 key={plan.id}
                 className={`flex flex-col rounded-2xl border p-6 ${
                   plan.id === "pro"
-                    ? "border-[#f97316] bg-[#f97316]/10"
-                    : "border-white/10 bg-white/5"
+                    ? "border-brand bg-brand/10"
+                    : "border-border bg-card"
                 }`}
               >
-                <p className="text-sm font-semibold text-[#f97316]">{plan.name}</p>
+                <p className="text-sm font-semibold text-brand">{plan.name}</p>
                 <p className="mt-2 text-4xl font-extrabold">
                   ${plan.monthlyPrice}
-                  <span className="text-base font-medium text-white/50">/mo</span>
+                  <span className="text-base font-medium text-muted-foreground">/mo</span>
                 </p>
-                <p className="mt-2 text-sm text-white/60">{plan.blurb}</p>
-                <ul className="mt-6 flex-1 space-y-2 text-sm text-white/80">
+                <p className="mt-2 text-sm text-muted-foreground">{plan.blurb}</p>
+                <ul className="mt-6 flex-1 space-y-2 text-sm text-foreground">
                   {plan.features.map((feature) => (
                     <li key={feature} className="flex gap-2">
-                      <Check className="mt-0.5 size-4 shrink-0 text-[#f97316]" />
+                      <Check className="mt-0.5 size-4 shrink-0 text-brand" />
                       {feature}
                     </li>
                   ))}
                 </ul>
-                <Button asChild className="mt-6 bg-secondary text-secondary-foreground hover:bg-secondary/90">
+                <Button asChild className="mt-6">
                   <Link href={account ? "/billing" : "/signup"}>
                     {account ? "Manage plan" : "Subscribe"}
                   </Link>

@@ -45,7 +45,7 @@ function LoginForm() {
   };
 
   return (
-    <Card className="border-white/10 bg-white text-foreground">
+    <Card>
       <CardHeader>
         <CardTitle>Log in to your company</CardTitle>
       </CardHeader>
@@ -80,7 +80,7 @@ function LoginForm() {
               required
             />
           </div>
-          <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" disabled={busy}>
+          <Button className="w-full" disabled={busy}>
             {busy ? "Signing in…" : "Log in"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
@@ -110,7 +110,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-[#0d1117]">
+    <div className="min-h-screen bg-background">
       <MarketingHeader />
       <div className="mx-auto max-w-md px-4 py-16">
         <Suspense fallback={<div className="h-80 animate-pulse rounded-xl bg-white/10" />}>

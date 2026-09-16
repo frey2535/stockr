@@ -124,9 +124,9 @@ export default function PurchaseOrdersPage() {
       <PageHeader
         title="Purchase Orders"
         description="Track orders and reconcile received stock"
-        icon={<ShoppingCart className="size-7 text-secondary" />}
+        icon={<ShoppingCart className="size-7 text-primary" />}
         actions={
-          <Button className="bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)}>
             <Plus className="mr-2 size-4" />
             New PO
           </Button>
@@ -196,7 +196,6 @@ export default function PurchaseOrdersPage() {
                       {canReceive ? (
                         <Button
                           size="sm"
-                          className="bg-secondary text-secondary-foreground hover:bg-secondary/90"
                           onClick={() => {
                             setReceiveId(po.id);
                             setReceipts({});
@@ -354,7 +353,7 @@ export default function PurchaseOrdersPage() {
                 </Button>
               </div>
             ))}
-            <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={savePo}>
+            <Button className="w-full" onClick={savePo}>
               Create PO
             </Button>
           </div>
@@ -431,7 +430,7 @@ export default function PurchaseOrdersPage() {
                   </div>
                 );
               })}
-              <Button className="w-full bg-secondary text-secondary-foreground hover:bg-secondary/90" onClick={commitReceive}>
+              <Button className="w-full" onClick={commitReceive}>
                 Receive stock
               </Button>
             </div>

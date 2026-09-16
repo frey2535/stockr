@@ -14,7 +14,7 @@ export default function RestockPage() {
       <PageHeader
         title="Restock"
         description="Locations below min. Transfer from the fullest warehouse, or draft a PO when nothing is left to pull."
-        icon={<RefreshCw className="size-8 text-secondary" />}
+        icon={<RefreshCw className="size-8 text-primary" />}
       />
       {loading && !data ? (
         <div className="h-40 animate-pulse rounded-xl bg-muted" />
