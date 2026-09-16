@@ -1,6 +1,8 @@
 import { isSupabaseConfigured } from "./db-config";
 import { getCompanyState } from "./db";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { identifyRemoteProduct } from "./barcode-lookup";
+import { barcodeVariants } from "./barcode";
 import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from "./inventory";
 import { opsFromProjects } from "./ops-state";
 import { visibleProjects } from "./persist-state";
@@ -10,6 +12,7 @@ import type {
   AccessCode,
   InventoryItem,
   Location,
+  IdentifiedProduct,
   Material,
   Project,
   PurchaseOrder,
@@ -580,6 +583,15 @@ export async function listCatalog(
   };
 }
 
+async function withRemoteIdentity(
+  barcode: string,
+  result: { rows: Material[]; onHandByLocation?: Record<string, number> },
+): Promise<{ rows: Material[]; onHandByLocation?: Record<string, number>; identified?: IdentifiedProduct | null }> {
+  if (result.rows.length) return result;
+  const identified = await identifyRemoteProduct(barcode);
+  return identified ? { ...result, identified } : { ...result, identified: null };
+}
+
 export async function lookupMaterials(companyId: string, opts: { barcode?: string; q?: string; limit?: number }) {
   const limit = clampLimit(opts.limit || 20);
   const barcode = (opts.barcode || "").trim();
@@ -588,16 +600,13 @@ export async function lookupMaterials(companyId: string, opts: { barcode?: strin
   if (!isSupabaseConfigured()) {
     const state = await getCompanyState(companyId);
     if (barcode) {
-      const found = state.materials.find(
-        (row) =>
-          materialMatchesCode(row, barcode) || `STK${row.id.replace(/\W/g, "").slice(-10)}` === barcode,
-      );
-      return {
+      const found = state.materials.find((row) => materialMatchesCode(row, barcode));
+      return withRemoteIdentity(barcode, {
         rows: found ? [found] : [],
         onHandByLocation: found
           ? Object.fromEntries(state.locations.map((location) => [location.id, onHand(state, found.id, location.id)]))
           : {},
-      };
+      });
     }
     if (!q) return { rows: state.materials.slice(0, limit) };
     return {
@@ -622,19 +631,30 @@ export async function lookupMaterials(companyId: string, opts: { barcode?: strin
     });
 
   if (barcode) {
-    const extraMatch = ops.catalogIds.find(
-      (row) => row.upc === barcode || row.mpn === barcode || row.supplier_number === barcode,
+    const variants = barcodeVariants(barcode).slice(0, 8);
+    const extraMatch = ops.catalogIds.find((row) =>
+      variants.some(
+        (code) => row.upc === code || row.mpn === code || row.supplier_number === code,
+      ),
     );
+    const orParts = [
+      ...variants.flatMap((code) => {
+        const safe = code.replace(/[,()]/g, "");
+        if (!safe) return [];
+        return [`barcode.eq.${safe}`, `upc.eq.${safe}`, `mpn.eq.${safe}`, `supplier_number.eq.${safe}`];
+      }),
+      extraMatch ? `id.eq.${extraMatch.id}` : "",
+    ].filter(Boolean);
     const { data, error } = await supabase
       .from("stockr_materials")
       .select("*")
       .eq("company_id", companyId)
-      .or(extraMatch ? `barcode.eq.${barcode},id.eq.${extraMatch.id}` : `barcode.eq.${barcode}`)
-      .limit(5);
+      .or(orParts.join(","))
+      .limit(20);
     if (error) throw new Error(error.message);
-    const rows = merge((data || []).map(mapMaterial));
+    const rows = merge((data || []).map(mapMaterial)).filter((row) => materialMatchesCode(row, barcode));
     const found = rows[0];
-    if (!found) return { rows: [], onHandByLocation: {} };
+    if (!found) return withRemoteIdentity(barcode, { rows: [], onHandByLocation: {} });
     const inv = await supabase
       .from("stockr_inventory")
       .select("location_id, quantity")

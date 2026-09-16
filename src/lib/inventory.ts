@@ -1,3 +1,5 @@
+import { codesMatch } from "./barcode";
+import { materialBarcode } from "./id";
 import type { InventoryItem, Material, StoreState, TxType } from "./types";
 
 export function onHand(state: StoreState, materialId: string, locationId?: string) {
@@ -90,13 +92,19 @@ export function materialMatchesQuery(material: Material, q: string) {
 export function materialMatchesCode(material: Material, code: string) {
   const value = code.trim();
   if (!value) return false;
-  return (
-    material.barcode === value ||
-    material.upc === value ||
-    material.mpn === value ||
-    material.supplier_number === value ||
-    (material.aliases || []).includes(value)
-  );
+  const fields = [
+    material.barcode,
+    material.upc,
+    material.mpn,
+    material.supplier_number,
+    materialBarcode(material),
+    ...(material.aliases || []),
+  ];
+  return fields.some((field) => {
+    if (!field) return false;
+    if (field === value || field.toUpperCase() === value.toUpperCase()) return true;
+    return codesMatch(field, value);
+  });
 }
 
 export function actorLabel(email?: string | null) {

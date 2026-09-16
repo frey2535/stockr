@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProjectSelect } from "@/components/project-select";
 import { useStore } from "@/lib/store";
 import { materialBarcode } from "@/lib/id";
+import { materialMatchesCode } from "@/lib/inventory";
 import { qty } from "@/lib/format";
 import { matchLocation, matchMaterial, parseInventoryEnglish } from "@/lib/nlp";
 import {
@@ -30,7 +31,7 @@ import {
   writeScannerPrefs,
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
-import type { InventoryAction, Material, TxType } from "@/lib/types";
+import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
 
 type Detector = {
   detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]>;
@@ -46,6 +47,8 @@ export default function ScannerPage() {
   const [cameraError, setCameraError] = useState("");
   const [selected, setSelected] = useState<Material | null>(null);
   const [unknownCode, setUnknownCode] = useState("");
+  const [identified, setIdentified] = useState<IdentifiedProduct | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
   const [actionType, setActionType] = useState<TxType>("use");
   const [quantity, setQuantity] = useState("1");
   const [fromId, setFromId] = useState(defaultVan);
@@ -74,24 +77,35 @@ export default function ScannerPage() {
   const lookup = async (code: string) => {
     const trimmed = code.trim();
     if (!trimmed) return;
-    const response = await fetch(`/api/materials?barcode=${encodeURIComponent(trimmed)}&q=${encodeURIComponent(trimmed)}`);
-    const data = (await response.json().catch(() => null)) as {
-      rows?: Material[];
-      onHandByLocation?: Record<string, number>;
-    } | null;
-    const found =
-      data?.rows?.find((row) => row.barcode === trimmed || row.upc === trimmed || row.mpn === trimmed || materialBarcode(row) === trimmed) ||
-      data?.rows?.[0];
-    if (found) {
-      setSelected(found);
-      setOnHandByLocation(data?.onHandByLocation || {});
-      setUnknownCode("");
-      setBarcode("");
-      toast.success(`Found ${found.name}`);
-      window.setTimeout(() => qtyRef.current?.focus(), 50);
-    } else {
+    setLookingUp(true);
+    setIdentified(null);
+    setUnknownCode("");
+    try {
+      const response = await fetch(`/api/materials?barcode=${encodeURIComponent(trimmed)}&q=${encodeURIComponent(trimmed)}`);
+      const data = (await response.json().catch(() => null)) as {
+        rows?: Material[];
+        onHandByLocation?: Record<string, number>;
+        identified?: IdentifiedProduct | null;
+      } | null;
+      const found = data?.rows?.find((row) => materialMatchesCode(row, trimmed)) || data?.rows?.[0];
+      if (found) {
+        setSelected(found);
+        setOnHandByLocation(data?.onHandByLocation || {});
+        setBarcode("");
+        toast.success(`Found ${found.name}`);
+        window.setTimeout(() => qtyRef.current?.focus(), 50);
+        return;
+      }
       setSelected(null);
+      setOnHandByLocation({});
+      if (data?.identified?.name) {
+        setIdentified({ ...data.identified, barcode: data.identified.barcode || trimmed });
+        toast.success(`Identified ${data.identified.name}`);
+        return;
+      }
       setUnknownCode(trimmed);
+    } finally {
+      setLookingUp(false);
     }
   };
 
@@ -246,6 +260,31 @@ export default function ScannerPage() {
     setOnHandByLocation({});
   };
 
+  const addIdentifiedToCatalog = async (product: IdentifiedProduct) => {
+    const created = await upsertMaterial({
+      name: product.name,
+      barcode: product.barcode || unknownCode,
+      upc: product.upc || product.barcode,
+      mpn: product.mpn,
+      manufacturer: product.manufacturer || product.brand,
+      category: product.category,
+      description: product.description,
+      image_url: product.image_url,
+      unit: "each",
+    });
+    if (!created.ok) {
+      toast.error(created.error);
+      return;
+    }
+    setSelected(created.material);
+    setIdentified(null);
+    setUnknownCode("");
+    setOnHandByLocation({});
+    setBarcode("");
+    toast.success(`Added ${created.material.name} to the catalog`);
+    window.setTimeout(() => qtyRef.current?.focus(), 50);
+  };
+
   const createUnknown = async () => {
     const created = await upsertMaterial({
       name: `Unknown Product - ${unknownCode}`,
@@ -328,7 +367,7 @@ export default function ScannerPage() {
                 <div className="absolute left-0 bg-black/50" style={{ top: "31%", bottom: "31%", width: "7.5%" }} />
                 <div className="absolute right-0 bg-black/50" style={{ top: "31%", bottom: "31%", width: "7.5%" }} />
                 <div
-                  className="absolute rounded-md border-2 border-secondary"
+                  className="absolute rounded-md border-2 border-primary"
                   style={{ top: "31%", bottom: "31%", left: "7.5%", right: "7.5%" }}
                 />
               </div>
@@ -373,9 +412,9 @@ export default function ScannerPage() {
                 <Button
                   type="submit"
                   className="flex-1"
-                  disabled={!barcode.trim()}
+                  disabled={!barcode.trim() || lookingUp}
                 >
-                  Look Up
+                  {lookingUp ? "Identifying…" : "Look Up"}
                 </Button>
               </div>
             </form>
@@ -383,14 +422,54 @@ export default function ScannerPage() {
         )}
       </Card>
 
-      {unknownCode ? (
+      {lookingUp ? (
+        <Card>
+          <CardContent className="p-5 text-sm text-muted-foreground">Identifying barcode…</CardContent>
+        </Card>
+      ) : null}
+
+      {identified ? (
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle className="text-base">{identified.name}</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {[identified.brand || identified.manufacturer, identified.category, identified.barcode]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            <Badge variant="outline" className="w-fit">
+              Identified · not in this catalog yet
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {identified.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={identified.image_url}
+                alt={identified.name}
+                className="h-28 w-auto rounded-lg border bg-white object-contain"
+              />
+            ) : null}
+            {identified.description ? (
+              <p className="text-sm text-muted-foreground">{identified.description}</p>
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Matched from {identified.source.replace(/-/g, " ")}. Add it so you can receive, use, or transfer it.
+            </p>
+            <Button onClick={() => addIdentifiedToCatalog(identified)}>Add to catalog</Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {unknownCode && !identified ? (
         <Card className="border-primary/40">
           <CardHeader>
             <CardTitle className="text-base">Unknown barcode {unknownCode}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              This code is not in the catalog yet. Create a material so you can receive it now.
+              This code is not in the catalog and no public product record was found. Create it so you can
+              receive it now.
             </p>
             <Button onClick={createUnknown}>
               Create material
@@ -518,7 +597,16 @@ export default function ScannerPage() {
               </div>
             ) : null}
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setSelected(null)}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setSelected(null);
+                  setIdentified(null);
+                  setUnknownCode("");
+                  setOnHandByLocation({});
+                }}
+              >
                 Cancel
               </Button>
               <Button className="flex-1" onClick={commitScan}>
