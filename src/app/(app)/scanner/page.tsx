@@ -97,6 +97,7 @@ export default function ScannerPage() {
         return;
       }
       setSelected(null);
+      setOnHandByLocation({});
       if (data?.identified?.name) {
         setIdentified({ ...data.identified, barcode: data.identified.barcode || trimmed });
         toast.success(`Identified ${data.identified.name}`);
@@ -278,6 +279,8 @@ export default function ScannerPage() {
     setSelected(created.material);
     setIdentified(null);
     setUnknownCode("");
+    setOnHandByLocation({});
+    setBarcode("");
     toast.success(`Added ${created.material.name} to the catalog`);
     window.setTimeout(() => qtyRef.current?.focus(), 50);
   };
@@ -594,7 +597,16 @@ export default function ScannerPage() {
               </div>
             ) : null}
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setSelected(null)}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setSelected(null);
+                  setIdentified(null);
+                  setUnknownCode("");
+                  setOnHandByLocation({});
+                }}
+              >
                 Cancel
               </Button>
               <Button className="flex-1" onClick={commitScan}>
