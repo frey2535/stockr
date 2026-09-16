@@ -51,7 +51,7 @@ export function UpdateAvailablePrompt() {
   if (!update) return null;
 
   return (
-    <div className="fixed right-3 bottom-3 left-3 z-[80] sm:right-5 sm:left-auto sm:max-w-sm">
+    <div className="fixed right-3 bottom-24 left-3 z-[80] sm:right-5 sm:bottom-5 sm:left-auto sm:max-w-sm">
       <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15">
