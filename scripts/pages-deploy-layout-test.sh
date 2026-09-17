@@ -10,6 +10,7 @@ printf 'css\n' > "$tmp/assets/_next/static/chunks/app.css"
 printf 'js\n' > "$tmp/assets/_next/static/chunks/app.js"
 printf 'png\n' > "$tmp/assets/logo.png"
 printf '{}\n' > "$tmp/assets/manifest.json"
+printf '{"sha":"test"}\n' > "$tmp/assets/build-version.json"
 printf 'links\n' > "$tmp/assets/.well-known/assetlinks.json"
 printf '// worker\n' > "$tmp/worker.js"
 
@@ -24,7 +25,9 @@ fail() {
 [ -f "$tmp/_worker.js" ] || fail "missing _worker.js"
 [ -f "$tmp/logo.png" ] || fail "missing public file at root"
 [ -f "$tmp/manifest.json" ] || fail "missing manifest.json at root"
+[ -f "$tmp/build-version.json" ] || fail "missing build-version.json at root"
 [ -f "$tmp/.well-known/assetlinks.json" ] || fail "missing .well-known file at root"
 grep -q '/_next/static/\*' "$tmp/_routes.json" || fail "_routes.json does not exclude /_next/static/*"
+grep -q '/build-version.json' "$tmp/_routes.json" || fail "_routes.json does not exclude /build-version.json"
 
 echo "pages-deploy layout test passed."

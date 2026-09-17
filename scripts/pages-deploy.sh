@@ -26,6 +26,7 @@ cat > "$ROOT/_routes.json" <<'EOF'
   "exclude": [
     "/_next/static/*",
     "/manifest.json",
+    "/build-version.json",
     "/.well-known/*",
     "/*.png",
     "/*.ico",
@@ -44,4 +45,8 @@ if [ -f wrangler.jsonc ]; then
   mv wrangler.jsonc wrangler.jsonc.bak
 fi
 
-npx wrangler pages deploy "$ROOT" --project-name=stockr --branch=main --commit-dirty=true
+deploy_args=(pages deploy "$ROOT" --project-name=stockr --branch=main --commit-dirty=true)
+if [ -n "${GITHUB_SHA:-}" ]; then
+  deploy_args+=(--commit-hash "$GITHUB_SHA")
+fi
+npx wrangler "${deploy_args[@]}"
