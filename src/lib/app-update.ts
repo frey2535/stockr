@@ -1,11 +1,14 @@
-import { shouldOfferUpdate } from "./build-version";
+import { isReleaseSha, shouldAnnounceAppliedUpdate, shouldOfferUpdate } from "./build-version";
 
 export const UPDATE_EVENT = "stockr-update-available";
 export const SEEN_SHA_KEY = "stockr_build_sha";
 export const UPDATE_IN_PROGRESS_KEY = "stockr_update_in_progress";
 
+export type AppUpdateKind = "reload" | "applied";
+
 export type AppUpdateDetail = {
   targetSha: string;
+  kind: AppUpdateKind;
   required: boolean;
   applyUpdate: () => void | Promise<void>;
 };
@@ -38,6 +41,14 @@ function writeSeenSha(sha: string) {
 
 function runningSha() {
   return clientBuildSha() || readSeenSha();
+}
+
+function hasExistingStockrData() {
+  try {
+    return Object.keys(window.localStorage).some((key) => key.startsWith("stockr_"));
+  } catch {
+    return false;
+  }
 }
 
 function isInstalledApp() {
@@ -84,6 +95,11 @@ export async function reloadFresh(targetSha?: string) {
   window.location.replace(nextUrl.toString());
 }
 
+export function markUpdateSeen(sha: string) {
+  if (isReleaseSha(sha)) writeSeenSha(sha);
+  window.__stockrPendingUpdate = undefined;
+}
+
 async function readRemoteVersion() {
   const urls = [`/api/version?t=${Date.now()}`, `/build-version.json?t=${Date.now()}`];
   for (const url of urls) {
@@ -91,7 +107,7 @@ async function readRemoteVersion() {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) continue;
       const data = (await response.json()) as { sha?: string };
-      if (data?.sha) return data.sha;
+      if (isReleaseSha(data?.sha || "")) return data.sha as string;
     } catch {
       /* try the next source */
     }
@@ -99,33 +115,50 @@ async function readRemoteVersion() {
   return "";
 }
 
+export type UpdateCheckResult = "reload" | "applied" | "current" | "unknown";
+
+export async function checkAppUpdate() {
+  const remote = await readRemoteVersion();
+  if (!isReleaseSha(remote)) return { status: "unknown" as const, sha: "" };
+  const current = runningSha();
+  const seen = readSeenSha();
+  const native = isInstalledApp() || (await isNativeApp());
+
+  if (shouldOfferUpdate(current, remote)) {
+    dispatchAppUpdate({
+      targetSha: remote,
+      kind: "reload",
+      required: native,
+      applyUpdate: () => reloadFresh(remote),
+    });
+    return { status: "reload" as const, sha: remote };
+  }
+
+  if (shouldAnnounceAppliedUpdate(seen, remote, hasExistingStockrData())) {
+    dispatchAppUpdate({
+      targetSha: remote,
+      kind: "applied",
+      required: false,
+      applyUpdate: () => {
+        markUpdateSeen(remote);
+      },
+    });
+    return { status: "applied" as const, sha: remote };
+  }
+
+  writeSeenSha(remote);
+  return { status: "current" as const, sha: remote };
+}
+
 export function registerAppUpdateWatcher() {
   if (typeof window === "undefined") return () => undefined;
 
-  let promptedSha = "";
   let cancelled = false;
 
   const check = async () => {
     if (cancelled) return;
     try {
-      const remote = await readRemoteVersion();
-      if (!remote || remote === promptedSha) return;
-      const current = runningSha();
-      if (!current || current === "local") {
-        writeSeenSha(remote);
-        return;
-      }
-      if (!shouldOfferUpdate(current, remote)) {
-        writeSeenSha(remote);
-        return;
-      }
-      promptedSha = remote;
-      const required = isInstalledApp() || (await isNativeApp());
-      dispatchAppUpdate({
-        targetSha: remote,
-        required,
-        applyUpdate: () => reloadFresh(remote),
-      });
+      await checkAppUpdate();
     } catch {
       /* never interrupt field work */
     }

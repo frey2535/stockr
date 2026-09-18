@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, ImagePlus, Link2, Settings, Shield, Trash2, Users } from "lucide-react";
+import { Copy, ImagePlus, Link2, RefreshCw, Settings, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { checkAppUpdate, clientBuildSha } from "@/lib/app-update";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
 import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
@@ -21,6 +22,7 @@ export default function SettingsPage() {
   const draft = { ...settings, ...overrides };
   const [label, setLabel] = useState("");
   const [codeType, setCodeType] = useState<AccessCodeType>("trial");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const patchDraft = (patch: Partial<CompanySettings>) => {
     setOverrides((prev) => ({ ...prev, ...patch }));
@@ -388,6 +390,38 @@ export default function SettingsPage() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>App updates</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Stockr checks for a new web build when you open the app. Current build{" "}
+            <span className="font-mono text-foreground">
+              {(clientBuildSha() || "local").slice(0, 7)}
+            </span>
+            .
+          </p>
+          <Button
+            variant="outline"
+            disabled={checkingUpdate}
+            onClick={async () => {
+              setCheckingUpdate(true);
+              try {
+                const result = await checkAppUpdate();
+                if (result.status === "current") toast.success("You're on the latest version.");
+                else if (result.status === "unknown") toast.error("Could not check for an update.");
+              } finally {
+                setCheckingUpdate(false);
+              }
+            }}
+          >
+            <RefreshCw className="mr-2 size-4" />
+            {checkingUpdate ? "Checking…" : "Check for updates"}
+          </Button>
         </CardContent>
       </Card>
 
