@@ -5,6 +5,7 @@ import { Package, Printer, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { BulkMaterialImport } from "@/components/bulk-material-import";
 import { PageHeader } from "@/components/page-header";
+import { StockStatusBadge } from "@/components/stock-status-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +29,7 @@ import { usePagedApi } from "@/lib/use-api";
 import { printLabels } from "@/lib/labels";
 import { materialBarcode } from "@/lib/id";
 import { money } from "@/lib/format";
+import { stockStatus } from "@/lib/stock-status";
 import type { Material } from "@/lib/types";
 import type { CatalogListPayload } from "@/lib/workspace-types";
 
@@ -92,8 +94,9 @@ export default function CatalogPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Master data"
         title="Catalog"
-        description="Master list of materials, barcodes, and reorder points"
+        description="SKU identity, barcodes, and reorder policy — the system of record vans scan against."
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -184,7 +187,16 @@ export default function CatalogPage() {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <h3 className="font-semibold">{material.name}</h3>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-semibold">{material.name}</h3>
+                            <StockStatusBadge
+                              status={stockStatus({
+                                quantity: onHandMap[material.id] || 0,
+                                min: material.min_stock_level,
+                                reorder: material.reorder_point,
+                              })}
+                            />
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             {[material.manufacturer, material.sub_category].filter(Boolean).join(" · ") || "No manufacturer"}
                           </p>

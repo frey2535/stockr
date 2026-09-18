@@ -30,7 +30,7 @@ import { useStore } from "@/lib/store";
 import { prefetchTab } from "@/lib/tab-prefetch";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Ops", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
   { href: "/restock", label: "Restock", icon: RefreshCw },
@@ -46,7 +46,7 @@ const NAV = [
 ];
 
 const MOBILE_NAV = [
-  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Ops", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
   { href: "/activity", label: "Activity", icon: ClipboardList },

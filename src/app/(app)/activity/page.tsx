@@ -63,8 +63,9 @@ export default function ActivityPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Audit"
         title="Inventory Log"
-        description={`Audit trail — showing ${rows.length} of ${data?.total || 0} records`}
+        description={`Every charge, transfer, receive, and count — ${rows.length} of ${data?.total || 0} records`}
         actions={
           <div className="flex items-center gap-3">
             {settings.logo_url ? (

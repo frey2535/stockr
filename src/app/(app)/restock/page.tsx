@@ -12,8 +12,9 @@ export default function RestockPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Replenishment"
         title="Restock"
-        description="Locations below min. Transfer from the fullest warehouse, or draft a PO when nothing is left to pull."
+        description="Vans below min. Pull from the fullest warehouse, or draft a PO when the shop is empty."
         icon={<RefreshCw className="size-8 text-primary" />}
       />
       {loading && !data ? (

@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { BulkInventoryDialog } from "@/components/bulk-inventory-dialog";
 import { PageHeader } from "@/components/page-header";
+import { StockStatusBadge } from "@/components/stock-status-badge";
 import { ProjectSelect } from "@/components/project-select";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,8 @@ import {
 import { useStore } from "@/lib/store";
 import { usePagedApi } from "@/lib/use-api";
 import { money, qty } from "@/lib/format";
+import { materialBarcode } from "@/lib/id";
+import { stockStatus } from "@/lib/stock-status";
 import { needsFrom, needsProject, needsTo } from "@/lib/tx";
 import type { TxType } from "@/lib/types";
 import type { InventoryListPayload } from "@/lib/workspace-types";
@@ -91,8 +94,9 @@ function InventoryPageInner() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Stock ledger"
         title="Inventory"
-        description="All materials across all locations"
+        description="On-hand by location, min policy, and the next move — not a pile of cards."
         actions={
           settings.logo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -103,7 +107,7 @@ function InventoryPageInner() {
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <p className="text-sm font-medium">Bulk add, receive, transfer, use, return, count, or shrink</p>
+          <p className="text-sm font-medium">Batch movements</p>
           <div className="flex flex-wrap gap-2">
             {([
               ["receive", "Receive"],
@@ -161,8 +165,8 @@ function InventoryPageInner() {
 
       {rows.length === 0 ? (
         <EmptyState
-          title="No inventory on hand."
-          description={query || locationId !== "all" ? "Try adjusting your search or filters" : "Scan some materials to get started!"}
+          title="No stock in this view"
+          description={query || locationId !== "all" ? "Tighten the search, location, or policy filter." : "Receive or scan material to open the ledger."}
         />
       ) : (
         <div className="space-y-3">
@@ -171,19 +175,44 @@ function InventoryPageInner() {
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="font-semibold">{row.material.name}</h3>
-                    <p className="text-sm text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold">{row.material.name}</h3>
+                      <StockStatusBadge
+                        status={stockStatus({
+                          quantity: row.total,
+                          min: row.material.min_stock_level,
+                          reorder: row.material.reorder_point,
+                          belowMin: row.byLocation.some((item) => item.belowMin),
+                        })}
+                      />
+                    </div>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
+                      {[
+                        row.material.manufacturer,
+                        row.material.mpn && `MPN ${row.material.mpn}`,
+                        row.material.upc && `UPC ${row.material.upc}`,
+                        materialBarcode(row.material),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {row.material.category || "Uncategorized"}
-                      {row.material.unit_cost != null ? ` · $${money(row.material.unit_cost)} / ${row.material.unit}` : ` · ${row.material.unit}`}
+                      {row.material.unit_cost != null
+                        ? ` · $${money(row.material.unit_cost)} / ${row.material.unit}`
+                        : ` · ${row.material.unit}`}
+                      {row.material.unit_cost != null
+                        ? ` · $${money((row.material.unit_cost || 0) * row.total)} on hand`
+                        : ""}
                     </p>
                     <div className="mt-3 space-y-1">
                       {row.byLocation.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">None on hand</p>
+                        <p className="text-sm text-muted-foreground">Zero across the fleet</p>
                       ) : (
                         row.byLocation.map((item) => (
                           <div key={item.location.id} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">{item.location.name}</span>
-                            <span className={item.belowMin ? "font-medium text-orange-700" : "font-medium"}>
+                            <span className={item.belowMin ? "font-medium text-amber-700 dark:text-amber-400" : "font-medium"}>
                               {qty(item.quantity)} {row.material.unit}
                               {item.min != null ? ` · min ${qty(item.min)}` : ""}
                             </span>
@@ -193,31 +222,25 @@ function InventoryPageInner() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xl font-bold">{qty(row.total)}</p>
+                    <p className="text-xl font-bold tabular-nums">{qty(row.total)}</p>
                     <p className="text-xs text-muted-foreground">{row.material.unit}</p>
-                    <div className="mt-3 flex flex-wrap justify-end gap-1">
-                      {(["use", "return", "receive", "transfer", "add", "count", "adjust", "shrink"] as TxType[]).map((type) => (
-                        <Button
-                          key={type}
-                          size="sm"
-                          variant={type === "adjust" ? "default" : "outline"}
-                          className="capitalize"
-                          onClick={() => {
-                            setActive(row.material.id);
-                            setActionType(type);
-                            setToId(row.byLocation[0]?.location.id || locations[0]?.id || "");
-                            setFromId(row.byLocation[0]?.location.id || locations[0]?.id || "");
-                            setQuantity(type === "adjust" || type === "count" ? String(row.byLocation[0]?.quantity || 0) : "1");
-                            setProject("");
-                            setRuleLocationId(row.byLocation[0]?.location.id || locations[0]?.id || "");
-                            setRuleMin(row.byLocation[0]?.min != null ? String(row.byLocation[0].min) : "");
-                            setRuleMax(row.byLocation[0]?.max != null ? String(row.byLocation[0].max) : "");
-                          }}
-                        >
-                          {type === "shrink" ? "Shrink" : type === "count" ? "Count" : type}
-                        </Button>
-                      ))}
-                    </div>
+                    <Button
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => {
+                        setActive(row.material.id);
+                        setActionType("use");
+                        setToId(row.byLocation[0]?.location.id || locations[0]?.id || "");
+                        setFromId(row.byLocation[0]?.location.id || locations[0]?.id || "");
+                        setQuantity("1");
+                        setProject("");
+                        setRuleLocationId(row.byLocation[0]?.location.id || locations[0]?.id || "");
+                        setRuleMin(row.byLocation[0]?.min != null ? String(row.byLocation[0].min) : "");
+                        setRuleMax(row.byLocation[0]?.max != null ? String(row.byLocation[0].max) : "");
+                      }}
+                    >
+                      Move stock
+                    </Button>
                   </div>
                 </div>
               </CardContent>

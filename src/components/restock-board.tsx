@@ -55,11 +55,11 @@ export function RestockBoard({
     return (
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Truck restock</CardTitle>
+          <CardTitle className="text-lg">Fleet replenishment</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Every location is at or above min. Set per-location min/max from Inventory to get suggested transfers
+            Every tracked location is at or above min. Set per-location min/max from Inventory to generate transfers
             and draft POs.
           </p>
         </CardContent>
@@ -74,7 +74,7 @@ export function RestockBoard({
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2 text-lg">
-            Truck restock
+            Fleet replenishment
             <Badge variant="secondary">{rows.length}</Badge>
           </CardTitle>
           {compact ? (
