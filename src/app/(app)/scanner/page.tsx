@@ -336,8 +336,9 @@ export default function ScannerPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
+        eyebrow="Field"
         title="Scanner"
-        description="Scan → charge the job → van qty updates. Restock from the dashboard when a truck drops below min."
+        description="Identify any barcode, charge the job, and drop van qty in one motion. Restock opens when a truck falls below min."
         icon={<ScanLine className="size-8 text-primary" />}
       />
 

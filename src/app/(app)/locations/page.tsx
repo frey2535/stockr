@@ -140,8 +140,9 @@ export default function LocationsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Network"
         title="Locations"
-        description="Manage your warehouses and vehicles"
+        description="Warehouses and trucks that hold stock. Min policy lives on each SKU at a location."
         actions={
           <>
             {settings.logo_url ? (

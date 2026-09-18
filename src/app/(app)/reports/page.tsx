@@ -33,8 +33,9 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
+        eyebrow="Finance"
         title="Reports"
-        description="Valuation, usage, and shrinkage — export to CSV"
+        description="Location valuation, job usage, and shrinkage — export when the books ask."
         icon={<BarChart3 className="size-7 text-primary" />}
         actions={
           <div className="flex flex-wrap items-end gap-3">
