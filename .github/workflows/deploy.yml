@@ -1,0 +1,81 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  cloudflare:
+    name: Cloudflare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Write build version
+        run: |
+          printf '{"sha":"%s","builtAt":"%s"}\n' "$GITHUB_SHA" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > public/build-version.json
+      - name: Turn off Cloudflare Pages Git auto-builds
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/disable-pages-git.sh
+      - name: Build OpenNext worker
+        run: npx opennextjs-cloudflare build
+        env:
+          NEXT_PUBLIC_STOCKR_HOST: stockr.currentflowconsulting.org
+          NEXT_PUBLIC_APP_URL: https://stockr.currentflowconsulting.org
+          NEXT_PUBLIC_STOCKR_BUILD_SHA: ${{ github.sha }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      - name: Bind Pages secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PLATFORM_OWNER_PASSWORD: ${{ secrets.PLATFORM_OWNER_PASSWORD }}
+          BUILDR_API_URL: ${{ secrets.BUILDR_API_URL }}
+          BUILDR_API_KEY: ${{ secrets.BUILDR_API_KEY }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Add GitHub secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (same as The Truth)."
+            exit 1
+          fi
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Add GitHub secrets NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from the Stockr Supabase project."
+            exit 1
+          fi
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            printf '%s' "$value" | npx wrangler pages secret put "$name" --project-name=stockr
+          }
+          put_secret NEXT_PUBLIC_SUPABASE_URL "$NEXT_PUBLIC_SUPABASE_URL"
+          put_secret SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
+          printf '%s' "1" | npx wrangler pages secret put OPEN_NEXT_CLOUDFLARE --project-name=stockr
+          if [ -n "${PLATFORM_OWNER_PASSWORD:-}" ]; then
+            put_secret PLATFORM_OWNER_PASSWORD "$PLATFORM_OWNER_PASSWORD"
+          fi
+          printf '%s' "${BUILDR_API_URL:-https://buildrpm.com}" | npx wrangler pages secret put BUILDR_API_URL --project-name=stockr
+          if [ -n "${BUILDR_API_KEY:-}" ]; then
+            put_secret BUILDR_API_KEY "$BUILDR_API_KEY"
+          fi
+          put_secret STOCKR_BUILD_ID "${GITHUB_SHA}"
+          put_secret STOCKR_BUILT_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/pages-deploy.sh

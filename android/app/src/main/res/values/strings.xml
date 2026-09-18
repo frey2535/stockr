@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Stockr</string>
+    <string name="title_activity_main">Stockr</string>
+    <string name="package_name">org.currentflowconsulting.stockr</string>
+    <string name="custom_url_scheme">org.currentflowconsulting.stockr</string>
+</resources>

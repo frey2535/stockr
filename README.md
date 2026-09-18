@@ -1,39 +1,154 @@
-**Welcome to your Base44 project** 
+# Stockr
 
-**About**
+Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not reuse the NECalcul8r or The Truth project — those apps have their own databases. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. PWA and web checkout use Stripe when `STRIPE_SECRET_KEY` and price IDs are set; the Android app uses Google Play Billing. Preview without those keys still activates a plan so you can test limits.
 
-This project contains everything you need to run your app locally.
+## GitHub
 
-**Edit the code in your local development environment**
+Public repo: [github.com/frey2535/stockr](https://github.com/frey2535/stockr)
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+Open a pull request for app changes. GitHub Actions runs lint and `next build` on every PR (`.github/workflows/ci.yml`). Merging to `main` deploys this Next.js app to Cloudflare Pages project `stockr` (`.github/workflows/deploy.yml`). Do not pick the Webpack, Deno, or Jekyll Action templates. There is no Base44 or Vite deploy path.
 
-**Prerequisites:** 
+## Run locally
 
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+```bash
+npm install
+npm run dev
 ```
 
-Run the app: `npm run dev`
+Open **http://127.0.0.1:43151** for local preview.
 
-**Publish your changes**
+Production hostname is **https://stockr.currentflowconsulting.org**. Point that name at this app (CNAME or A record) and serve it over HTTPS so camera scanning and session cookies work.
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+### Demo company
 
-**Docs & Support**
+- Email: `demo@stockr.app`
+- Password: `demo1234`
+- Company: Summit Electric on the Fleet plan, with sample warehouses, trucks, catalog, POs, and activity
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+### Platform owner
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+`currentflowconsultingllc@gmail.com` and `marcus.a.frey@gmail.com` are CurrentFlow platform owners. Those mailboxes are created on boot (they are not leftover Base44 logins). After sign-in they open **Platform** (`/admin`) so you can open any company workspace. Set GitHub / Pages secret `PLATFORM_OWNER_PASSWORD` to replace the CurrentFlow bootstrap password in `src/lib/platform.ts`.
+
+### New company
+
+Sign up from the marketing page to create an empty Starter workspace (2 locations, 50 materials, 2 seats). Invite a teammate from **Settings** and have them join with the code on `/signup`.
+
+## Plans
+
+| Plan    | Price | Locations | Materials | Seats |
+| ------- | ----- | --------- | --------- | ----- |
+| Starter | $0    | 2         | 50        | 2     |
+| Pro     | $49   | 15        | 2,000     | 15    |
+| Fleet   | $149  | Unlimited | Unlimited | Unlimited |
+
+Upgrade from **Billing**. Web/PWA users pay with Stripe Checkout. The Play Store app uses Google Play Billing (`stockr_pro` / `stockr_fleet`). Without Stripe keys, choosing a paid plan still activates it in preview.
+
+## What is included
+
+- **Marketing, login, signup** — company workspace or join via invite code
+- **Dashboard** — on-hand totals, estimated value, low-stock alerts, recent activity
+- **Scanner** — camera barcode (Chromium `BarcodeDetector`), manual lookup, and plain-English actions (`add 25 screws to Main Warehouse`)
+- **Inventory** — quantities by location, use / transfer / add / adjust / shrink from each row, plus bulk operations
+- **Locations** — warehouses and vehicles
+- **Tools** — tools assigned to a warehouse or vehicle
+- **Transfers & Activity Log** — full audit trail with CSV export and bulk moves
+- **Catalog** — materials, barcodes, reorder points, printable CODE128 labels, camera/CSV bulk create
+- **Purchase Orders** — draft through received, cancel and delete, camera receive, bulk line create when an item is not in the catalog
+- **Reports** — valuation by location, usage by project, shrinkage
+- **Billing** — Stripe for PWA/web, Google Play Billing for the Android app
+- **Settings** — branding, team list, invite codes, Buildr company ID sync into the Use-material project dropdown
+
+Camera scanning needs HTTPS or `localhost` and a browser that implements `BarcodeDetector`. Demo barcodes include `012345678901` (3/4" EMT) and `099887766554` (screws).
+
+## Domain
+
+Canonical host: **stockr.currentflowconsulting.org**
+
+```bash
+NEXT_PUBLIC_STOCKR_HOST=stockr.currentflowconsulting.org
+NEXT_PUBLIC_APP_URL=https://stockr.currentflowconsulting.org
+```
+
+On production (`next start` or Vercel), session cookies are marked `Secure` and scoped to that host. Local `npm run dev` keeps host-only cookies so http://127.0.0.1:43151 still signs in.
+
+## Supabase
+
+Create a **dedicated Supabase project for Stockr** (CurrentFlow Consulting org is fine; the project must not be NECalcul8r or The Truth).
+
+In that project’s SQL Editor, paste and run **only** [`supabase/schema.sql`](supabase/schema.sql). That file creates `stockr_*` tables. It does **not** use `public.profiles`. If you see `type "public.profiles" does not exist` / `actor public.profiles`, you pasted a NECalcul8r fix — stop and run this repo’s schema instead.
+
+1. **Project Settings → API**: copy this Stockr project’s URL and the **service role** key (server only, never ship it to the browser)
+2. Put them in `.env.local`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_STOCKR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
+```
+
+3. Restart the app. Settings will say the workspace database is Supabase. The demo company is created there on first boot if it does not exist.
+
+Invite codes are indexed by code, so joining a company does not scan every tenant.
+
+## Deploy (GitHub PR → Cloudflare)
+
+Same loop as The Truth: open a PR, merge `main`, Actions publishes the site.
+
+1. **CI** (every PR and every push to `main`) — lint + `next build`
+2. **Deploy** (push to `main` only) — OpenNext build, then `scripts/pages-deploy.sh` uploads to Pages project **`stockr`**. That script lifts `.open-next/assets/_next` to the site root and writes `_routes.json` so CSS/JS are not swallowed by `_worker.js`.
+
+Add these GitHub Actions secrets (repo **Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Same Pages token The Truth uses |
+| `CLOUDFLARE_ACCOUNT_ID` | Same account as The Truth |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://YOUR_REF.supabase.co` (not the dashboard URL) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Stockr service-role key (server only) |
+| `STRIPE_SECRET_KEY` | Stripe secret or restricted key for PWA checkout |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret for `/api/billing/webhook` |
+| `STRIPE_PRICE_PRO` / `STRIPE_PRICE_FLEET` | Recurring Price IDs |
+
+CI and Deploy turn off automatic Git builds on Pages project `stockr`. Actions uploads the Next.js build; do not reconnect the old Vite/Base44 Git builder.
+
+Custom domain: `stockr.currentflowconsulting.org` → the production alias Deploy prints (today `stockr-unm.pages.dev`). Do **not** point it at the old Vite host `stockr.pages.dev`, at `frey2535.github.io`, or at `cname.vercel-dns.com`. Grey-cloud CNAME.
+
+Keep the service role key on the server only. Use real Stripe when you are ready to charge.
+
+## Google Play and selling outside the store
+
+Package name (type this in Play Console, never change it):
+
+```
+org.currentflowconsulting.stockr
+```
+
+The Android app is a Capacitor wrapper that opens the live site. PWA and web users subscribe with Stripe. The Play build uses Google Play Billing products `stockr_pro` and `stockr_fleet` (implement the `PlayBilling` Capacitor plugin on the native side). Preview without Stripe or Play credentials still activates a plan so limits can be tested.
+
+### One-time machine setup
+
+```bash
+npm install
+npm run android:sdk
+npm run android:keystore
+```
+
+Back up `android/keystore/` (the `.jks` and `key.properties`). If you lose that folder you cannot update the Play app.
+
+### Build files
+
+```bash
+npm run android:bundle   # dist/android/stockr-release.aab  → upload in Play Console
+npm run android:apk      # public/downloads/stockr.apk     → sideload / website
+```
+
+Play listing copy, privacy URL, and screenshot notes: [`store/google-play/LISTING.md`](store/google-play/LISTING.md).
+
+### Sell without Play
+
+1. Create the company and pick a plan at `/signup` and `/billing` (or `/download`).
+2. Install the APK from `/download` (allow unknown sources) or use the browser.
+3. Privacy and terms for stores and sideload: `/privacy` and `/terms`.
+
+The website must be live on HTTPS (`stockr.currentflowconsulting.org`) before the Android wrapper is useful on a phone.

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stockr",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-09-13",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "stockr"
+    }
+  ],
+  "vars": {
+    "OPEN_NEXT_CLOUDFLARE": "1",
+    "NEXT_PUBLIC_STOCKR_HOST": "stockr.currentflowconsulting.org",
+    "NEXT_PUBLIC_APP_URL": "https://stockr.currentflowconsulting.org",
+    "BUILDR_API_URL": "https://buildrpm.com"
+  }
+}

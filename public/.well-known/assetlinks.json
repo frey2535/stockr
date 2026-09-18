@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "org.currentflowconsulting.stockr",
+      "sha256_cert_fingerprints": [
+        "EF:55:3E:23:CA:CE:10:78:C8:77:4A:69:96:A0:8D:FD:00:2B:4D:AD:D8:CF:AE:E9:C8:89:3E:11:AC:07:DE:34"
+      ]
+    }
+  }
+]
