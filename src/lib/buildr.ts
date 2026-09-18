@@ -1,50 +1,9 @@
+import { mapProject, scopeProjects, unwrapProjects } from "./buildr-parse";
 import { uid } from "./id";
 import type { Project } from "./types";
 
 export const BUILDR_DEFAULT_URL = "https://buildrpm.com";
 const DEAD_BUILDR_HOSTS = new Set(["api.buildr.app", "www.api.buildr.app"]);
-
-type RemoteProject = {
-  id?: string;
-  name?: string;
-  title?: string;
-  project_number?: string;
-  number?: string;
-  job_number?: string;
-  status?: string;
-  company_id?: string;
-};
-
-function mapStatus(value: string | undefined): Project["status"] {
-  const status = (value || "").toLowerCase();
-  if (status.includes("bid") || status.includes("estimat")) return "bidding";
-  if (status.includes("complete") || status.includes("closed") || status.includes("done")) {
-    return "completed";
-  }
-  return "active";
-}
-
-function mapProject(row: RemoteProject, index: number): Project | null {
-  const name = (row.name || row.title || "").trim();
-  if (!name) return null;
-  return {
-    id: String(row.id || uid("prj")),
-    name,
-    project_number: String(row.project_number || row.number || row.job_number || `B-${index + 1}`),
-    status: mapStatus(row.status),
-  };
-}
-
-function unwrapProjects(payload: unknown): RemoteProject[] {
-  if (Array.isArray(payload)) return payload as RemoteProject[];
-  if (payload && typeof payload === "object") {
-    const record = payload as Record<string, unknown>;
-    for (const key of ["projects", "data", "items", "results"]) {
-      if (Array.isArray(record[key])) return record[key] as RemoteProject[];
-    }
-  }
-  return [];
-}
 
 function normalizeBase(url: string) {
   return url.trim().replace(/\/$/, "");
@@ -105,20 +64,23 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
   const paths = [
     "/projects",
     `/projects?company_id=${encodeURIComponent(id)}`,
+    `/jobs?company_id=${encodeURIComponent(id)}`,
     `/companies/${encodeURIComponent(id)}/projects`,
     `/v1/companies/${encodeURIComponent(id)}/projects`,
     `/api/companies/${encodeURIComponent(id)}/projects`,
   ];
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "X-Company-Id": id,
+    ...(key ? { Authorization: `Bearer ${key}`, "X-Api-Key": key } : {}),
+  };
 
   let lastError = "";
   for (const base of bases) {
     for (const path of paths) {
       try {
         const response = await fetch(`${base}${path}`, {
-          headers: {
-            Accept: "application/json",
-            ...(key ? { Authorization: `Bearer ${key}` } : {}),
-          },
+          headers,
           cache: "no-store",
         });
         const { html, payload } = await readPayload(response);
@@ -130,20 +92,14 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
           lastError = key
             ? "Buildr rejected the API key. Check BUILDR_API_KEY."
             : "Buildr requires a service token. Add BUILDR_API_KEY to Stockr Cloudflare secrets.";
-          // This is the live API; do not keep guessing dead company-scoped HTML routes.
-          if (path.startsWith("/projects")) {
-            return { projects: [], source: "none", error: lastError };
-          }
           continue;
         }
         if (!response.ok) {
           lastError = `Buildr returned ${response.status} for ${base}${path}`;
           continue;
         }
-        const rows = unwrapProjects(payload);
-        const scoped = rows.filter((row) => row.company_id === id);
-        const projects = (scoped.length ? scoped : rows)
-          .map((row, index) => mapProject(row, index))
+        const projects = scopeProjects(unwrapProjects(payload), id)
+          .map((row, index) => mapProject(row, index, () => uid("prj")))
           .filter((row): row is Project => Boolean(row));
         if (projects.length) return { projects, source: "buildr" };
         lastError = "Buildr returned no projects for that company.";
