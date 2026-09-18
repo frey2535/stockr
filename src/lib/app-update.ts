@@ -1,4 +1,5 @@
 import { isReleaseSha, shouldAnnounceAppliedUpdate, shouldOfferUpdate } from "./build-version";
+import { wantsUpdatePreview as previewFromSearch } from "./update-preview";
 
 export const UPDATE_EVENT = "stockr-update-available";
 export const SEEN_SHA_KEY = "stockr_build_sha";
@@ -74,6 +75,10 @@ export function dispatchAppUpdate(detail: AppUpdateDetail) {
   window.dispatchEvent(new CustomEvent(UPDATE_EVENT, { detail }));
 }
 
+export function wantsUpdatePreview(search = typeof window === "undefined" ? "" : window.location.search) {
+  return previewFromSearch(search);
+}
+
 export async function reloadFresh(targetSha?: string) {
   try {
     sessionStorage.setItem(UPDATE_IN_PROGRESS_KEY, String(Date.now()));
@@ -90,6 +95,7 @@ export async function reloadFresh(targetSha?: string) {
     /* cache clearing is best-effort */
   }
   const nextUrl = new URL(window.location.href);
+  nextUrl.searchParams.delete("update_now");
   nextUrl.searchParams.set("t", String(Date.now()));
   if (targetSha) nextUrl.searchParams.set("build", targetSha);
   window.location.replace(nextUrl.toString());
@@ -118,6 +124,17 @@ async function readRemoteVersion() {
 export type UpdateCheckResult = "reload" | "applied" | "current" | "unknown";
 
 export async function checkAppUpdate() {
+  if (wantsUpdatePreview()) {
+    const previewSha = runningSha() || "preview";
+    dispatchAppUpdate({
+      targetSha: previewSha,
+      kind: "reload",
+      required: false,
+      applyUpdate: () => reloadFresh(isReleaseSha(previewSha) ? previewSha : undefined),
+    });
+    return { status: "reload" as const, sha: previewSha };
+  }
+
   const remote = await readRemoteVersion();
   if (!isReleaseSha(remote)) return { status: "unknown" as const, sha: "" };
   const current = runningSha();
