@@ -2,8 +2,26 @@ import base44 from "@base44/vite-plugin"
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
+const appBuildId = new Date().toISOString()
+
+function appVersionPlugin(id) {
+  return {
+    name: "app-version",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: JSON.stringify({ build: id }),
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    "import.meta.env.VITE_APP_BUILD": JSON.stringify(appBuildId),
+  },
   logLevel: 'error', // Suppress warnings, only show errors
   plugins: [
     base44({
@@ -16,5 +34,6 @@ export default defineConfig({
       visualEditAgent: true
     }),
     react(),
+    appVersionPlugin(appBuildId),
   ]
 });

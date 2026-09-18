@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 import Catalog from './pages/Catalog';
 import PurchaseOrders from './pages/PurchaseOrders';
 import Reports from './pages/Reports';
+import UpdateAvailableDialog from './components/UpdateAvailableDialog';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -66,6 +67,7 @@ function App() {
           <AuthenticatedApp />
         </Router>
         <Toaster />
+        <UpdateAvailableDialog appName="Stockr" />
       </QueryClientProvider>
     </AuthProvider>
   )
