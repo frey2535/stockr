@@ -262,7 +262,8 @@ export default function SettingsPage() {
                 placeholder="Company ID from Buildr → Settings"
               />
               <p className="text-xs text-muted-foreground">
-                Sync talks to https://buildrpm.com/projects. Production also needs a BUILDR_API_KEY secret.
+                Sync calls https://buildrpm.com/stockr/projects — not the /api/companies website path.
+                Production needs BUILDR_API_KEY set to the same STOCKR_BUILDR_SHARED_SECRET used on Buildr.
               </p>
             </div>
           ) : null}
