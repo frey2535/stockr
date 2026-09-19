@@ -5,12 +5,18 @@ export type RemoteProject = {
   name?: string;
   title?: string;
   project_name?: string;
+  projectName?: string;
   job_name?: string;
+  jobName?: string;
   label?: string;
   display_name?: string;
+  displayName?: string;
+  code?: string;
+  ref?: string;
   project_number?: string;
   number?: string;
   job_number?: string;
+  jobNumber?: string;
   status?: string;
   project_status?: string;
   company_id?: string;
@@ -28,7 +34,23 @@ export function mapStatus(value: string | undefined): Project["status"] {
 }
 
 export function projectName(row: RemoteProject) {
-  return [row.name, row.title, row.project_name, row.job_name, row.label, row.display_name]
+  return [
+    row.name,
+    row.title,
+    row.project_name,
+    row.projectName,
+    row.job_name,
+    row.jobName,
+    row.label,
+    row.display_name,
+    row.displayName,
+    row.code,
+    row.ref,
+    row.project_number,
+    row.job_number,
+    row.jobNumber,
+    row.number,
+  ]
     .map((value) => String(value || "").trim())
     .find(Boolean) || "";
 }

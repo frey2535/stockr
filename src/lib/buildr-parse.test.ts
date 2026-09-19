@@ -14,6 +14,11 @@ test("reads job_name when name is missing", () => {
   assert.equal(project?.status, "active");
 });
 
+test("uses job number when Buildr omits a name", () => {
+  const project = mapProject({ jobNumber: "J-42" }, 0, () => "prj_1");
+  assert.equal(project?.name, "J-42");
+});
+
 test("only treats explicit closed statuses as completed", () => {
   assert.equal(mapStatus("in progress"), "active");
   assert.equal(mapStatus("Closed"), "completed");

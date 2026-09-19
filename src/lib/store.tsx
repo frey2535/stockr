@@ -65,7 +65,9 @@ type StoreApi = {
   ) => Promise<CommandResult>;
   deleteStockRule: (id: string) => Promise<CommandResult>;
   applyRestock: (restock: RestockApply) => Promise<CommandResult>;
+  upsertProject: (project: Partial<Project> & { name?: string }) => Promise<CommandResult>;
   replaceProjects: (projects: Project[]) => Promise<CommandResult>;
+  syncBuildr: () => Promise<CommandResult & { count?: number; warning?: string }>;
   createAccessCode: (input: {
     label: string;
     type: AccessCode["type"];
@@ -228,7 +230,31 @@ export function StoreProvider({
         return result;
       },
       applyRestock: (restock) => send({ type: "applyRestock", restock }),
+      upsertProject: (project) => send({ type: "upsertProject", project }),
       replaceProjects: (projects) => send({ type: "replaceProjects", projects }),
+      syncBuildr: async () => {
+        try {
+          const response = await fetch("/api/buildr/sync", { method: "POST" });
+          const data = (await response.json().catch(() => null)) as {
+            workspace?: WorkspaceShell;
+            projects?: Project[];
+            error?: string;
+            count?: number;
+            warning?: string;
+          } | null;
+          if (data?.workspace) setWorkspace(data.workspace);
+          else if (data?.projects?.length) {
+            setWorkspace((prev) => ({ ...prev, projects: data.projects || [] }));
+          }
+          if (!response.ok || data?.error) {
+            return { ok: false, error: data?.error || "Could not sync Buildr jobs.", count: data?.count };
+          }
+          invalidateApiCache("/api/");
+          return { ok: true, count: data?.count, warning: data?.warning };
+        } catch {
+          return { ok: false, error: "Could not reach Stockr to sync jobs." };
+        }
+      },
       createAccessCode: async ({ label, type, days }) => {
         const result = await send({ type: "createAccessCode", label, codeType: type, days });
         if (!result.ok || !result.created || !("code" in result.created)) {
@@ -276,7 +302,9 @@ export function MarketingStoreFallback({ children }: { children: React.ReactNode
         setStockRule: async () => ({ ok: false }),
         deleteStockRule: async () => ({ ok: false }),
         applyRestock: async () => ({ ok: false }),
+        upsertProject: async () => ({ ok: false }),
         replaceProjects: async () => ({ ok: false }),
+        syncBuildr: async () => ({ ok: false, error: "Sign in required." }),
         createAccessCode: async () => ({ ok: false, error: "Sign in required." }),
         toggleAccessCode: async () => ({ ok: false }),
         setAccount: () => undefined,

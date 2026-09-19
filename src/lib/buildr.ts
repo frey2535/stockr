@@ -61,50 +61,64 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
   }
 
   const key = process.env.BUILDR_API_KEY?.trim();
+  const token = key || id;
   const paths = [
     "/projects",
     `/projects?company_id=${encodeURIComponent(id)}`,
+    `/projects?companyId=${encodeURIComponent(id)}`,
     `/jobs?company_id=${encodeURIComponent(id)}`,
+    `/api/projects?company_id=${encodeURIComponent(id)}`,
+    `/api/v1/projects?company_id=${encodeURIComponent(id)}`,
     `/companies/${encodeURIComponent(id)}/projects`,
     `/v1/companies/${encodeURIComponent(id)}/projects`,
     `/api/companies/${encodeURIComponent(id)}/projects`,
   ];
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-    "X-Company-Id": id,
-    ...(key ? { Authorization: `Bearer ${key}`, "X-Api-Key": key } : {}),
-  };
+  const headerSets: Record<string, string>[] = [
+    {
+      Accept: "application/json",
+      "X-Company-Id": id,
+      ...(key ? { Authorization: `Bearer ${key}`, "X-Api-Key": key } : {}),
+    },
+    {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "X-Api-Key": token,
+      "X-Company-Id": id,
+    },
+  ];
 
   let lastError = "";
   for (const base of bases) {
     for (const path of paths) {
-      try {
-        const response = await fetch(`${base}${path}`, {
-          headers,
-          cache: "no-store",
-        });
-        const { html, payload } = await readPayload(response);
-        if (html) {
-          lastError = `Buildr ${base}${path} returned the website instead of the API.`;
-          continue;
+      for (const headers of headerSets) {
+        try {
+          const response = await fetch(`${base}${path}`, {
+            headers,
+            cache: "no-store",
+          });
+          const { html, payload } = await readPayload(response);
+          if (html) {
+            lastError = `Buildr ${base}${path} returned the website instead of the API.`;
+            continue;
+          }
+          if (response.status === 401 || response.status === 403) {
+            lastError = key
+              ? "Buildr rejected the API key. Check BUILDR_API_KEY."
+              : "Buildr requires a service token. Add BUILDR_API_KEY to Stockr Cloudflare secrets.";
+            continue;
+          }
+          if (!response.ok) {
+            lastError = `Buildr returned ${response.status} for ${base}${path}`;
+            continue;
+          }
+          const projects = scopeProjects(unwrapProjects(payload), id)
+            .map((row, index) => mapProject(row, index, () => uid("prj")))
+            .filter((row): row is Project => Boolean(row));
+          if (projects.length) return { projects, source: "buildr" };
+          lastError = "Buildr returned no projects for that company.";
+        } catch (error) {
+          lastError = describeReachError(error);
         }
-        if (response.status === 401 || response.status === 403) {
-          lastError = key
-            ? "Buildr rejected the API key. Check BUILDR_API_KEY."
-            : "Buildr requires a service token. Add BUILDR_API_KEY to Stockr Cloudflare secrets.";
-          continue;
-        }
-        if (!response.ok) {
-          lastError = `Buildr returned ${response.status} for ${base}${path}`;
-          continue;
-        }
-        const projects = scopeProjects(unwrapProjects(payload), id)
-          .map((row, index) => mapProject(row, index, () => uid("prj")))
-          .filter((row): row is Project => Boolean(row));
-        if (projects.length) return { projects, source: "buildr" };
-        lastError = "Buildr returned no projects for that company.";
-      } catch (error) {
-        lastError = describeReachError(error);
       }
     }
   }

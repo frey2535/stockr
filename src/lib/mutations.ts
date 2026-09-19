@@ -53,6 +53,7 @@ export type StoreCommand =
   | { type: "setStockRule"; rule: Partial<StockRule> & { material_id: string; location_id: string } }
   | { type: "deleteStockRule"; id: string }
   | { type: "applyRestock"; restock: RestockApply }
+  | { type: "upsertProject"; project: Partial<Project> & { name?: string } }
   | { type: "replaceProjects"; projects: Project[] }
   | { type: "createAccessCode"; label: string; codeType: AccessCode["type"]; days?: number }
   | { type: "toggleAccessCode"; id: string }
@@ -488,6 +489,47 @@ export function applyCommand(
       actor,
       seed,
     );
+  }
+
+  if (command.type === "upsertProject") {
+    const name = String(command.project.name || "").trim();
+    if (!name) return { state: prev, error: "Job name required." };
+    const existing = prev.projects.find(
+      (row) => row.id === command.project.id || row.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (existing) {
+      return {
+        state: {
+          ...prev,
+          projects: prev.projects.map((row) =>
+            row.id === existing.id
+              ? {
+                  ...row,
+                  ...command.project,
+                  id: row.id,
+                  name,
+                  project_number: command.project.project_number ?? row.project_number,
+                  status: command.project.status ?? row.status,
+                }
+              : row,
+          ),
+        },
+      };
+    }
+    return {
+      state: {
+        ...prev,
+        projects: [
+          ...prev.projects,
+          {
+            id: command.project.id || uid("prj"),
+            name,
+            project_number: command.project.project_number || "",
+            status: command.project.status || "active",
+          },
+        ],
+      },
+    };
   }
 
   if (command.type === "replaceProjects") {
