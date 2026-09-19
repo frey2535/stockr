@@ -16,7 +16,7 @@ import { useStore } from "@/lib/store";
 import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
 
 export default function SettingsPage() {
-  const { workspace, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode, refreshWorkspace } = useStore();
+  const { workspace, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode, syncBuildr } = useStore();
   const { settings, accessCodes } = workspace;
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
   const draft = { ...settings, ...overrides };
@@ -42,23 +42,12 @@ export default function SettingsPage() {
   };
 
   const syncBuildrProjects = async () => {
-    const response = await fetch("/api/buildr/sync", { method: "POST" });
-    const data = (await response.json().catch(() => null)) as {
-      error?: string;
-      count?: number;
-      warning?: string;
-    } | null;
-    if (!response.ok) {
-      toast.error(
-        data?.error ||
-          (response.status === 530
-            ? "Buildr DNS failed (530). Sync now targets buildrpm.com."
-            : "Could not sync Buildr projects."),
-      );
+    const result = await syncBuildr();
+    if (!result.ok) {
+      toast.error(result.error || "Could not sync Buildr jobs.");
       return;
     }
-    await refreshWorkspace();
-    toast.success(data?.warning || `Synced ${data?.count || 0} Buildr project${data?.count === 1 ? "" : "s"}`);
+    toast.success(result.warning || `Synced ${result.count || 0} Buildr job${result.count === 1 ? "" : "s"}`);
   };
 
   const onLogo = (file: File | undefined) => {

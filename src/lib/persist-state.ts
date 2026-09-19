@@ -17,3 +17,11 @@ export function decodeStateFromPersist(state: StoreState): StoreState {
 export function visibleProjects(projects: Project[]) {
   return projectsWithoutOpsBlob(projectsWithoutToolsBlob(projects));
 }
+
+export function mergeJobLists(remote: Project[], local: Project[]) {
+  const merged = [...remote];
+  for (const row of local) {
+    if (!merged.some((item) => item.id === row.id || item.name === row.name)) merged.push(row);
+  }
+  return merged;
+}
