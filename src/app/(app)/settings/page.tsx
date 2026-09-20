@@ -262,7 +262,7 @@ export default function SettingsPage() {
                 placeholder="Company ID from Buildr → Settings"
               />
               <p className="text-xs text-muted-foreground">
-                Sync talks to https://buildrpm.com/projects. Production also needs a BUILDR_API_KEY secret.
+                Sync pulls jobs from Buildr using this company ID.
               </p>
             </div>
           ) : null}
