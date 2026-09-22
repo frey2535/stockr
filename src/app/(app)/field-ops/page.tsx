@@ -46,7 +46,9 @@ export default function FieldOpsPage() {
   };
 
   useEffect(() => {
-    void load();
+    queueMicrotask(() => {
+      void load();
+    });
   }, []);
 
   const send = async (body: Record<string, unknown>) => {

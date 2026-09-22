@@ -44,7 +44,7 @@ export function VoiceAssistant({
   const recRef = useRef<SpeechRec | null>(null);
 
   useEffect(() => {
-    setSupported(Boolean(speechEngine()));
+    queueMicrotask(() => setSupported(Boolean(speechEngine())));
     return () => recRef.current?.stop();
   }, []);
 
