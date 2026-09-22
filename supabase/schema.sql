@@ -327,3 +327,95 @@ $$;
 
 revoke all on function stockr_replace_company_state(text, jsonb) from public;
 grant execute on function stockr_replace_company_state(text, jsonb) to service_role;
+
+
+-- Elite field operations
+create table if not exists stockr_storage_zones (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  location_id text not null references stockr_locations (id) on delete cascade,
+  name text not null,
+  code text,
+  sort_order integer not null default 0
+);
+
+create table if not exists stockr_storage_bins (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  location_id text not null references stockr_locations (id) on delete cascade,
+  zone_id text references stockr_storage_zones (id) on delete set null,
+  name text not null,
+  code text not null,
+  barcode text,
+  description text,
+  is_active boolean not null default true
+);
+
+create table if not exists stockr_inventory_reservations (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  material_id text not null references stockr_materials (id) on delete cascade,
+  location_id text not null references stockr_locations (id) on delete cascade,
+  project_id text,
+  quantity numeric not null check (quantity > 0),
+  status text not null default 'active',
+  notes text,
+  created_by text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists stockr_material_requests (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  project_id text,
+  destination_location_id text,
+  requested_by text not null,
+  priority text not null default 'normal',
+  status text not null default 'requested',
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists stockr_material_request_lines (
+  id text primary key,
+  request_id text not null references stockr_material_requests (id) on delete cascade,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  material_id text not null references stockr_materials (id) on delete cascade,
+  quantity_requested numeric not null check (quantity_requested > 0),
+  quantity_fulfilled numeric not null default 0
+);
+
+create table if not exists stockr_cycle_count_sessions (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  location_id text not null references stockr_locations (id) on delete cascade,
+  zone_id text,
+  bin_id text,
+  status text not null default 'open',
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  submitted_at timestamptz
+);
+
+create table if not exists stockr_cycle_count_lines (
+  id text primary key,
+  session_id text not null references stockr_cycle_count_sessions (id) on delete cascade,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  material_id text not null references stockr_materials (id) on delete cascade,
+  expected_quantity numeric not null default 0,
+  counted_quantity numeric
+);
+
+create index if not exists stockr_storage_zones_company_idx on stockr_storage_zones (company_id, location_id);
+create unique index if not exists stockr_storage_bins_code_idx on stockr_storage_bins (company_id, location_id, lower(code));
+create index if not exists stockr_reservations_lookup_idx on stockr_inventory_reservations (company_id, material_id, location_id, status);
+create index if not exists stockr_material_requests_company_idx on stockr_material_requests (company_id, created_at desc);
+create index if not exists stockr_cycle_counts_company_idx on stockr_cycle_count_sessions (company_id, created_at desc);
+
+alter table stockr_storage_zones enable row level security;
+alter table stockr_storage_bins enable row level security;
+alter table stockr_inventory_reservations enable row level security;
+alter table stockr_material_requests enable row level security;
+alter table stockr_material_request_lines enable row level security;
+alter table stockr_cycle_count_sessions enable row level security;
+alter table stockr_cycle_count_lines enable row level security;
