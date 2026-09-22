@@ -307,6 +307,33 @@ export function ensureCompanyMembership(userId: string, companyId: string, role:
   );
 }
 
+
+export function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const normalizedBuildrCompanyId = String(buildrCompanyId || "").trim();
+  if (!normalizedEmail || !normalizedBuildrCompanyId) return null;
+
+  const user = getUserByEmail(normalizedEmail);
+  if (!user) return null;
+
+  const companies = db.prepare("SELECT id FROM companies").all() as { id: string }[];
+  const company = companies.find((row) => {
+    const state = getCompanyState(row.id);
+    return (
+      state.settings.buildr_linked === true &&
+      String(state.settings.buildr_company_id || "").trim() === normalizedBuildrCompanyId
+    );
+  });
+  if (!company) return null;
+
+  const membership = db
+    .prepare("SELECT role FROM memberships WHERE user_id = ? AND company_id = ?")
+    .get(user.id, company.id) as { role: MemberRole } | undefined;
+  if (!membership) return null;
+
+  return { userId: user.id, companyId: company.id, role: membership.role };
+}
+
 export function setCompanyPlan(companyId: string, plan: PlanId) {
   db.prepare("UPDATE companies SET plan = ?, plan_status = ? WHERE id = ?").run(plan, "active", companyId);
 }
