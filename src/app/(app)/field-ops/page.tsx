@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useStore } from "@/lib/store";
 import type { FieldOpsPayload } from "@/lib/types";
 
-const empty: FieldOpsPayload = { zones: [], bins: [], reservations: [], requests: [], countSessions: [] };
+const empty: FieldOpsPayload = { zones: [], bins: [], reservations: [], requests: [], countSessions: [], materials: [] };
 
 export default function FieldOpsPage() {
   const { workspace } = useStore();
@@ -22,6 +22,14 @@ export default function FieldOpsPage() {
   const [zoneName, setZoneName] = useState("");
   const [binName, setBinName] = useState("");
   const [binCode, setBinCode] = useState("");
+  const [reserveMaterialId, setReserveMaterialId] = useState("");
+  const [reserveQty, setReserveQty] = useState("1");
+  const [requestMaterialId, setRequestMaterialId] = useState("");
+  const [requestQty, setRequestQty] = useState("1");
+  const [requestPriority, setRequestPriority] = useState<"normal" | "urgent" | "critical">("normal");
+  const [requestDestId, setRequestDestId] = useState("");
+
+  const materialName = (id: string) => data.materials.find((row) => row.id === id)?.name || id;
 
   const load = async () => {
     setLoading(true);
@@ -158,16 +166,108 @@ export default function FieldOpsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader><CardTitle>Hold / reserve stock</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2 md:grid-cols-[1fr_140px_90px_auto]">
+            <Select value={reserveMaterialId} onValueChange={setReserveMaterialId}>
+              <SelectTrigger><SelectValue placeholder="Material" /></SelectTrigger>
+              <SelectContent>
+                {data.materials.map((row) => <SelectItem key={row.id} value={row.id}>{row.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={locationId} onValueChange={setLocationId}>
+              <SelectTrigger><SelectValue placeholder="Location" /></SelectTrigger>
+              <SelectContent>
+                {workspace.locations.map((row) => <SelectItem key={row.id} value={row.id}>{row.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input type="number" min="0" value={reserveQty} onChange={(e) => setReserveQty(e.target.value)} />
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (!reserveMaterialId || !locationId) return;
+                if (await send({ action: "reserve", materialId: reserveMaterialId, locationId, quantity: Number(reserveQty) })) {
+                  toast.success("Reserved");
+                }
+              }}
+            >
+              Reserve
+            </Button>
+          </div>
+          {!activeReservations.length ? <p className="text-sm text-muted-foreground">No active reservations.</p> : null}
+          {activeReservations.map((row) => (
+            <div key={row.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+              <div>
+                <p className="font-medium">{materialName(row.material_id)} · {row.quantity}</p>
+                <p className="text-xs text-muted-foreground">
+                  {workspace.locations.find((location) => location.id === row.location_id)?.name || "Location"} · {row.created_by}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => void send({ action: "releaseReservation", reservationId: row.id })}>
+                Release
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><PackageCheck className="size-5 text-primary" />Material requests</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 md:grid-cols-[1fr_90px]">
+              <Select value={requestMaterialId} onValueChange={setRequestMaterialId}>
+                <SelectTrigger><SelectValue placeholder="Material" /></SelectTrigger>
+                <SelectContent>
+                  {data.materials.map((row) => <SelectItem key={row.id} value={row.id}>{row.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input type="number" min="0" value={requestQty} onChange={(e) => setRequestQty(e.target.value)} />
+            </div>
+            <div className="grid gap-2 md:grid-cols-[1fr_120px_auto]">
+              <Select value={requestDestId} onValueChange={setRequestDestId}>
+                <SelectTrigger><SelectValue placeholder="Send to" /></SelectTrigger>
+                <SelectContent>
+                  {workspace.locations.map((row) => <SelectItem key={row.id} value={row.id}>{row.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={requestPriority} onValueChange={(value) => setRequestPriority(value as typeof requestPriority)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="normal">normal</SelectItem>
+                  <SelectItem value="urgent">urgent</SelectItem>
+                  <SelectItem value="critical">critical</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (!requestMaterialId) return;
+                  if (
+                    await send({
+                      action: "createRequest",
+                      destinationLocationId: requestDestId || undefined,
+                      priority: requestPriority,
+                      lines: [{ materialId: requestMaterialId, quantity: Number(requestQty) }],
+                    })
+                  ) {
+                    toast.success("Request sent");
+                  }
+                }}
+              >
+                Request
+              </Button>
+            </div>
             {!openRequests.length ? <p className="text-sm text-muted-foreground">No open material requests.</p> : null}
             {openRequests.map((request) => (
               <div key={request.id} className="rounded-xl border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-medium">{request.lines.length} line{request.lines.length === 1 ? "" : "s"} · {request.priority}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {request.lines.map((line) => `${materialName(line.material_id)} × ${line.quantity_requested}`).join(", ") || "No lines"}
+                    </p>
                     <p className="text-xs text-muted-foreground">{request.requested_by} · {new Date(request.created_at).toLocaleString()}</p>
                   </div>
                   <Select
@@ -216,7 +316,7 @@ export default function FieldOpsPage() {
                   <div className="space-y-2">
                     {session.lines.slice(0, 8).map((line) => (
                       <div key={line.id} className="grid grid-cols-[1fr_100px] items-center gap-2">
-                        <span className="text-sm">Expected {line.expected_quantity}</span>
+                        <span className="text-sm">{materialName(line.material_id)} · expected {line.expected_quantity}</span>
                         <Input
                           type="number"
                           min="0"

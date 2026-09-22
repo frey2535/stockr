@@ -364,4 +364,5 @@ export type FieldOpsPayload = {
   reservations: InventoryReservation[];
   requests: Array<MaterialRequest & { lines: MaterialRequestLine[] }>;
   countSessions: Array<CycleCountSession & { lines: CycleCountLine[] }>;
+  materials: Array<{ id: string; name: string }>;
 };

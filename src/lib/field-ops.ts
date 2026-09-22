@@ -15,11 +15,26 @@ import type {
 } from "./types";
 
 function emptyPayload(): FieldOpsPayload {
-  return { zones: [], bins: [], reservations: [], requests: [], countSessions: [] };
+  return { zones: [], bins: [], reservations: [], requests: [], countSessions: [], materials: [] };
+}
+
+function isMissingTable(error: { message?: string; code?: string } | null) {
+  const message = error?.message || "";
+  return (
+    error?.code === "42P01" ||
+    error?.code === "PGRST205" ||
+    /does not exist|schema cache/i.test(message)
+  );
+}
+
+async function catalog(companyId: string) {
+  const state = await getCompanyState(companyId);
+  return state.materials.map((row) => ({ id: row.id, name: row.name }));
 }
 
 export async function getFieldOps(companyId: string): Promise<FieldOpsPayload> {
-  if (!isSupabaseConfigured()) return emptyPayload();
+  const materials = await catalog(companyId);
+  if (!isSupabaseConfigured()) return { ...emptyPayload(), materials };
   const db = getSupabaseAdmin();
 
   const [zonesR, binsR, reservationsR, requestsR, requestLinesR, sessionsR, countLinesR] =
@@ -34,7 +49,9 @@ export async function getFieldOps(companyId: string): Promise<FieldOpsPayload> {
     ]);
 
   for (const result of [zonesR, binsR, reservationsR, requestsR, requestLinesR, sessionsR, countLinesR]) {
-    if (result.error) throw result.error;
+    if (!result.error) continue;
+    if (isMissingTable(result.error)) return { ...emptyPayload(), materials };
+    throw result.error;
   }
 
   const requestLines = (requestLinesR.data || []) as MaterialRequestLine[];
@@ -52,6 +69,7 @@ export async function getFieldOps(companyId: string): Promise<FieldOpsPayload> {
       ...session,
       lines: countLines.filter((line) => line.session_id === session.id),
     })),
+    materials,
   };
 }
 
