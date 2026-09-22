@@ -12,6 +12,7 @@ import {
   MapPin,
   Menu,
   Package,
+  PackageCheck,
   ScanLine,
   Settings,
   RefreshCw,
@@ -33,6 +34,7 @@ const NAV = [
   { href: "/dashboard", label: "Ops", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
+  { href: "/field-ops", label: "Material Control", icon: PackageCheck },
   { href: "/restock", label: "Restock", icon: RefreshCw },
   { href: "/locations", label: "Locations", icon: MapPin },
   { href: "/transfers", label: "Transfers", icon: ArrowLeftRight },
@@ -49,7 +51,7 @@ const MOBILE_NAV = [
   { href: "/dashboard", label: "Ops", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
-  { href: "/activity", label: "Activity", icon: ClipboardList },
+  { href: "/field-ops", label: "Control", icon: PackageCheck },
 ];
 
 function NavLink({

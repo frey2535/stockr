@@ -1,10 +1,11 @@
-import { barcodeVariants, isGtin } from "./barcode";
+import { barcodeVariants, digitsOnly, isGtin } from "./barcode";
 import type { IdentifiedProduct } from "./types";
 
 export type { IdentifiedProduct };
 
 const cache = new Map<string, { at: number; value: IdentifiedProduct | null }>();
 const CACHE_MS = 24 * 60 * 60 * 1000;
+const LOOKUP_MS = 4000;
 
 function remember(code: string, value: IdentifiedProduct | null) {
   cache.set(code, { at: Date.now(), value });
@@ -21,9 +22,20 @@ function cached(code: string) {
   return hit.value;
 }
 
+export function unknownProduct(code: string): IdentifiedProduct {
+  const digits = digitsOnly(code);
+  return {
+    name: `Scanned item ${code.trim()}`,
+    barcode: code.trim(),
+    upc: digits || code.trim(),
+    source: "scan",
+    description: "No public product record yet. Add it to the catalog to receive, use, or transfer it.",
+  };
+}
+
 async function readJson(url: string, init?: RequestInit) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), LOOKUP_MS);
   try {
     const response = await fetch(url, {
       ...init,
@@ -146,26 +158,21 @@ async function lookupGoUpc(code: string) {
 
 export async function identifyRemoteProduct(code: string): Promise<IdentifiedProduct | null> {
   const trimmed = code.trim();
-  if (!trimmed || !isGtin(trimmed)) return null;
+  if (!trimmed) return null;
   const hit = cached(trimmed);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined) return hit || unknownProduct(trimmed);
 
-  const variants = barcodeVariants(trimmed).filter((value) => isGtin(value));
-  const gtin = variants.find((value) => digitsOnlySafe(value).length >= 12) || variants[0] || trimmed;
-
-  const open = await Promise.all([
+  const variants = barcodeVariants(trimmed);
+  const gtin = variants.find((value) => isGtin(value)) || variants.find((value) => digitsOnly(value).length >= 8) || trimmed;
+  const lookups = [
     lookupOpenFacts(gtin, "world.openproductsfacts.org", "open-products-facts"),
     lookupOpenFacts(gtin, "world.openfoodfacts.org", "open-food-facts"),
     lookupOpenFacts(gtin, "world.openbeautyfacts.org", "open-beauty-facts"),
     lookupGoUpc(gtin),
-  ]);
-  const fromOpen = open.find(Boolean) || null;
-  if (fromOpen) return remember(trimmed, fromOpen);
-
-  const fromUpc = await lookupUpcItemDb(gtin);
-  return remember(trimmed, fromUpc);
-}
-
-function digitsOnlySafe(code: string) {
-  return code.replace(/\D/g, "");
+    lookupUpcItemDb(gtin),
+  ];
+  const results = await Promise.all(lookups);
+  const found = results.find(Boolean) || null;
+  remember(trimmed, found);
+  return found || unknownProduct(trimmed);
 }

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Keyboard, ScanLine, Sparkles, WifiOff } from "lucide-react";
+import { Camera, Keyboard, ScanLine, Sparkles, Trash2, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { VoiceAssistant, speak } from "@/components/voice-assistant";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,14 +32,17 @@ import {
   writeScannerPrefs,
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
+import { planVoiceCommand } from "@/lib/voice-command";
 import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
 
 type Detector = {
-  detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]>;
+  detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
 };
 
+const SCAN_FORMATS = ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "itf", "qr_code", "data_matrix"];
+
 export default function ScannerPage() {
-  const { workspace, applyAction, upsertMaterial } = useStore();
+  const { workspace, applyAction, upsertMaterial, deleteMaterial } = useStore();
   const { locations, projects } = workspace;
   const defaultVan =
     locations.find((row) => row.type === "vehicle")?.id || locations[0]?.id || "";
@@ -49,6 +53,7 @@ export default function ScannerPage() {
   const [unknownCode, setUnknownCode] = useState("");
   const [identified, setIdentified] = useState<IdentifiedProduct | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const [actionType, setActionType] = useState<TxType>("use");
   const [quantity, setQuantity] = useState("1");
   const [fromId, setFromId] = useState(defaultVan);
@@ -63,7 +68,10 @@ export default function ScannerPage() {
   const streamRef = useRef<MediaStream | null>(null);
   const detectorRef = useRef<Detector | null>(null);
   const scanningRef = useRef(false);
+  const lastCodeRef = useRef("");
+  const hitsRef = useRef(0);
   const qtyRef = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
 
   const rememberPrefs = (next?: Partial<{ actionType: TxType; fromId: string; toId: string; project: string }>) => {
     writeScannerPrefs({
@@ -100,6 +108,7 @@ export default function ScannerPage() {
       setOnHandByLocation({});
       if (data?.identified?.name) {
         setIdentified({ ...data.identified, barcode: data.identified.barcode || trimmed });
+        setUnknownCode(trimmed);
         toast.success(`Identified ${data.identified.name}`);
         return;
       }
@@ -151,20 +160,24 @@ export default function ScannerPage() {
     }
 
     let cancelled = false;
+    lastCodeRef.current = "";
+    hitsRef.current = 0;
     const start = async () => {
       setCameraError("");
       if (!("BarcodeDetector" in window)) {
-        setCameraError("This browser cannot scan from the camera. Enter the barcode manually.");
+        setCameraError("This browser cannot scan from the camera. Snap a photo of the label instead.");
         setMode("manual");
         return;
       }
       try {
         const Detector = (window as unknown as { BarcodeDetector: new (opts: { formats: string[] }) => Detector }).BarcodeDetector;
-        detectorRef.current = new Detector({
-          formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "qr_code"],
-        });
+        detectorRef.current = new Detector({ formats: SCAN_FORMATS });
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
         });
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
@@ -180,11 +193,19 @@ export default function ScannerPage() {
           if (!scanningRef.current || !videoRef.current || !detectorRef.current) return;
           try {
             const codes = await detectorRef.current.detect(videoRef.current);
-            if (codes[0]?.rawValue) {
-              scanningRef.current = false;
-              lookup(codes[0].rawValue);
-              setMode("manual");
-              return;
+            const value = codes[0]?.rawValue?.trim();
+            if (value) {
+              if (value === lastCodeRef.current) hitsRef.current += 1;
+              else {
+                lastCodeRef.current = value;
+                hitsRef.current = 1;
+              }
+              if (hitsRef.current >= 2) {
+                scanningRef.current = false;
+                setMode("manual");
+                void lookup(value);
+                return;
+              }
             }
           } catch {
             /* keep scanning */
@@ -260,7 +281,7 @@ export default function ScannerPage() {
     setOnHandByLocation({});
   };
 
-  const addIdentifiedToCatalog = async (product: IdentifiedProduct) => {
+  const addIdentifiedToCatalog = async (product: IdentifiedProduct, receiveNow = false) => {
     const created = await upsertMaterial({
       name: product.name,
       barcode: product.barcode || unknownCode,
@@ -274,15 +295,22 @@ export default function ScannerPage() {
     });
     if (!created.ok) {
       toast.error(created.error);
-      return;
+      return null;
     }
     setSelected(created.material);
     setIdentified(null);
     setUnknownCode("");
     setOnHandByLocation({});
     setBarcode("");
-    toast.success(`Added ${created.material.name} to the catalog`);
+    if (receiveNow) {
+      setActionType("receive");
+      setToId((current) => current || defaultVan);
+      toast.success(`Added ${created.material.name}. Receive it into a location.`);
+    } else {
+      toast.success(`Added ${created.material.name} to the catalog`);
+    }
     window.setTimeout(() => qtyRef.current?.focus(), 50);
+    return created.material;
   };
 
   const createUnknown = async () => {
@@ -301,10 +329,10 @@ export default function ScannerPage() {
     toast.success("Material created. Fill in the details from Catalog when you can.");
   };
 
-  const processSmart = async () => {
-    const parsed = parseInventoryEnglish(smart);
+  const processSmart = async (text = smart) => {
+    const parsed = parseInventoryEnglish(text);
     setParsedPreview(parsed);
-    const lookupRes = await fetch(`/api/materials?q=${encodeURIComponent(parsed.itemQuery || "")}`);
+    const lookupRes = await fetch(`/api/materials?q=${encodeURIComponent(parsed.itemQuery || "")}&limit=50`);
     const lookupData = (await lookupRes.json().catch(() => null)) as { rows?: Material[] } | null;
     const materials = lookupData?.rows || [];
     const { match } = matchMaterial(parsed.itemQuery, materials);
@@ -322,12 +350,128 @@ export default function ScannerPage() {
       return;
     }
     setSelected(match);
-    if (parsed.action) setActionType(parsed.action);
+    if (parsed.action && parsed.action !== "delete") setActionType(parsed.action);
     if (parsed.quantity) setQuantity(String(parsed.quantity));
     if (from) setFromId(from.id);
     if (to) setToId(to.id);
     if (parsed.projectName) setProject(parsed.projectName);
     toast.success("Parsed. Review the fields, then commit.");
+  };
+
+  const runVoice = async (transcript: string) => {
+    setSmart(transcript);
+    const lookupRes = await fetch(`/api/materials?q=${encodeURIComponent(transcript)}&limit=80`);
+    const lookupData = (await lookupRes.json().catch(() => null)) as { rows?: Material[] } | null;
+    const plan = planVoiceCommand(transcript, lookupData?.rows || [], locations, projects);
+    setParsedPreview(plan.parsed);
+    if (!plan.ok) {
+      speak(plan.spoken);
+      toast.error(plan.error);
+      return;
+    }
+    if (plan.kind === "find") {
+      setSelected(plan.material);
+      speak(plan.spoken);
+      toast.success(plan.spoken);
+      return;
+    }
+    if (plan.kind === "delete") {
+      setSelected(plan.material);
+      speak(plan.spoken);
+      toast.message(plan.spoken);
+      return;
+    }
+    const result = await commitAction(plan.action);
+    if (!result.ok) {
+      speak(result.error || "That move failed.");
+      toast.error(result.error);
+      setSelected(lookupData?.rows?.find((row) => row.id === plan.action.materialId) || null);
+      if (plan.parsed.action && plan.parsed.action !== "find" && plan.parsed.action !== "delete") {
+        setActionType(plan.parsed.action);
+      }
+      if (plan.parsed.quantity) setQuantity(String(plan.parsed.quantity));
+      return;
+    }
+    speak(plan.spoken);
+    toast.success(plan.spoken);
+    setSelected(null);
+    setOnHandByLocation({});
+  };
+
+  const detectFromBlob = async (file: Blob) => {
+    if (!("BarcodeDetector" in window) || !("createImageBitmap" in window)) return "";
+    try {
+      const Detector = (window as unknown as { BarcodeDetector: new (opts: { formats: string[] }) => Detector }).BarcodeDetector;
+      const detector = new Detector({ formats: SCAN_FORMATS });
+      const bitmap = await createImageBitmap(file);
+      const codes = await detector.detect(bitmap);
+      bitmap.close();
+      return codes[0]?.rawValue?.trim() || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const identifyPhoto = async (file: File) => {
+    setPhotoBusy(true);
+    setIdentified(null);
+    setUnknownCode("");
+    try {
+      const localCode = await detectFromBlob(file);
+      if (localCode) {
+        await lookup(localCode);
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      const image = await createImageBitmap(file);
+      const scale = Math.min(1, 1280 / Math.max(image.width, image.height));
+      canvas.width = Math.round(image.width * scale);
+      canvas.height = Math.round(image.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx?.drawImage(image, 0, 0, canvas.width, canvas.height);
+      image.close();
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      const response = await fetch("/api/identify-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: dataUrl, barcode: localCode }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        identified?: IdentifiedProduct | null;
+        rows?: Material[];
+        onHandByLocation?: Record<string, number>;
+        error?: string;
+      } | null;
+      const found = data?.rows?.[0];
+      if (found) {
+        setSelected(found);
+        setOnHandByLocation(data?.onHandByLocation || {});
+        toast.success(`Found ${found.name}`);
+        return;
+      }
+      if (data?.identified?.name) {
+        setIdentified(data.identified);
+        setUnknownCode(data.identified.barcode || "");
+        toast.success(`Identified ${data.identified.name}`);
+        return;
+      }
+      toast.error(data?.error || "Could not identify that photo.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const removeSelected = async () => {
+    if (!selected) return;
+    if (!window.confirm(`Delete ${selected.name} from the catalog?`)) return;
+    const result = await deleteMaterial(selected.id);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(`Deleted ${selected.name}`);
+    setSelected(null);
+    setOnHandByLocation({});
   };
 
   const vanQty = fromId ? onHandByLocation[fromId] : undefined;
@@ -338,7 +482,7 @@ export default function ScannerPage() {
       <PageHeader
         eyebrow="Field"
         title="Scanner"
-        description="Identify any barcode, charge the job, and drop van qty in one motion. Restock opens when a truck falls below min."
+        description="Scan or photograph any item. Identify it even when it is not in the catalog, then use, transfer, receive, or talk it through."
         icon={<ScanLine className="size-8 text-primary" />}
       />
 
@@ -350,6 +494,8 @@ export default function ScannerPage() {
             : `Offline${queued ? ` · ${queued} queued` : ""}. Scans save on this device.`}
         </div>
       ) : null}
+
+      <VoiceAssistant onTranscript={runVoice} />
 
       <Card>
         {mode === "camera" ? (
@@ -375,7 +521,7 @@ export default function ScannerPage() {
             </div>
             <div className="space-y-2 p-4">
               <p className="text-center text-sm text-muted-foreground">
-                Hold steady — align barcode in the box
+                Hold steady — two matching reads lock the code
               </p>
               <Button variant="outline" className="w-full" onClick={() => setMode("manual")}>
                 <Keyboard className="mr-2 size-4" />
@@ -389,13 +535,13 @@ export default function ScannerPage() {
               <p className="text-center text-sm text-destructive">{cameraError}</p>
             ) : null}
             <p className="text-center text-sm text-muted-foreground">
-              Barcode, UPC, MPN, or supplier number
+              Barcode, UPC, MPN, photo of the label, or voice
             </p>
             <form
               className="space-y-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                lookup(barcode);
+                void lookup(barcode);
               }}
             >
               <Input
@@ -405,19 +551,31 @@ export default function ScannerPage() {
                 className="h-12 text-center text-lg tracking-widest"
                 autoFocus
               />
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setMode("camera")}>
-                  <ScanLine className="mr-2 size-4" />
-                  Use Camera
+              <div className="grid grid-cols-3 gap-2">
+                <Button type="button" variant="outline" onClick={() => setMode("camera")}>
+                  <ScanLine className="mr-1 size-4" />
+                  Scan
                 </Button>
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  disabled={!barcode.trim() || lookingUp}
-                >
-                  {lookingUp ? "Identifying…" : "Look Up"}
+                <Button type="button" variant="outline" disabled={photoBusy} onClick={() => photoRef.current?.click()}>
+                  <Camera className="mr-1 size-4" />
+                  {photoBusy ? "Reading…" : "Photo"}
+                </Button>
+                <Button type="submit" disabled={!barcode.trim() || lookingUp}>
+                  {lookingUp ? "…" : "Look Up"}
                 </Button>
               </div>
+              <input
+                ref={photoRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void identifyPhoto(file);
+                }}
+              />
             </form>
           </CardContent>
         )}
@@ -455,9 +613,14 @@ export default function ScannerPage() {
               <p className="text-sm text-muted-foreground">{identified.description}</p>
             ) : null}
             <p className="text-xs text-muted-foreground">
-              Matched from {identified.source.replace(/-/g, " ")}. Add it so you can receive, use, or transfer it.
+              Matched from {identified.source.replace(/-/g, " ")}. Add it, then use, transfer, receive, shrink, or return it.
             </p>
-            <Button onClick={() => addIdentifiedToCatalog(identified)}>Add to catalog</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void addIdentifiedToCatalog(identified)}>Add to catalog</Button>
+              <Button variant="outline" onClick={() => void addIdentifiedToCatalog(identified, true)}>
+                Add + receive
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -472,9 +635,7 @@ export default function ScannerPage() {
               This code is not in the catalog and no public product record was found. Create it so you can
               receive it now.
             </p>
-            <Button onClick={createUnknown}>
-              Create material
-            </Button>
+            <Button onClick={() => void createUnknown()}>Create material</Button>
           </CardContent>
         </Card>
       ) : null}
@@ -488,6 +649,15 @@ export default function ScannerPage() {
                 .filter(Boolean)
                 .join(" · ")}
             </p>
+            {Object.keys(onHandByLocation).length ? (
+              <p className="text-xs text-muted-foreground">
+                On hand:{" "}
+                {locations
+                  .filter((row) => onHandByLocation[row.id])
+                  .map((row) => `${row.name} ${qty(onHandByLocation[row.id])}`)
+                  .join(" · ") || "none"}
+              </p>
+            ) : null}
             {needsFrom(actionType) && fromId ? (
               <p className="text-sm font-medium">
                 Van / source on hand: {qty(vanQty || 0)} {selected.unit}
@@ -610,8 +780,11 @@ export default function ScannerPage() {
               >
                 Cancel
               </Button>
-              <Button className="flex-1" onClick={commitScan}>
+              <Button className="flex-1" onClick={() => void commitScan()}>
                 Commit
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => void removeSelected()} aria-label="Delete material">
+                <Trash2 className="size-4" />
               </Button>
             </div>
           </CardContent>
@@ -625,7 +798,7 @@ export default function ScannerPage() {
             Smart Add / Find / Transfer / Use
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            Type an inventory action in plain English
+            Type or speak an inventory action. Example: transfer 10 3/4&quot; lbs from Noahs van to Matts truck
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -635,10 +808,10 @@ export default function ScannerPage() {
             placeholder={`e.g. "use 10 emt from Truck 12 on Riverside" or "return 4 breakers to Truck 12 for Oak Street"`}
             className="min-h-[72px]"
             onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) processSmart();
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void processSmart();
             }}
           />
-          <Button className="w-full" onClick={processSmart} disabled={!smart.trim()}>
+          <Button className="w-full" onClick={() => void processSmart()} disabled={!smart.trim()}>
             Process
           </Button>
           {parsedPreview ? (

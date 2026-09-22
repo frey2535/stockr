@@ -1,11 +1,20 @@
 export type ParsedAction = {
-  action: "add" | "receive" | "return" | "transfer" | "use" | "count" | "find" | null;
+  action: "add" | "receive" | "return" | "transfer" | "use" | "count" | "find" | "shrink" | "adjust" | "delete" | null;
   quantity: number | null;
   itemQuery: string;
   toLocationName: string;
   fromLocationName: string;
   projectName: string;
 };
+
+export function foldQuery(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9/.]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export function parseInventoryEnglish(input: string): ParsedAction {
   const e = input.trim();
@@ -45,6 +54,15 @@ export function parseInventoryEnglish(input: string): ParsedAction {
   } else if (/^(transfer|move|moved|send|sent)\b/i.test(n)) {
     r.action = "transfer";
     n = n.replace(/^(transfer|move|moved|send|sent)\s*/i, "");
+  } else if (/^(shrink|shrinkage|lost|missing|write\s*off)\b/i.test(n)) {
+    r.action = "shrink";
+    n = n.replace(/^(shrink|shrinkage|lost|missing|write\s*off)\s*/i, "");
+  } else if (/^(adjust|set|correct)\b/i.test(n)) {
+    r.action = "adjust";
+    n = n.replace(/^(adjust|set|correct)\s*/i, "");
+  } else if (/^(delete|remove|void)\b/i.test(n)) {
+    r.action = "delete";
+    n = n.replace(/^(delete|remove|void)\s*/i, "");
   } else if (
     /^(use|used|using|consume|consumed|pull|pulled|install|installed)\b/i.test(n)
   ) {
@@ -53,9 +71,9 @@ export function parseInventoryEnglish(input: string): ParsedAction {
       /^(use|used|using|consume|consumed|pull|pulled|install|installed)\s*/i,
       "",
     );
-  } else if (/^(find|lookup|look up|search)\b/i.test(n)) {
+  } else if (/^(find|lookup|look up|search|where(?:'s| is)|locate)\b/i.test(n)) {
     r.action = "find";
-    n = n.replace(/^(find|lookup|look up|search)\s*/i, "");
+    n = n.replace(/^(find|lookup|look up|search|where(?:'s| is)|locate)\s*/i, "");
   }
 
   const qty = n.match(/^(\d+(?:\.\d+)?)\s*/);
@@ -64,25 +82,20 @@ export function parseInventoryEnglish(input: string): ParsedAction {
     n = n.replace(/^(\d+(?:\.\d+)?)\s*/, "");
   }
 
-  const to = n.match(
-    /\bto\s+([a-z0-9\s#_-]+?)(?:\s+from\s+|\s+for\s+|\s+on\s+|$)/i,
-  );
+  const place = "([a-z0-9\\s#'._-]+?)";
+  const to = n.match(new RegExp(`\\bto\\s+${place}(?:\\s+from\\s+|\\s+for\\s+|\\s+on\\s+|$)`, "i"));
   if (to) {
     r.toLocationName = to[1].trim();
     n = n.replace(to[0], " ").trim();
   }
 
-  const from = n.match(
-    /\bfrom\s+([a-z0-9\s#_-]+?)(?:\s+to\s+|\s+for\s+|\s+on\s+|$)/i,
-  );
+  const from = n.match(new RegExp(`\\bfrom\\s+${place}(?:\\s+to\\s+|\\s+for\\s+|\\s+on\\s+|$)`, "i"));
   if (from) {
     r.fromLocationName = from[1].trim();
     n = n.replace(from[0], " ").trim();
   }
 
-  const project = n.match(
-    /\b(?:on|for)\s+(?:project\s+)?([a-z0-9\s#_-]+?)(?:\s+from\s+|\s+to\s+|$)/i,
-  );
+  const project = n.match(/\b(?:on|for)\s+(?:project\s+|job\s+)?([a-z0-9\s#'._-]+?)(?:\s+from\s+|\s+to\s+|$)/i);
   if (project && (r.action === "use" || r.action === "return")) {
     r.projectName = project[1].trim();
     n = n.replace(project[0], " ").trim();
@@ -93,18 +106,18 @@ export function parseInventoryEnglish(input: string): ParsedAction {
 }
 
 export function scoreMatch(query: string, haystack: string) {
-  const q = query.toLowerCase().trim();
-  const h = haystack.toLowerCase();
+  const q = foldQuery(query);
+  const h = foldQuery(haystack);
   if (!q || !h) return 0;
   if (h === q) return 3;
-  if (h.includes(q)) return 2;
+  if (h.includes(q) || q.includes(h)) return 2;
   const words = q.split(/\s+/).filter((w) => w.length > 1);
   if (words.length === 0) return 0;
   const hits = words.filter((w) => h.includes(w)).length;
   return hits / words.length;
 }
 
-export function matchLocation<T extends { name: string }>(
+export function matchLocation<T extends { name: string; assigned_to?: string }>(
   name: string,
   locations: T[],
 ) {
@@ -112,7 +125,8 @@ export function matchLocation<T extends { name: string }>(
   let best: T | null = null;
   let score = 0;
   for (const loc of locations) {
-    const s = scoreMatch(name, loc.name);
+    let s = scoreMatch(name, loc.name);
+    if (loc.assigned_to) s = Math.max(s, scoreMatch(name, loc.assigned_to) * 1.05);
     if (s > score) {
       score = s;
       best = loc;
@@ -121,7 +135,7 @@ export function matchLocation<T extends { name: string }>(
   return score > 0.3 ? best : null;
 }
 
-export function matchMaterial<T extends { name: string; aliases?: string[] }>(
+export function matchMaterial<T extends { name: string; aliases?: string[]; barcode?: string; mpn?: string }>(
   query: string,
   materials: T[],
 ) {
@@ -133,6 +147,8 @@ export function matchMaterial<T extends { name: string; aliases?: string[] }>(
     if (Array.isArray(m.aliases)) {
       for (const a of m.aliases) s = Math.max(s, scoreMatch(query, a) * 1.1);
     }
+    if (m.barcode) s = Math.max(s, scoreMatch(query, m.barcode));
+    if (m.mpn) s = Math.max(s, scoreMatch(query, m.mpn));
     if (s > score) {
       score = s;
       best = m;

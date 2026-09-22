@@ -213,7 +213,7 @@ export type RestockApply = {
 };
 
 export type PlanId = "starter" | "pro" | "fleet";
-export type MemberRole = "owner" | "admin" | "member";
+export type MemberRole = "owner" | "admin" | "inventory_admin" | "warehouse_manager" | "foreman" | "technician" | "viewer" | "member";
 
 export type AccountUser = {
   id: string;
@@ -254,4 +254,115 @@ export type PlatformCompany = {
   plan: PlanId;
   planStatus: AccountCompany["planStatus"];
   memberCount: number;
+};
+
+
+export type InventoryPermission =
+  | "inventory.read"
+  | "inventory.adjust"
+  | "inventory.transfer"
+  | "inventory.reserve"
+  | "inventory.count"
+  | "requests.create"
+  | "requests.fulfill"
+  | "catalog.manage"
+  | "tools.manage"
+  | "purchasing.manage"
+  | "reports.view"
+  | "settings.manage";
+
+export type StorageZone = {
+  id: string;
+  company_id: string;
+  location_id: string;
+  name: string;
+  code?: string | null;
+  sort_order: number;
+};
+
+export type StorageBin = {
+  id: string;
+  company_id: string;
+  location_id: string;
+  zone_id?: string | null;
+  name: string;
+  code: string;
+  barcode?: string | null;
+  description?: string | null;
+  is_active: boolean;
+};
+
+export type InventoryReservation = {
+  id: string;
+  company_id: string;
+  material_id: string;
+  location_id: string;
+  project_id?: string | null;
+  quantity: number;
+  status: "active" | "released" | "consumed";
+  notes?: string | null;
+  created_by: string;
+  created_at: string;
+};
+
+export type MaterialRequestStatus =
+  | "requested"
+  | "approved"
+  | "picking"
+  | "staged"
+  | "in_transit"
+  | "fulfilled"
+  | "cancelled";
+
+export type MaterialRequest = {
+  id: string;
+  company_id: string;
+  project_id?: string | null;
+  destination_location_id?: string | null;
+  requested_by: string;
+  priority: "normal" | "urgent" | "critical";
+  status: MaterialRequestStatus;
+  notes?: string | null;
+  created_at: string;
+};
+
+export type MaterialRequestLine = {
+  id: string;
+  request_id: string;
+  company_id: string;
+  material_id: string;
+  quantity_requested: number;
+  quantity_fulfilled: number;
+};
+
+export type CycleCountStatus = "open" | "submitted" | "approved" | "cancelled";
+
+export type CycleCountSession = {
+  id: string;
+  company_id: string;
+  location_id: string;
+  zone_id?: string | null;
+  bin_id?: string | null;
+  status: CycleCountStatus;
+  created_by: string;
+  created_at: string;
+  submitted_at?: string | null;
+};
+
+export type CycleCountLine = {
+  id: string;
+  session_id: string;
+  company_id: string;
+  material_id: string;
+  expected_quantity: number;
+  counted_quantity?: number | null;
+};
+
+export type FieldOpsPayload = {
+  zones: StorageZone[];
+  bins: StorageBin[];
+  reservations: InventoryReservation[];
+  requests: Array<MaterialRequest & { lines: MaterialRequestLine[] }>;
+  countSessions: Array<CycleCountSession & { lines: CycleCountLine[] }>;
+  materials: Array<{ id: string; name: string }>;
 };
