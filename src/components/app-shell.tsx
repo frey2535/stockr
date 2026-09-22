@@ -51,7 +51,7 @@ const MOBILE_NAV = [
   { href: "/dashboard", label: "Ops", icon: LayoutDashboard },
   { href: "/scanner", label: "Scanner", icon: ScanLine },
   { href: "/inventory", label: "Inventory", icon: Warehouse },
-  { href: "/activity", label: "Activity", icon: ClipboardList },
+  { href: "/field-ops", label: "Control", icon: PackageCheck },
 ];
 
 function NavLink({
