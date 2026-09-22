@@ -38,6 +38,13 @@ type Adapter = {
     companyId: string,
     role: MemberRole,
   ) => void | Promise<void>;
+  resolveBuildrSsoIdentity: (
+    email: string,
+    buildrCompanyId: string,
+  ) =>
+    | { userId: string; companyId: string; role: MemberRole }
+    | null
+    | Promise<{ userId: string; companyId: string; role: MemberRole } | null>;
 };
 
 let adapterPromise: Promise<Adapter> | null = null;
@@ -125,4 +132,14 @@ export async function listCompanies() {
 
 export async function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {
   return (await loadAdapter()).ensureCompanyMembership(userId, companyId, role);
+}
+
+
+/**
+ * Resolve an existing standalone Stockr account from a validated Buildr SSO claim.
+ * This never creates a Stockr user/company. Standalone purchase/account setup remains
+ * authoritative; Buildr only provides a seamless launch into an already-owned workspace.
+ */
+export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string) {
+  return (await loadAdapter()).resolveBuildrSsoIdentity(email, buildrCompanyId);
 }

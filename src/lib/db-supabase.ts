@@ -408,6 +408,48 @@ export async function ensureCompanyMembership(userId: string, companyId: string,
   throwIfError(insert.error, "Grant membership");
 }
 
+
+export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const normalizedBuildrCompanyId = String(buildrCompanyId || "").trim();
+  if (!normalizedEmail || !normalizedBuildrCompanyId) return null;
+
+  const supabase = getSupabaseAdmin();
+  const [{ data: user, error: userError }, { data: company, error: companyError }] =
+    await Promise.all([
+      supabase
+        .from("stockr_users")
+        .select("id, email")
+        .eq("email", normalizedEmail)
+        .maybeSingle(),
+      supabase
+        .from("stockr_companies")
+        .select("id, buildr_linked, buildr_company_id")
+        .eq("buildr_linked", true)
+        .eq("buildr_company_id", normalizedBuildrCompanyId)
+        .maybeSingle(),
+    ]);
+
+  throwIfError(userError, "Resolve Buildr SSO user");
+  throwIfError(companyError, "Resolve Buildr SSO company");
+  if (!user || !company) return null;
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("stockr_memberships")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("company_id", company.id)
+    .maybeSingle();
+  throwIfError(membershipError, "Resolve Buildr SSO membership");
+  if (!membership) return null;
+
+  return {
+    userId: user.id as string,
+    companyId: company.id as string,
+    role: membership.role as MemberRole,
+  };
+}
+
 export async function setCompanyPlan(companyId: string, plan: PlanId) {
   const { error } = await getSupabaseAdmin()
     .from("stockr_companies")
