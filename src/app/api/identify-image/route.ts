@@ -1,14 +1,28 @@
 import { NextResponse } from "next/server";
-import { identifyRemoteProduct } from "@/lib/barcode-lookup";
+import { identifyRemoteProduct, searchRemoteProduct } from "@/lib/barcode-lookup";
+import { resolvePhotoIdentity } from "@/lib/identify-photo";
+import { materialMatchesCode } from "@/lib/inventory";
 import { requireAccount } from "@/lib/require-account";
 import { lookupMaterials } from "@/lib/workspace-data";
 import type { IdentifiedProduct } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 function firstString(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function barcodeFromText(...values: unknown[]) {
+  for (const value of values) {
+    const text = firstString(value);
+    const compact = text.replace(/[\s-]/g, "");
+    if (/^[A-Za-z0-9.\-\/_]{6,32}$/.test(compact) && /\d/.test(compact)) return compact;
+    const digits = text.replace(/\D/g, "");
+    if (digits.length === 8 || digits.length === 12 || digits.length === 13 || digits.length === 14) return digits;
   }
   return "";
 }
@@ -31,13 +45,16 @@ async function identifyFromVision(image: string): Promise<IdentifiedProduct | nu
           {
             role: "system",
             content:
-              "Identify the electrical or construction product in the photo. Return JSON with name, brand, barcode, upc, mpn, category, description. Use empty strings when unknown. Prefer the printed barcode digits if visible.",
+              "Identify the product in the photo for a contractor inventory app. Read any barcode, UPC, EAN, MPN, SKU, or printed name. Return JSON with name, brand, manufacturer, barcode, upc, mpn, category, description, search_query. Use empty strings when unknown. name and search_query must be specific enough to find the item online.",
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "What exact product is this?" },
-              { type: "image_url", image_url: { url: image } },
+              {
+                type: "text",
+                text: "What exact product is this? Prefer printed barcode digits, then the trade name and manufacturer.",
+              },
+              { type: "image_url", image_url: { url: image, detail: "high" } },
             ],
           },
         ],
@@ -49,19 +66,19 @@ async function identifyFromVision(image: string): Promise<IdentifiedProduct | nu
     const raw = data?.choices?.[0]?.message?.content;
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const name = firstString(parsed.name, parsed.title);
+    const name = firstString(parsed.name, parsed.title, parsed.search_query);
     if (!name) return null;
-    const barcode = firstString(parsed.barcode, parsed.upc, parsed.ean);
+    const barcode = barcodeFromText(parsed.barcode, parsed.upc, parsed.ean, parsed.gtin, parsed.mpn);
     return {
       name,
       brand: firstString(parsed.brand) || undefined,
-      manufacturer: firstString(parsed.brand, parsed.manufacturer) || undefined,
+      manufacturer: firstString(parsed.manufacturer, parsed.brand) || undefined,
       category: firstString(parsed.category) || undefined,
-      description: firstString(parsed.description) || undefined,
+      description: firstString(parsed.description, parsed.search_query) || undefined,
       barcode,
       upc: firstString(parsed.upc, barcode) || undefined,
-      mpn: firstString(parsed.mpn) || undefined,
-      source: "photo",
+      mpn: firstString(parsed.mpn, parsed.sku) || undefined,
+      source: "photo-vision",
     };
   } catch {
     return null;
@@ -73,23 +90,19 @@ export async function POST(request: Request) {
   if (!account) return response;
   const body = (await request.json().catch(() => null)) as { image?: string; barcode?: string } | null;
   const barcode = String(body?.barcode || "").trim();
-  let identified = barcode ? await identifyRemoteProduct(barcode) : null;
-  if (!identified && body?.image) identified = await identifyFromVision(body.image);
-  if (!identified) {
-    return NextResponse.json({
-      identified: null,
-      error: "Could not read a barcode or identify the item from that photo. Try a closer shot of the label.",
-    });
-  }
+  const image = String(body?.image || "");
+  const vision = image.startsWith("data:image") ? await identifyFromVision(image) : null;
+  const identified = await resolvePhotoIdentity(barcode, vision, identifyRemoteProduct, searchRemoteProduct);
 
-  const catalog = await lookupMaterials(account.company.id, {
-    barcode: identified.barcode || barcode,
-    q: identified.name,
-    limit: 8,
-  });
+  const catalogQuery = identified.barcode || barcode;
+  const catalog = catalogQuery
+    ? await lookupMaterials(account.company.id, { barcode: catalogQuery, q: catalogQuery, limit: 8 })
+    : { rows: [], onHandByLocation: {} };
+  const rows = (catalog.rows || []).filter((row) => catalogQuery && materialMatchesCode(row, catalogQuery));
+
   return NextResponse.json({
     identified,
-    rows: catalog.rows,
+    rows,
     onHandByLocation: catalog.onHandByLocation || {},
   });
 }
