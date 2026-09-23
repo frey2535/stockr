@@ -32,6 +32,7 @@ import {
   writeScannerPrefs,
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
+import { prepareCameraPhoto } from "@/lib/photo-barcode";
 import { planVoiceCommand } from "@/lib/voice-command";
 import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
 
@@ -54,6 +55,9 @@ export default function ScannerPage() {
   const [identified, setIdentified] = useState<IdentifiedProduct | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [draftName, setDraftName] = useState("");
+  const [draftBarcode, setDraftBarcode] = useState("");
   const [actionType, setActionType] = useState<TxType>("use");
   const [quantity, setQuantity] = useState("1");
   const [fromId, setFromId] = useState(defaultVan);
@@ -95,7 +99,7 @@ export default function ScannerPage() {
         onHandByLocation?: Record<string, number>;
         identified?: IdentifiedProduct | null;
       } | null;
-      const found = data?.rows?.find((row) => materialMatchesCode(row, trimmed)) || data?.rows?.[0];
+      const found = data?.rows?.find((row) => materialMatchesCode(row, trimmed));
       if (found) {
         setSelected(found);
         setOnHandByLocation(data?.onHandByLocation || {});
@@ -107,7 +111,10 @@ export default function ScannerPage() {
       setSelected(null);
       setOnHandByLocation({});
       if (data?.identified?.name) {
-        setIdentified({ ...data.identified, barcode: data.identified.barcode || trimmed });
+        const product = { ...data.identified, barcode: data.identified.barcode || trimmed };
+        setIdentified(product);
+        setDraftName(product.name);
+        setDraftBarcode(product.barcode);
         setUnknownCode(trimmed);
         toast.success(`Identified ${data.identified.name}`);
         return;
@@ -282,10 +289,12 @@ export default function ScannerPage() {
   };
 
   const addIdentifiedToCatalog = async (product: IdentifiedProduct, receiveNow = false) => {
+    const name = draftName.trim() || product.name;
+    const code = draftBarcode.trim() || product.barcode || unknownCode;
     const created = await upsertMaterial({
-      name: product.name,
-      barcode: product.barcode || unknownCode,
-      upc: product.upc || product.barcode,
+      name,
+      barcode: code,
+      upc: product.upc || code,
       mpn: product.mpn,
       manufacturer: product.manufacturer || product.brand,
       category: product.category,
@@ -398,43 +407,38 @@ export default function ScannerPage() {
     setOnHandByLocation({});
   };
 
-  const detectFromBlob = async (file: Blob) => {
-    if (!("BarcodeDetector" in window) || !("createImageBitmap" in window)) return "";
-    try {
-      const Detector = (window as unknown as { BarcodeDetector: new (opts: { formats: string[] }) => Detector }).BarcodeDetector;
-      const detector = new Detector({ formats: SCAN_FORMATS });
-      const bitmap = await createImageBitmap(file);
-      const codes = await detector.detect(bitmap);
-      bitmap.close();
-      return codes[0]?.rawValue?.trim() || "";
-    } catch {
-      return "";
+  const applyIdentified = (product: IdentifiedProduct, onHand: Record<string, number> = {}, rows: Material[] = []) => {
+    const exact = rows.find((row) => product.barcode && materialMatchesCode(row, product.barcode));
+    if (exact) {
+      setSelected(exact);
+      setIdentified(null);
+      setOnHandByLocation(onHand);
+      setUnknownCode("");
+      toast.success(`Found ${exact.name}`);
+      window.setTimeout(() => qtyRef.current?.focus(), 50);
+      return;
     }
+    setSelected(null);
+    setIdentified(product);
+    setDraftName(product.name);
+    setDraftBarcode(product.barcode || "");
+    setUnknownCode(product.barcode || "");
+    setOnHandByLocation({});
+    toast.success(`Identified ${product.name}`);
   };
 
   const identifyPhoto = async (file: File) => {
     setPhotoBusy(true);
     setIdentified(null);
     setUnknownCode("");
+    setSelected(null);
     try {
-      const localCode = await detectFromBlob(file);
-      if (localCode) {
-        await lookup(localCode);
-        return;
-      }
-      const canvas = document.createElement("canvas");
-      const image = await createImageBitmap(file);
-      const scale = Math.min(1, 1280 / Math.max(image.width, image.height));
-      canvas.width = Math.round(image.width * scale);
-      canvas.height = Math.round(image.height * scale);
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(image, 0, 0, canvas.width, canvas.height);
-      image.close();
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      const prepared = await prepareCameraPhoto(file);
+      setPhotoPreview(prepared.imageDataUrl);
       const response = await fetch("/api/identify-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: dataUrl, barcode: localCode }),
+        body: JSON.stringify({ image: prepared.imageDataUrl, barcode: prepared.barcode }),
       });
       const data = (await response.json().catch(() => null)) as {
         identified?: IdentifiedProduct | null;
@@ -442,20 +446,24 @@ export default function ScannerPage() {
         onHandByLocation?: Record<string, number>;
         error?: string;
       } | null;
-      const found = data?.rows?.[0];
-      if (found) {
-        setSelected(found);
-        setOnHandByLocation(data?.onHandByLocation || {});
-        toast.success(`Found ${found.name}`);
-        return;
-      }
       if (data?.identified?.name) {
-        setIdentified(data.identified);
-        setUnknownCode(data.identified.barcode || "");
-        toast.success(`Identified ${data.identified.name}`);
+        applyIdentified(data.identified, data.onHandByLocation || {}, data.rows || []);
         return;
       }
-      toast.error(data?.error || "Could not identify that photo.");
+      applyIdentified({
+        name: prepared.barcode ? `Photo item ${prepared.barcode}` : "Item from camera photo",
+        barcode: prepared.barcode,
+        source: "photo",
+        description: "Name this item and add it to the catalog to stock it.",
+      });
+    } catch (error) {
+      const fallback: IdentifiedProduct = {
+        name: "Item from camera photo",
+        barcode: "",
+        source: "photo",
+        description: error instanceof Error ? error.message : "Name this item and add it to the catalog.",
+      };
+      applyIdentified(fallback);
     } finally {
       setPhotoBusy(false);
     }
@@ -482,7 +490,7 @@ export default function ScannerPage() {
       <PageHeader
         eyebrow="Field"
         title="Scanner"
-        description="Scan or photograph any item. Identify it even when it is not in the catalog, then use, transfer, receive, or talk it through."
+        description="Photograph any item. Stockr reads the label, finds it online, and can add it to your catalog."
         icon={<ScanLine className="size-8 text-primary" />}
       />
 
@@ -535,7 +543,7 @@ export default function ScannerPage() {
               <p className="text-center text-sm text-destructive">{cameraError}</p>
             ) : null}
             <p className="text-center text-sm text-muted-foreground">
-              Barcode, UPC, MPN, photo of the label, or voice
+              Snap the label or the item. Every photo gets an identity you can add to the catalog.
             </p>
             <form
               className="space-y-3"
@@ -597,14 +605,16 @@ export default function ScannerPage() {
                 .join(" · ")}
             </p>
             <Badge variant="outline" className="w-fit">
-              Identified · not in this catalog yet
+              {identified.source === "photo" || identified.source === "scan"
+                ? "Ready to add · not in catalog"
+                : `Found online · ${identified.source.replace(/-/g, " ")}`}
             </Badge>
           </CardHeader>
           <CardContent className="space-y-3">
-            {identified.image_url ? (
+            {identified.image_url || photoPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={identified.image_url}
+                src={identified.image_url || photoPreview}
                 alt={identified.name}
                 className="h-28 w-auto rounded-lg border bg-white object-contain"
               />
@@ -612,8 +622,18 @@ export default function ScannerPage() {
             {identified.description ? (
               <p className="text-sm text-muted-foreground">{identified.description}</p>
             ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Catalog name</Label>
+                <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Barcode / UPC</Label>
+                <Input value={draftBarcode} onChange={(event) => setDraftBarcode(event.target.value)} />
+              </div>
+            </div>
             <p className="text-xs text-muted-foreground">
-              Matched from {identified.source.replace(/-/g, " ")}. Add it, then use, transfer, receive, shrink, or return it.
+              Add it to the catalog when you want it stocked. Then use, transfer, receive, shrink, or return it.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={() => void addIdentifiedToCatalog(identified)}>Add to catalog</Button>

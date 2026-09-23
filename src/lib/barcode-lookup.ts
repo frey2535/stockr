@@ -133,6 +133,42 @@ async function lookupUpcItemDb(code: string) {
   return fromUpcItemDb(json);
 }
 
+async function searchOpenFacts(query: string, host: string, source: string) {
+  const { json } = await readJson(
+    `https://${host}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5`,
+  );
+  if (!json || typeof json !== "object") return null;
+  const products = (json as { products?: unknown[] }).products;
+  const product = Array.isArray(products) ? products[0] : null;
+  if (!product || typeof product !== "object") return null;
+  const record = product as Record<string, unknown>;
+  return fromOpenFacts({ status: 1, code: record.code, product: record }, source);
+}
+
+async function searchUpcItemDb(query: string) {
+  const key = process.env.UPCITEMDB_API_KEY?.trim();
+  const base = key ? "https://api.upcitemdb.com/prod/v1/search" : "https://api.upcitemdb.com/prod/trial/search";
+  const { json } = await readJson(`${base}?s=${encodeURIComponent(query)}`, {
+    headers: key ? { user_key: key, key_type: "3scale" } : {},
+  });
+  return fromUpcItemDb(json);
+}
+
+export async function searchRemoteProduct(query: string): Promise<IdentifiedProduct | null> {
+  const trimmed = query.trim();
+  if (trimmed.length < 3) return null;
+  const hit = cached(`q:${trimmed.toLowerCase()}`);
+  if (hit !== undefined) return hit;
+  const results = await Promise.all([
+    searchOpenFacts(trimmed, "world.openproductsfacts.org", "open-products-facts"),
+    searchOpenFacts(trimmed, "world.openfoodfacts.org", "open-food-facts"),
+    searchUpcItemDb(trimmed),
+  ]);
+  const found = results.find(Boolean) || null;
+  remember(`q:${trimmed.toLowerCase()}`, found);
+  return found;
+}
+
 async function lookupGoUpc(code: string) {
   const key = process.env.GO_UPC_API_KEY?.trim();
   if (!key) return null;
