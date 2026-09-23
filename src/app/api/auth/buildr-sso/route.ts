@@ -18,7 +18,9 @@ type FamilyClaims = {
   exp?: number;
 };
 
-function verifyToken(token: string) {
+type VerifyResult = { error: string } | { claims: FamilyClaims };
+
+function verifyToken(token: string): VerifyResult {
   const secret = String(process.env.FAMILY_APP_SSO_SECRET || "").trim();
   if (!secret) return { error: "sso_not_configured" as const };
 
