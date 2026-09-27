@@ -141,7 +141,7 @@ export function parseVisionObjects(payload: unknown): IdentifiedProduct[] {
   for (const row of rows) {
     if (!row || typeof row !== "object") continue;
     const item = row as Record<string, unknown>;
-    const name = String(item.name || item.title || "").trim();
+    const name = String(item.name || item.title || item.product || item.product_name || item.item || item.label || "").trim();
     if (!name) continue;
     const key = [name, item.mpn, item.barcode].join("|").toLowerCase();
     if (seen.has(key)) continue;

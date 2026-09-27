@@ -84,6 +84,11 @@ test("identifies only after name, barcode, and MPN are known", async () => {
   assert.equal(found.identified?.mpn, "EMT-075-10");
 });
 
+test("parses a vision object that uses product_name instead of name", () => {
+  const objects = parseVisionObjects({ objects: [{ product_name: "Square D QO120", brand: "Square D" }] });
+  assert.equal(objects[0]?.name, "Square D QO120");
+});
+
 test("parses numerous objects from one vision payload", () => {
   const objects = parseVisionObjects({
     objects: [

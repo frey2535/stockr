@@ -89,28 +89,54 @@ export async function canUseVision() {
   return Boolean(await workersAiBinding());
 }
 
+async function withTimeout<T>(work: Promise<T>, ms: number, label: string) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function runWorkersAi(model: string, input: Record<string, unknown>) {
   const binding = await workersAiBinding();
-  if (binding) return { ok: true as const, payload: await binding.run(model, input) };
+  if (binding) {
+    try {
+      const payload = await withTimeout(binding.run(model, input), 18000, "Workers AI");
+      return { ok: true as const, payload };
+    } catch (error) {
+      return { ok: false as const, error: error instanceof Error ? error.message : "Workers AI failed." };
+    }
+  }
   const rest = workersAiRest();
   if (!rest) return { ok: false as const, error: "Workers AI is not bound." };
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(rest.account)}/ai/run/${model}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${rest.token}`,
-        "Content-Type": "application/json",
+  try {
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(rest.account)}/ai/run/${model}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${rest.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+        signal: AbortSignal.timeout(18000),
       },
-      body: JSON.stringify(input),
-    },
-  );
-  const data = (await response.json().catch(() => null)) as { result?: unknown; success?: boolean; errors?: Array<{ message?: string }> } | null;
-  if (!response.ok) {
-    const message = data?.errors?.[0]?.message || `Workers AI ${response.status}`;
-    return { ok: false as const, error: message };
+    );
+    const data = (await response.json().catch(() => null)) as { result?: unknown; success?: boolean; errors?: Array<{ message?: string }> } | null;
+    if (!response.ok) {
+      const message = data?.errors?.[0]?.message || `Workers AI ${response.status}`;
+      return { ok: false as const, error: message };
+    }
+    return { ok: true as const, payload: data?.result ?? data };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Workers AI failed." };
   }
-  return { ok: true as const, payload: data?.result ?? data };
 }
 
 function objectsFromPayload(payload: unknown) {
@@ -178,56 +204,21 @@ async function detectObjectsWithGemini(image: string): Promise<IdentifiedProduct
   return parseVisionObjects(parseModelJson(raw));
 }
 
-async function detectWithCfChat(image: string) {
-  const rest = workersAiRest();
-  if (!rest) return { objects: [] as IdentifiedProduct[], error: "Workers AI is not bound." };
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(rest.account)}/ai/v1/chat/completions`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${rest.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "@cf/meta/llama-4-scout-17b-16e-instruct",
-        temperature: 0,
-        max_tokens: 2048,
-        messages: [
-          { role: "system", content: LENS_PROMPT },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Look at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only." },
-              { type: "image_url", image_url: { url: image } },
-            ],
-          },
-        ],
-      }),
-    },
-  );
-  const data = (await response.json().catch(() => null)) as unknown;
-  if (!response.ok) {
-    const record = data && typeof data === "object" ? (data as { errors?: Array<{ message?: string }> }) : null;
-    return { objects: [] as IdentifiedProduct[], error: record?.errors?.[0]?.message || `Workers AI chat ${response.status}` };
-  }
-  return { objects: objectsFromPayload(data), error: undefined };
-}
-
 async function detectObjectsWithWorkersAi(image: string) {
   const parts = splitImage(image);
   if (!parts) return { objects: [] as IdentifiedProduct[], error: "That photo could not be read." };
+  const prompt = `${LENS_PROMPT}\nLook at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only.`;
   const attempts: Array<() => Promise<{ objects: IdentifiedProduct[]; error?: string }>> = [
     async () => {
       const run = await runWorkersAi("@cf/meta/llama-4-scout-17b-16e-instruct", {
         temperature: 0,
-        max_tokens: 2048,
+        max_tokens: 1024,
         messages: [
           { role: "system", content: LENS_PROMPT },
           {
             role: "user",
             content: [
-              { type: "text", text: "Look at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only." },
+              { type: "text", text: "Identify each product from appearance. A barcode does not have to be visible. JSON only." },
               { type: "image_url", image_url: { url: parts.dataUrl } },
             ],
           },
@@ -236,13 +227,12 @@ async function detectObjectsWithWorkersAi(image: string) {
       if (!run.ok) return { objects: [], error: run.error };
       return { objects: objectsFromPayload(run.payload) };
     },
-    async () => detectWithCfChat(parts.dataUrl),
     async () => {
       await runWorkersAi("@cf/meta/llama-3.2-11b-vision-instruct", { prompt: "agree" });
       const run = await runWorkersAi("@cf/meta/llama-3.2-11b-vision-instruct", {
-        prompt: `${LENS_PROMPT}\nLook at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only.`,
+        prompt,
         image: parts.base64,
-        max_tokens: 2048,
+        max_tokens: 1024,
         temperature: 0,
       });
       if (!run.ok) return { objects: [], error: run.error };
