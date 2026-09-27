@@ -32,6 +32,7 @@ import {
   writeScannerPrefs,
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
+import { isCompleteIdentity, isWeakIdentity } from "@/lib/identify-photo";
 import { prepareCameraPhoto } from "@/lib/photo-barcode";
 import { planVoiceCommand } from "@/lib/voice-command";
 import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
@@ -58,6 +59,8 @@ export default function ScannerPage() {
   const [photoPreview, setPhotoPreview] = useState("");
   const [draftName, setDraftName] = useState("");
   const [draftBarcode, setDraftBarcode] = useState("");
+  const [draftMpn, setDraftMpn] = useState("");
+  const [identityMissing, setIdentityMissing] = useState<string[]>([]);
   const [actionType, setActionType] = useState<TxType>("use");
   const [quantity, setQuantity] = useState("1");
   const [fromId, setFromId] = useState(defaultVan);
@@ -110,15 +113,26 @@ export default function ScannerPage() {
       }
       setSelected(null);
       setOnHandByLocation({});
-      if (data?.identified?.name) {
+      if (data?.identified && isCompleteIdentity({ ...data.identified, barcode: data.identified.barcode || trimmed })) {
         const product = { ...data.identified, barcode: data.identified.barcode || trimmed };
         setIdentified(product);
         setDraftName(product.name);
         setDraftBarcode(product.barcode);
-        setUnknownCode(trimmed);
-        toast.success(`Identified ${data.identified.name}`);
+        setDraftMpn(product.mpn || "");
+        setIdentityMissing([]);
+        setUnknownCode("");
+        toast.success(`Identified ${product.name}`);
         return;
       }
+      setIdentified(null);
+      setDraftName(data?.identified?.name && !/^scanned item\b/i.test(data.identified.name) ? data.identified.name : "");
+      setDraftBarcode(trimmed);
+      setDraftMpn(data?.identified?.mpn || "");
+      setIdentityMissing(["name", "barcode", "mpn"].filter((field) => {
+        if (field === "name") return !data?.identified?.name || /^scanned item\b/i.test(data.identified.name);
+        if (field === "barcode") return !trimmed;
+        return !data?.identified?.mpn;
+      }));
       setUnknownCode(trimmed);
     } finally {
       setLookingUp(false);
@@ -291,11 +305,16 @@ export default function ScannerPage() {
   const addIdentifiedToCatalog = async (product: IdentifiedProduct, receiveNow = false) => {
     const name = draftName.trim() || product.name;
     const code = draftBarcode.trim() || product.barcode || unknownCode;
+    const mpn = draftMpn.trim() || product.mpn || "";
+    if (!name || !code || !mpn) {
+      toast.error("Name, barcode, and manufacturer number are required to identify an item.");
+      return null;
+    }
     const created = await upsertMaterial({
       name,
       barcode: code,
       upc: product.upc || code,
-      mpn: product.mpn,
+      mpn,
       manufacturer: product.manufacturer || product.brand,
       category: product.category,
       description: product.description,
@@ -309,6 +328,8 @@ export default function ScannerPage() {
     setSelected(created.material);
     setIdentified(null);
     setUnknownCode("");
+    setIdentityMissing([]);
+    setDraftMpn("");
     setOnHandByLocation({});
     setBarcode("");
     if (receiveNow) {
@@ -323,10 +344,15 @@ export default function ScannerPage() {
   };
 
   const createUnknown = async () => {
+    if (!draftName.trim() || !draftBarcode.trim() || !draftMpn.trim()) {
+      toast.error("Name, barcode, and manufacturer number are required.");
+      return;
+    }
     const created = await upsertMaterial({
-      name: `Unknown Product - ${unknownCode}`,
-      barcode: unknownCode,
-      upc: unknownCode,
+      name: draftName.trim(),
+      barcode: draftBarcode.trim() || unknownCode,
+      upc: draftBarcode.trim() || unknownCode,
+      mpn: draftMpn.trim(),
       unit: "each",
     });
     if (!created.ok) {
@@ -335,6 +361,7 @@ export default function ScannerPage() {
     }
     setSelected(created.material);
     setUnknownCode("");
+    setIdentityMissing([]);
     toast.success("Material created. Fill in the details from Catalog when you can.");
   };
 
@@ -407,24 +434,38 @@ export default function ScannerPage() {
     setOnHandByLocation({});
   };
 
-  const applyIdentified = (product: IdentifiedProduct, onHand: Record<string, number> = {}, rows: Material[] = []) => {
+  const applyIdentified = (
+    product: IdentifiedProduct,
+    onHand: Record<string, number> = {},
+    rows: Material[] = [],
+    missing: string[] = [],
+  ) => {
     const exact = rows.find((row) => product.barcode && materialMatchesCode(row, product.barcode));
     if (exact) {
       setSelected(exact);
       setIdentified(null);
       setOnHandByLocation(onHand);
       setUnknownCode("");
+      setIdentityMissing([]);
       toast.success(`Found ${exact.name}`);
       window.setTimeout(() => qtyRef.current?.focus(), 50);
       return;
     }
+    const complete = isCompleteIdentity(product) && missing.length === 0;
     setSelected(null);
     setIdentified(product);
-    setDraftName(product.name);
+    setDraftName(complete || !isWeakIdentity(product) ? product.name : "");
     setDraftBarcode(product.barcode || "");
-    setUnknownCode(product.barcode || "");
+    setDraftMpn(product.mpn || "");
+    setIdentityMissing(complete ? [] : missing.length ? missing : ["name", "barcode", "mpn"].filter((field) => {
+      if (field === "name") return !complete;
+      if (field === "barcode") return !product.barcode;
+      return !product.mpn;
+    }));
+    setUnknownCode(complete ? "" : product.barcode || "");
     setOnHandByLocation({});
-    toast.success(`Identified ${product.name}`);
+    if (complete) toast.success(`Identified ${product.name}`);
+    else toast.message("Not identified. Need name, barcode, and manufacturer number.");
   };
 
   const identifyPhoto = async (file: File) => {
@@ -432,6 +473,7 @@ export default function ScannerPage() {
     setIdentified(null);
     setUnknownCode("");
     setSelected(null);
+    setIdentityMissing([]);
     try {
       const prepared = await prepareCameraPhoto(file);
       setPhotoPreview(prepared.imageDataUrl);
@@ -442,28 +484,37 @@ export default function ScannerPage() {
       });
       const data = (await response.json().catch(() => null)) as {
         identified?: IdentifiedProduct | null;
+        draft?: { name?: string; barcode?: string; mpn?: string; brand?: string; manufacturer?: string; description?: string; image_url?: string; source?: string };
+        missing?: string[];
         rows?: Material[];
         onHandByLocation?: Record<string, number>;
-        error?: string;
       } | null;
-      if (data?.identified?.name) {
-        applyIdentified(data.identified, data.onHandByLocation || {}, data.rows || []);
+      if (data?.identified && isCompleteIdentity(data.identified)) {
+        applyIdentified(data.identified, data.onHandByLocation || {}, data.rows || [], []);
         return;
       }
-      applyIdentified({
-        name: prepared.barcode ? `Photo item ${prepared.barcode}` : "Item from camera photo",
-        barcode: prepared.barcode,
-        source: "photo",
-        description: "Name this item and add it to the catalog to stock it.",
-      });
-    } catch (error) {
-      const fallback: IdentifiedProduct = {
-        name: "Item from camera photo",
-        barcode: "",
-        source: "photo",
-        description: error instanceof Error ? error.message : "Name this item and add it to the catalog.",
-      };
-      applyIdentified(fallback);
+      applyIdentified(
+        {
+          name: data?.draft?.name || "",
+          barcode: data?.draft?.barcode || prepared.barcode || "",
+          mpn: data?.draft?.mpn,
+          brand: data?.draft?.brand,
+          manufacturer: data?.draft?.manufacturer,
+          description: data?.draft?.description,
+          image_url: data?.draft?.image_url,
+          source: data?.draft?.source || "photo",
+        },
+        data?.onHandByLocation || {},
+        data?.rows || [],
+        data?.missing || ["name", "barcode", "mpn"],
+      );
+    } catch {
+      applyIdentified(
+        { name: "", barcode: "", source: "photo" },
+        {},
+        [],
+        ["name", "barcode", "mpn"],
+      );
     } finally {
       setPhotoBusy(false);
     }
@@ -490,7 +541,7 @@ export default function ScannerPage() {
       <PageHeader
         eyebrow="Field"
         title="Scanner"
-        description="Photograph any item. Stockr reads the label, finds it online, and can add it to your catalog."
+        description="Photograph the label. Identified means name, barcode, and manufacturer number — not a guess."
         icon={<ScanLine className="size-8 text-primary" />}
       />
 
@@ -598,16 +649,25 @@ export default function ScannerPage() {
       {identified ? (
         <Card className="border-primary/40">
           <CardHeader>
-            <CardTitle className="text-base">{identified.name}</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {[identified.brand || identified.manufacturer, identified.category, identified.barcode]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
+            <CardTitle className="text-base">
+              {identityMissing.length ? "Not identified" : identified.name}
+            </CardTitle>
+            {identityMissing.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {[identified.manufacturer || identified.brand, identified.mpn, identified.barcode]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                A photo is not an identity. Enter the name, barcode, and manufacturer number
+                {identityMissing.length ? ` (missing ${identityMissing.join(", ")})` : ""}.
+              </p>
+            )}
             <Badge variant="outline" className="w-fit">
-              {identified.source === "photo" || identified.source === "scan"
-                ? "Ready to add · not in catalog"
-                : `Found online · ${identified.source.replace(/-/g, " ")}`}
+              {identityMissing.length
+                ? "Needs name, barcode, and MPN"
+                : `Identified · ${identified.source.replace(/-/g, " ")}`}
             </Badge>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -615,29 +675,44 @@ export default function ScannerPage() {
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={identified.image_url || photoPreview}
-                alt={identified.name}
+                alt={identified.name || "Photo"}
                 className="h-28 w-auto rounded-lg border bg-white object-contain"
               />
             ) : null}
-            {identified.description ? (
+            {identified.description && identityMissing.length === 0 ? (
               <p className="text-sm text-muted-foreground">{identified.description}</p>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Catalog name</Label>
-                <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} />
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs">Name *</Label>
+                <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Trade name" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Barcode / UPC</Label>
-                <Input value={draftBarcode} onChange={(event) => setDraftBarcode(event.target.value)} />
+                <Label className="text-xs">Barcode / UPC *</Label>
+                <Input value={draftBarcode} onChange={(event) => setDraftBarcode(event.target.value)} placeholder="012345678905" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Manufacturer number *</Label>
+                <Input value={draftMpn} onChange={(event) => setDraftMpn(event.target.value)} placeholder="Catalog / MPN" />
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              Add it to the catalog when you want it stocked. Then use, transfer, receive, shrink, or return it.
+              {identityMissing.length
+                ? "These three fields make the identity. Then you can add it to the catalog."
+                : "Add it to the catalog when you want it stocked."}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void addIdentifiedToCatalog(identified)}>Add to catalog</Button>
-              <Button variant="outline" onClick={() => void addIdentifiedToCatalog(identified, true)}>
+              <Button
+                disabled={!draftName.trim() || !draftBarcode.trim() || !draftMpn.trim()}
+                onClick={() => void addIdentifiedToCatalog(identified)}
+              >
+                Add to catalog
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!draftName.trim() || !draftBarcode.trim() || !draftMpn.trim()}
+                onClick={() => void addIdentifiedToCatalog(identified, true)}
+              >
                 Add + receive
               </Button>
             </div>
@@ -648,14 +723,32 @@ export default function ScannerPage() {
       {unknownCode && !identified ? (
         <Card className="border-primary/40">
           <CardHeader>
-            <CardTitle className="text-base">Unknown barcode {unknownCode}</CardTitle>
+            <CardTitle className="text-base">Not identified</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Barcode {unknownCode} has no complete online listing. Enter name and manufacturer number to add it.
+            </p>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              This code is not in the catalog and no public product record was found. Create it so you can
-              receive it now.
-            </p>
-            <Button onClick={() => void createUnknown()}>Create material</Button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1 sm:col-span-2">
+                <Label className="text-xs">Name *</Label>
+                <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Barcode / UPC *</Label>
+                <Input value={draftBarcode} onChange={(event) => setDraftBarcode(event.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Manufacturer number *</Label>
+                <Input value={draftMpn} onChange={(event) => setDraftMpn(event.target.value)} />
+              </div>
+            </div>
+            <Button
+              disabled={!draftName.trim() || !draftBarcode.trim() || !draftMpn.trim()}
+              onClick={() => void createUnknown()}
+            >
+              Add to catalog
+            </Button>
           </CardContent>
         </Card>
       ) : null}

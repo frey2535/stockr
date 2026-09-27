@@ -1,15 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildProductSearchQuery, isWeakIdentity, photoFallbackProduct, resolvePhotoIdentity } from "./identify-photo.ts";
+import {
+  buildProductSearchQuery,
+  identityGaps,
+  isCompleteIdentity,
+  isWeakIdentity,
+  resolvePhotoIdentity,
+} from "./identify-photo.ts";
 
-test("weak identities are the scan and photo placeholders", () => {
-  assert.equal(isWeakIdentity(photoFallbackProduct("123")), true);
-  assert.equal(isWeakIdentity({ name: "3/4\" EMT", barcode: "123", source: "upcitemdb" }), false);
+test("complete identity requires a real name, barcode, and manufacturer number", () => {
+  assert.deepEqual(identityGaps({ name: "Item from camera photo", barcode: "123", source: "photo" }), ["name", "mpn"]);
+  assert.equal(
+    isCompleteIdentity({ name: "12/2 NM-B Romex", barcode: "032886902245", mpn: "288290", source: "upcitemdb" }),
+    true,
+  );
+  assert.equal(isWeakIdentity({ name: "Scanned item 123", barcode: "123", source: "scan" }), true);
   assert.equal(buildProductSearchQuery({ brand: "Southwire", name: "12/2 NM-B", mpn: "SW122" }), "Southwire 12/2 NM-B SW122");
 });
 
-test("prefers an online barcode hit over a photo guess", async () => {
-  const found = await resolvePhotoIdentity(
+test("does not call a placeholder identified when nothing is online", async () => {
+  const result = await resolvePhotoIdentity("", null, async () => null, async () => null);
+  assert.equal(result.identified, null);
+  assert.deepEqual(result.missing.sort(), ["barcode", "mpn", "name"]);
+});
+
+test("prefers an online listing and still requires manufacturer number", async () => {
+  const incomplete = await resolvePhotoIdentity(
     "012345678905",
     { name: "Mystery coil", barcode: "", source: "photo" },
     async () => ({ name: "Diet Coke", barcode: "012345678905", source: "upcitemdb" }),
@@ -17,22 +33,31 @@ test("prefers an online barcode hit over a photo guess", async () => {
       throw new Error("should not search");
     },
   );
-  assert.equal(found.name, "Diet Coke");
+  assert.equal(incomplete.identified, null);
+  assert.deepEqual(incomplete.missing, ["mpn"]);
+  assert.equal(incomplete.draft.name, "Diet Coke");
+  assert.equal(incomplete.draft.barcode, "012345678905");
 });
 
-test("searches online from vision when the barcode is unknown", async () => {
+test("identifies only after name, barcode, and MPN are known", async () => {
   const found = await resolvePhotoIdentity(
     "",
-    { name: "3/4 EMT conduit", brand: "Allied", barcode: "", source: "photo-vision" },
-    async () => ({ name: "Scanned item", barcode: "", source: "scan" }),
-    async (query) => ({ name: "3/4 in EMT", barcode: "034EMT", source: "open-products-facts", description: query }),
+    { name: "3/4 EMT conduit", brand: "Allied", barcode: "", mpn: "EMT-075-10", source: "photo-vision" },
+    async () => null,
+    async () => ({ name: "3/4 in EMT", barcode: "034EMT", mpn: "EMT-075-10", source: "open-products-facts" }),
   );
-  assert.equal(found.name, "3/4 in EMT");
-  assert.equal(found.barcode, "034EMT");
+  assert.equal(found.identified?.name, "3/4 in EMT");
+  assert.equal(found.identified?.barcode, "034EMT");
+  assert.equal(found.identified?.mpn, "EMT-075-10");
 });
 
-test("always returns a catalog-ready product for a blank camera shot", async () => {
-  const found = await resolvePhotoIdentity("", null, async () => null, async () => null);
-  assert.equal(found.source, "photo");
-  assert.match(found.name, /photo/i);
+test("label-read name, barcode, and MPN count as identified", async () => {
+  const found = await resolvePhotoIdentity(
+    "032886902245",
+    { name: "12/2 NM-B Romex", barcode: "032886902245", mpn: "288290", source: "photo-vision" },
+    async () => null,
+    async () => null,
+  );
+  assert.equal(isCompleteIdentity(found.identified), true);
+  assert.equal(found.identified?.mpn, "288290");
 });
