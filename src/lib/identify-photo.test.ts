@@ -5,6 +5,8 @@ import {
   identityGaps,
   isCompleteIdentity,
   isWeakIdentity,
+  parseVisionObjects,
+  resolvePhotoIdentities,
   resolvePhotoIdentity,
 } from "./identify-photo.ts";
 
@@ -61,6 +63,34 @@ test("identifies only after name, barcode, and MPN are known", async () => {
   assert.equal(found.identified?.name, "3/4 in EMT");
   assert.equal(found.identified?.barcode, "034EMT");
   assert.equal(found.identified?.mpn, "EMT-075-10");
+});
+
+test("parses numerous objects from one vision payload", () => {
+  const objects = parseVisionObjects({
+    objects: [
+      { name: "QO120", brand: "Square D", mpn: "QO120", barcode: "785901001201", quantity: 2, box: { x: 0.1, y: 0.1, w: 0.3, h: 0.4 } },
+      { name: "12/2 NM-B", brand: "Southwire", mpn: "288290", barcode: "032886902245" },
+      { name: "QO120", brand: "Square D", mpn: "QO120", barcode: "785901001201" },
+    ],
+  });
+  assert.equal(objects.length, 2);
+  assert.equal(objects[0]?.quantity, 2);
+  assert.equal(objects[0]?.box?.w, 0.3);
+});
+
+test("resolves leftover barcodes as extra items in the same photo", async () => {
+  const items = await resolvePhotoIdentities(
+    [{ name: "QO120", barcode: "785901001201", mpn: "QO120", source: "photo-vision" }],
+    ["785901001201", "032886902245"],
+    async (code) =>
+      code === "032886902245"
+        ? { name: "12/2 NM-B", barcode: code, mpn: "288290", source: "upcitemdb" }
+        : null,
+    async () => null,
+  );
+  assert.equal(items.length, 2);
+  assert.equal(items[0]?.identified?.mpn, "QO120");
+  assert.equal(items[1]?.identified?.name, "12/2 NM-B");
 });
 
 test("label-read name, barcode, and MPN count as identified", async () => {
