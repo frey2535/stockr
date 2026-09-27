@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { identifyRemoteProduct, searchRemoteProduct } from "@/lib/barcode-lookup";
-import { resolvePhotoIdentity } from "@/lib/identify-photo";
+import { parseVisionObjects, resolvePhotoIdentities } from "@/lib/identify-photo";
 import { materialMatchesCode } from "@/lib/inventory";
 import { requireAccount } from "@/lib/require-account";
 import { lookupMaterials } from "@/lib/workspace-data";
@@ -9,53 +9,29 @@ import type { IdentifiedProduct } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function firstString(...values: unknown[]) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "";
-}
-
-function barcodeFromText(...values: unknown[]) {
-  for (const value of values) {
-    const text = firstString(value);
-    const compact = text.replace(/[\s-]/g, "");
-    if (/^[A-Za-z0-9.\-\/_]{6,32}$/.test(compact) && /\d/.test(compact)) return compact;
-    const digits = text.replace(/\D/g, "");
-    if (digits.length === 8 || digits.length === 12 || digits.length === 13 || digits.length === 14) return digits;
-  }
-  return "";
-}
-
-function asProduct(parsed: Record<string, unknown>, source: string): IdentifiedProduct | null {
-  const name = firstString(parsed.name, parsed.title, parsed.search_query);
-  if (!name) return null;
-  const queries = Array.isArray(parsed.search_queries)
-    ? parsed.search_queries.map((row) => firstString(row)).filter(Boolean)
-    : [];
-  const extra = firstString(parsed.search_query);
-  if (extra) queries.unshift(extra);
-  const barcode = barcodeFromText(parsed.barcode, parsed.upc, parsed.ean, parsed.gtin);
-  return {
-    name,
-    brand: firstString(parsed.brand) || undefined,
-    manufacturer: firstString(parsed.manufacturer, parsed.brand) || undefined,
-    category: firstString(parsed.category) || undefined,
-    description: firstString(parsed.description) || undefined,
-    barcode,
-    upc: firstString(parsed.upc, barcode) || undefined,
-    mpn: firstString(parsed.mpn, parsed.sku, parsed.catalog_number, parsed.part_number) || undefined,
-    source,
-    search_queries: queries.slice(0, 6),
-  };
-}
-
 const LENS_PROMPT =
-  "You are a visual product identifier for contractor materials, like Google Lens. Look at the item, not only a barcode. Name the exact product (brand, trade name, size/amp/color). Read any printed catalog/part/SKU/MPN. Read barcode digits if they are visible. If this is a well-known catalog part, include the standard manufacturer number (example: Square D QO120). Return JSON with name, brand, manufacturer, barcode, upc, mpn, category, description, search_queries (3 short distributor searches that would return this item's UPC and manufacturer number). Use empty strings when unknown.";
+  "You are an upgraded object detector and visual product identifier for contractor materials, like Google Lens. Detect EVERY distinct product in the photo — tools, fittings, boxes, reels, breakers, labels, packaged goods. Do not stop at the largest object. Same SKU seen more than once is one object with quantity. For each object: name the exact product, read printed catalog/part/SKU/MPN, read barcode digits if visible, and give 2 short search queries that would find its UPC and manufacturer number. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image. Use empty strings when unknown.";
 
-async function identifyWithOpenAI(image: string): Promise<IdentifiedProduct | null> {
+function parseModelJson(raw: string) {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(raw.slice(start, end + 1)) as unknown;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+async function detectObjectsWithOpenAI(image: string): Promise<IdentifiedProduct[]> {
   const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) return null;
+  if (!key) return [];
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -71,7 +47,7 @@ async function identifyWithOpenAI(image: string): Promise<IdentifiedProduct | nu
         {
           role: "user",
           content: [
-            { type: "text", text: "Identify this item and the search queries that will find its barcode and manufacturer number." },
+            { type: "text", text: "Detect and identify every distinct item in this photo." },
             { type: "image_url", image_url: { url: image, detail: "high" } },
           ],
         },
@@ -81,16 +57,14 @@ async function identifyWithOpenAI(image: string): Promise<IdentifiedProduct | nu
   const data = (await response.json().catch(() => null)) as {
     choices?: Array<{ message?: { content?: string } }>;
   } | null;
-  const raw = data?.choices?.[0]?.message?.content;
-  if (!raw) return null;
-  return asProduct(JSON.parse(raw) as Record<string, unknown>, "photo-vision");
+  return parseVisionObjects(parseModelJson(data?.choices?.[0]?.message?.content || ""));
 }
 
-async function identifyWithGemini(image: string): Promise<IdentifiedProduct | null> {
+async function detectObjectsWithGemini(image: string): Promise<IdentifiedProduct[]> {
   const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
-  if (!key) return null;
+  if (!key) return [];
   const match = image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) return null;
+  if (!match) return [];
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`,
     {
@@ -101,7 +75,7 @@ async function identifyWithGemini(image: string): Promise<IdentifiedProduct | nu
         contents: [
           {
             parts: [
-              { text: `${LENS_PROMPT}\nIdentify this item and the search queries that will find its barcode and manufacturer number.` },
+              { text: `${LENS_PROMPT}\nDetect and identify every distinct item in this photo.` },
               { inline_data: { mime_type: match[1], data: match[2] } },
             ],
           },
@@ -113,38 +87,44 @@ async function identifyWithGemini(image: string): Promise<IdentifiedProduct | nu
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   } | null;
   const raw = data?.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
-  if (!raw) return null;
-  return asProduct(JSON.parse(raw) as Record<string, unknown>, "photo-vision");
+  return parseVisionObjects(parseModelJson(raw));
 }
 
-async function identifyFromVision(image: string): Promise<IdentifiedProduct | null> {
-  if (!image.startsWith("data:image")) return null;
+async function detectObjectsFromVision(image: string): Promise<IdentifiedProduct[]> {
+  if (!image.startsWith("data:image")) return [];
   try {
-    return (await identifyWithOpenAI(image)) || (await identifyWithGemini(image));
+    const openai = await detectObjectsWithOpenAI(image);
+    if (openai.length) return openai;
+    return await detectObjectsWithGemini(image);
   } catch {
-    return null;
+    return [];
   }
 }
 
 export async function POST(request: Request) {
   const { account, response } = await requireAccount();
   if (!account) return response;
-  const body = (await request.json().catch(() => null)) as { image?: string; barcode?: string } | null;
-  const barcode = String(body?.barcode || "").trim();
+  const body = (await request.json().catch(() => null)) as { image?: string; barcode?: string; barcodes?: string[] } | null;
+  const barcodes = Array.from(
+    new Set([body?.barcode, ...(Array.isArray(body?.barcodes) ? body.barcodes : [])].map((value) => String(value || "").trim()).filter(Boolean)),
+  );
   const image = String(body?.image || "");
-  const vision = image.startsWith("data:image") ? await identifyFromVision(image) : null;
-  const result = await resolvePhotoIdentity(barcode, vision, identifyRemoteProduct, searchRemoteProduct);
+  const objects = image.startsWith("data:image") ? await detectObjectsFromVision(image) : [];
+  const items = await resolvePhotoIdentities(objects, barcodes, identifyRemoteProduct, searchRemoteProduct);
 
-  const catalogQuery = result.identified?.barcode || result.draft.barcode || barcode;
+  const first = items[0];
+  const catalogQuery = first?.identified?.barcode || first?.draft.barcode || barcodes[0] || "";
   const catalog = catalogQuery
     ? await lookupMaterials(account.company.id, { barcode: catalogQuery, q: catalogQuery, limit: 8 })
     : { rows: [], onHandByLocation: {} };
   const rows = (catalog.rows || []).filter((row) => catalogQuery && materialMatchesCode(row, catalogQuery));
 
   return NextResponse.json({
-    identified: result.identified,
-    draft: result.draft,
-    missing: result.missing,
+    items,
+    identified: first?.identified || null,
+    draft: first?.draft || { name: "", barcode: "", mpn: "", source: "photo" },
+    missing: first?.missing || ["name", "barcode", "mpn"],
+    count: items.length,
     rows,
     onHandByLocation: catalog.onHandByLocation || {},
   });

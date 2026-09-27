@@ -96,6 +96,88 @@ function toDraft(product: IdentifiedProduct): PhotoIdentityResult["draft"] {
   };
 }
 
+function asBox(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const box = value as Record<string, unknown>;
+  const x = Number(box.x);
+  const y = Number(box.y);
+  const w = Number(box.w ?? box.width);
+  const h = Number(box.h ?? box.height);
+  if (![x, y, w, h].every((n) => Number.isFinite(n))) return undefined;
+  return { x, y, w, h };
+}
+
+export function parseVisionObjects(payload: unknown): IdentifiedProduct[] {
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  const rows = Array.isArray(record.objects)
+    ? record.objects
+    : Array.isArray(record.items)
+      ? record.items
+      : record.name
+        ? [record]
+        : [];
+  const seen = new Set<string>();
+  const objects: IdentifiedProduct[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const item = row as Record<string, unknown>;
+    const name = String(item.name || item.title || "").trim();
+    if (!name) continue;
+    const key = [name, item.mpn, item.barcode].join("|").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    objects.push({
+      name,
+      brand: String(item.brand || "").trim() || undefined,
+      manufacturer: String(item.manufacturer || item.brand || "").trim() || undefined,
+      category: String(item.category || "").trim() || undefined,
+      description: String(item.description || "").trim() || undefined,
+      barcode: String(item.barcode || item.upc || item.ean || "").trim(),
+      upc: String(item.upc || item.barcode || "").trim() || undefined,
+      mpn: String(item.mpn || item.sku || item.catalog_number || item.part_number || "").trim() || undefined,
+      source: "photo-vision",
+      search_queries: Array.isArray(item.search_queries)
+        ? item.search_queries.map((query) => String(query || "").trim()).filter(Boolean).slice(0, 6)
+        : undefined,
+      quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+      box: asBox(item.box),
+    });
+    if (objects.length >= 12) break;
+  }
+  return objects;
+}
+
+export async function resolvePhotoIdentities(
+  visions: IdentifiedProduct[],
+  barcodes: string[],
+  identifyCode: (code: string) => Promise<IdentifiedProduct | null>,
+  search: (query: string) => Promise<IdentifiedProduct | null>,
+): Promise<PhotoIdentityResult[]> {
+  const used = new Set<string>();
+  const uniqueVisions = visions.slice(0, 12);
+  const results = await Promise.all(
+    uniqueVisions.map((vision) => {
+      const code = (vision.barcode || "").trim();
+      if (code) used.add(code);
+      return resolvePhotoIdentity(code, vision, identifyCode, search);
+    }),
+  );
+  const leftovers = barcodes
+    .map((code) => code.trim())
+    .filter((code) => code && !used.has(code) && !results.some((row) => row.draft.barcode === code || row.identified?.barcode === code));
+  for (const code of leftovers.slice(0, 8)) {
+    results.push(await resolvePhotoIdentity(code, null, identifyCode, search));
+  }
+  if (!results.length && barcodes[0]) {
+    results.push(await resolvePhotoIdentity(barcodes[0], null, identifyCode, search));
+  }
+  if (!results.length) {
+    results.push(await resolvePhotoIdentity("", null, identifyCode, search));
+  }
+  return results;
+}
+
 export async function resolvePhotoIdentity(
   barcode: string,
   vision: IdentifiedProduct | null,

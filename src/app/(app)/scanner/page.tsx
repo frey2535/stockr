@@ -32,7 +32,7 @@ import {
   writeScannerPrefs,
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
-import { isCompleteIdentity, isWeakIdentity } from "@/lib/identify-photo";
+import { isCompleteIdentity, isWeakIdentity, type PhotoIdentityResult } from "@/lib/identify-photo";
 import { prepareCameraPhoto } from "@/lib/photo-barcode";
 import { planVoiceCommand } from "@/lib/voice-command";
 import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
@@ -61,6 +61,7 @@ export default function ScannerPage() {
   const [draftBarcode, setDraftBarcode] = useState("");
   const [draftMpn, setDraftMpn] = useState("");
   const [identityMissing, setIdentityMissing] = useState<string[]>([]);
+  const [detectedItems, setDetectedItems] = useState<Array<PhotoIdentityResult & { key: string; name: string; barcode: string; mpn: string }>>([]);
   const [actionType, setActionType] = useState<TxType>("use");
   const [quantity, setQuantity] = useState("1");
   const [fromId, setFromId] = useState(defaultVan);
@@ -302,10 +303,15 @@ export default function ScannerPage() {
     setOnHandByLocation({});
   };
 
-  const addIdentifiedToCatalog = async (product: IdentifiedProduct, receiveNow = false) => {
-    const name = draftName.trim() || product.name;
-    const code = draftBarcode.trim() || product.barcode || unknownCode;
-    const mpn = draftMpn.trim() || product.mpn || "";
+  const addIdentifiedToCatalog = async (
+    product: IdentifiedProduct,
+    receiveNow = false,
+    fields?: { name?: string; barcode?: string; mpn?: string },
+    stayOnList = false,
+  ) => {
+    const name = (fields?.name ?? draftName).trim() || product.name;
+    const code = (fields?.barcode ?? draftBarcode).trim() || product.barcode || unknownCode;
+    const mpn = (fields?.mpn ?? draftMpn).trim() || product.mpn || "";
     if (!name || !code || !mpn) {
       toast.error("Name, barcode, and manufacturer number are required to identify an item.");
       return null;
@@ -325,8 +331,13 @@ export default function ScannerPage() {
       toast.error(created.error);
       return null;
     }
+    if (stayOnList) {
+      toast.success(`Added ${created.material.name} to the catalog`);
+      return created.material;
+    }
     setSelected(created.material);
     setIdentified(null);
+    setDetectedItems([]);
     setUnknownCode("");
     setIdentityMissing([]);
     setDraftMpn("");
@@ -474,41 +485,51 @@ export default function ScannerPage() {
     setUnknownCode("");
     setSelected(null);
     setIdentityMissing([]);
+    setDetectedItems([]);
     try {
       const prepared = await prepareCameraPhoto(file);
       setPhotoPreview(prepared.imageDataUrl);
       const response = await fetch("/api/identify-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: prepared.imageDataUrl, barcode: prepared.barcode }),
+        body: JSON.stringify({ image: prepared.imageDataUrl, barcode: prepared.barcode, barcodes: prepared.barcodes }),
       });
       const data = (await response.json().catch(() => null)) as {
+        items?: PhotoIdentityResult[];
         identified?: IdentifiedProduct | null;
         draft?: { name?: string; barcode?: string; mpn?: string; brand?: string; manufacturer?: string; description?: string; image_url?: string; source?: string };
         missing?: string[];
         rows?: Material[];
         onHandByLocation?: Record<string, number>;
       } | null;
+      const items = (data?.items?.length ? data.items : [
+        {
+          identified: data?.identified || null,
+          draft: {
+            name: data?.draft?.name || "",
+            barcode: data?.draft?.barcode || prepared.barcode || "",
+            mpn: data?.draft?.mpn || "",
+            source: data?.draft?.source || "photo",
+          },
+          missing: data?.missing || ["name", "barcode", "mpn"],
+        },
+      ]).map((item, index) => ({
+        ...item,
+        key: `${item.identified?.barcode || item.draft.barcode || "item"}-${index}`,
+        name: item.identified?.name || item.draft.name,
+        barcode: item.identified?.barcode || item.draft.barcode,
+        mpn: item.identified?.mpn || item.draft.mpn,
+      }));
+      setDetectedItems(items);
+      if (items.length > 1) {
+        const complete = items.filter((item) => item.identified).length;
+        toast.success(`Detected ${items.length} items${complete ? ` · ${complete} identified` : ""}`);
+        return;
+      }
       if (data?.identified && isCompleteIdentity(data.identified)) {
         applyIdentified(data.identified, data.onHandByLocation || {}, data.rows || [], []);
         return;
       }
-      applyIdentified(
-        {
-          name: data?.draft?.name || "",
-          barcode: data?.draft?.barcode || prepared.barcode || "",
-          mpn: data?.draft?.mpn,
-          brand: data?.draft?.brand,
-          manufacturer: data?.draft?.manufacturer,
-          description: data?.draft?.description,
-          image_url: data?.draft?.image_url,
-          source: data?.draft?.source || "photo",
-        },
-        data?.onHandByLocation || {},
-        data?.rows || [],
-        data?.missing || ["name", "barcode", "mpn"],
-      );
-    } catch {
       applyIdentified(
         { name: "", barcode: "", source: "photo" },
         {},
@@ -541,7 +562,7 @@ export default function ScannerPage() {
       <PageHeader
         eyebrow="Field"
         title="Scanner"
-        description="Photograph the label. Identified means name, barcode, and manufacturer number — not a guess."
+        description="Photograph the pile or the shelf. Stockr detects every item and identifies each with name, barcode, and manufacturer number."
         icon={<ScanLine className="size-8 text-primary" />}
       />
 
@@ -648,7 +669,103 @@ export default function ScannerPage() {
         </Card>
       ) : null}
 
-      {identified ? (
+      {detectedItems.length > 1 ? (
+        <Card className="border-primary/40">
+          <CardHeader>
+            <CardTitle className="text-base">{detectedItems.length} items in this photo</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Each row needs a name, barcode, and manufacturer number before it is identified.
+            </p>
+            {photoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photoPreview} alt="Detected items" className="mt-2 h-28 w-auto rounded-lg border bg-white object-contain" />
+            ) : null}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {detectedItems.map((item) => {
+              const complete = Boolean(item.identified) && !item.missing.length && item.name && item.barcode && item.mpn;
+              const product = item.identified || {
+                name: item.name,
+                barcode: item.barcode,
+                mpn: item.mpn,
+                source: item.draft.source || "photo",
+              };
+              return (
+                <div key={item.key} className="space-y-2 rounded-xl border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium">{item.name || "Unnamed item"}</p>
+                    <Badge variant="outline">{complete ? "Identified" : `Needs ${item.missing.join(", ") || "fields"}`}</Badge>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <Input
+                      value={item.name}
+                      placeholder="Name"
+                      onChange={(event) =>
+                        setDetectedItems((rows) =>
+                          rows.map((row) => (row.key === item.key ? { ...row, name: event.target.value } : row)),
+                        )
+                      }
+                    />
+                    <Input
+                      value={item.barcode}
+                      placeholder="Barcode"
+                      onChange={(event) =>
+                        setDetectedItems((rows) =>
+                          rows.map((row) => (row.key === item.key ? { ...row, barcode: event.target.value } : row)),
+                        )
+                      }
+                    />
+                    <Input
+                      value={item.mpn}
+                      placeholder="Manufacturer number"
+                      onChange={(event) =>
+                        setDetectedItems((rows) =>
+                          rows.map((row) => (row.key === item.key ? { ...row, mpn: event.target.value } : row)),
+                        )
+                      }
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    disabled={!item.name.trim() || !item.barcode.trim() || !item.mpn.trim()}
+                    onClick={async () => {
+                      const created = await addIdentifiedToCatalog(
+                        product,
+                        false,
+                        { name: item.name, barcode: item.barcode, mpn: item.mpn },
+                        true,
+                      );
+                      if (created) setDetectedItems((rows) => rows.filter((row) => row.key !== item.key));
+                    }}
+                  >
+                    Add to catalog
+                  </Button>
+                </div>
+              );
+            })}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={async () => {
+                const ready = detectedItems.filter((item) => item.name.trim() && item.barcode.trim() && item.mpn.trim());
+                for (const item of ready) {
+                  const created = await addIdentifiedToCatalog(
+                    item.identified || { name: item.name, barcode: item.barcode, mpn: item.mpn, source: "photo" },
+                    false,
+                    { name: item.name, barcode: item.barcode, mpn: item.mpn },
+                    true,
+                  );
+                  if (created) setDetectedItems((rows) => rows.filter((row) => row.key !== item.key));
+                }
+              }}
+            >
+              Add all identified
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {identified && detectedItems.length <= 1 ? (
         <Card className="border-primary/40">
           <CardHeader>
             <CardTitle className="text-base">

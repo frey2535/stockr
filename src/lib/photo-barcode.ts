@@ -143,18 +143,17 @@ function scaledCopy(source: HTMLCanvasElement, maxEdge: number) {
   return drawScaled(source, source.width, source.height, maxEdge);
 }
 
-async function detectNative(source: CanvasImageSource) {
-  if (!("BarcodeDetector" in window)) return "";
+async function detectNativeAll(source: CanvasImageSource) {
+  if (!("BarcodeDetector" in window)) return [] as string[];
   try {
     const Detector = (
       window as unknown as { BarcodeDetector: new (opts: { formats: string[] }) => { detect: (input: CanvasImageSource) => Promise<{ rawValue: string }[]> } }
     ).BarcodeDetector;
     const detector = new Detector({ formats: PHOTO_SCAN_FORMATS });
     const codes = await detector.detect(source);
-    const value = codes[0]?.rawValue?.trim() || "";
-    return plausibleBarcode(value) ? value : "";
+    return codes.map((row) => row.rawValue?.trim() || "").filter(plausibleBarcode);
   } catch {
-    return "";
+    return [];
   }
 }
 
@@ -183,7 +182,8 @@ async function detectZxing(canvas: HTMLCanvasElement) {
   }
 }
 
-export async function detectBarcodeOnCanvas(base: HTMLCanvasElement) {
+export async function detectBarcodesOnCanvas(base: HTMLCanvasElement) {
+  const found = new Set<string>();
   const variants: HTMLCanvasElement[] = [
     scaledCopy(base, 1200),
     contrastCanvas(scaledCopy(base, 1200)),
@@ -196,21 +196,39 @@ export async function detectBarcodeOnCanvas(base: HTMLCanvasElement) {
   ];
 
   for (const variant of variants) {
-    const native = await detectNative(variant);
-    if (native) return native;
+    for (const value of await detectNativeAll(variant)) found.add(value);
   }
-  for (const variant of variants.slice(0, 5)) {
-    const zxing = await detectZxing(variant);
-    if (zxing) return zxing;
+  if (!found.size) {
+    for (const variant of variants.slice(0, 5)) {
+      const zxing = await detectZxing(variant);
+      if (zxing) found.add(zxing);
+    }
   }
-  return "";
+  return Array.from(found);
+}
+
+export async function detectBarcodeOnCanvas(base: HTMLCanvasElement) {
+  return (await detectBarcodesOnCanvas(base))[0] || "";
+}
+
+export function cropCanvas(source: HTMLCanvasElement, box: { x: number; y: number; w: number; h: number }) {
+  const x = Math.max(0, Math.min(1, box.x)) * source.width;
+  const y = Math.max(0, Math.min(1, box.y)) * source.height;
+  const width = Math.max(8, Math.min(source.width - x, box.w * source.width));
+  const height = Math.max(8, Math.min(source.height - y, box.h * source.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width);
+  canvas.height = Math.round(height);
+  canvas.getContext("2d")?.drawImage(source, x, y, width, height, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
 export async function prepareCameraPhoto(file: Blob) {
   const canvas = await fileToCanvas(file, 1600);
-  const barcode = await detectBarcodeOnCanvas(canvas);
+  const barcodes = await detectBarcodesOnCanvas(canvas);
   return {
-    barcode,
+    barcode: barcodes[0] || "",
+    barcodes,
     imageDataUrl: canvas.toDataURL("image/jpeg", 0.9),
   };
 }

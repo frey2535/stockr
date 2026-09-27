@@ -62,6 +62,8 @@ export type IdentifiedProduct = {
   mpn?: string;
   source: string;
   search_queries?: string[];
+  quantity?: number;
+  box?: { x: number; y: number; w: number; h: number };
 };
 
 export type StockRule = {
