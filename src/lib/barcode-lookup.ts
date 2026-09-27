@@ -91,6 +91,7 @@ function fromOpenFacts(payload: unknown, source: string): IdentifiedProduct | nu
     image_url: image,
     barcode: code,
     upc: code.replace(/^0/, ""),
+    mpn: firstString(product.mpn, product.model) || undefined,
     source,
   };
 }
@@ -196,7 +197,7 @@ export async function identifyRemoteProduct(code: string): Promise<IdentifiedPro
   const trimmed = code.trim();
   if (!trimmed) return null;
   const hit = cached(trimmed);
-  if (hit !== undefined) return hit || unknownProduct(trimmed);
+  if (hit !== undefined) return hit;
 
   const variants = barcodeVariants(trimmed);
   const gtin = variants.find((value) => isGtin(value)) || variants.find((value) => digitsOnly(value).length >= 8) || trimmed;
@@ -210,5 +211,5 @@ export async function identifyRemoteProduct(code: string): Promise<IdentifiedPro
   const results = await Promise.all(lookups);
   const found = results.find(Boolean) || null;
   remember(trimmed, found);
-  return found || unknownProduct(trimmed);
+  return found;
 }

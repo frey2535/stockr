@@ -45,14 +45,14 @@ async function identifyFromVision(image: string): Promise<IdentifiedProduct | nu
           {
             role: "system",
             content:
-              "Identify the product in the photo for a contractor inventory app. Read any barcode, UPC, EAN, MPN, SKU, or printed name. Return JSON with name, brand, manufacturer, barcode, upc, mpn, category, description, search_query. Use empty strings when unknown. name and search_query must be specific enough to find the item online.",
+              "Identify the product only from printed facts on the photo: trade name, barcode/UPC/EAN digits, and manufacturer part number (MPN, catalog no, SKU). Return JSON with name, brand, manufacturer, barcode, upc, mpn, category, description, search_query. Never invent a barcode or MPN. Use empty strings when a field is not printed. An identity is incomplete without name, barcode, and mpn.",
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: "What exact product is this? Prefer printed barcode digits, then the trade name and manufacturer.",
+                text: "Read the printed name, barcode digits, and manufacturer number. Leave a field empty if it is not on the label.",
               },
               { type: "image_url", image_url: { url: image, detail: "high" } },
             ],
@@ -68,7 +68,7 @@ async function identifyFromVision(image: string): Promise<IdentifiedProduct | nu
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const name = firstString(parsed.name, parsed.title, parsed.search_query);
     if (!name) return null;
-    const barcode = barcodeFromText(parsed.barcode, parsed.upc, parsed.ean, parsed.gtin, parsed.mpn);
+    const barcode = barcodeFromText(parsed.barcode, parsed.upc, parsed.ean, parsed.gtin);
     return {
       name,
       brand: firstString(parsed.brand) || undefined,
@@ -77,7 +77,7 @@ async function identifyFromVision(image: string): Promise<IdentifiedProduct | nu
       description: firstString(parsed.description, parsed.search_query) || undefined,
       barcode,
       upc: firstString(parsed.upc, barcode) || undefined,
-      mpn: firstString(parsed.mpn, parsed.sku) || undefined,
+      mpn: firstString(parsed.mpn, parsed.sku, parsed.catalog_number, parsed.part_number) || undefined,
       source: "photo-vision",
     };
   } catch {
@@ -92,16 +92,18 @@ export async function POST(request: Request) {
   const barcode = String(body?.barcode || "").trim();
   const image = String(body?.image || "");
   const vision = image.startsWith("data:image") ? await identifyFromVision(image) : null;
-  const identified = await resolvePhotoIdentity(barcode, vision, identifyRemoteProduct, searchRemoteProduct);
+  const result = await resolvePhotoIdentity(barcode, vision, identifyRemoteProduct, searchRemoteProduct);
 
-  const catalogQuery = identified.barcode || barcode;
+  const catalogQuery = result.identified?.barcode || result.draft.barcode || barcode;
   const catalog = catalogQuery
     ? await lookupMaterials(account.company.id, { barcode: catalogQuery, q: catalogQuery, limit: 8 })
     : { rows: [], onHandByLocation: {} };
   const rows = (catalog.rows || []).filter((row) => catalogQuery && materialMatchesCode(row, catalogQuery));
 
   return NextResponse.json({
-    identified,
+    identified: result.identified,
+    draft: result.draft,
+    missing: result.missing,
     rows,
     onHandByLocation: catalog.onHandByLocation || {},
   });
