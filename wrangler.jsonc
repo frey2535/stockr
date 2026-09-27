@@ -19,8 +19,5 @@
     "NEXT_PUBLIC_STOCKR_HOST": "stockr.currentflowconsulting.org",
     "NEXT_PUBLIC_APP_URL": "https://stockr.currentflowconsulting.org",
     "BUILDR_API_URL": "https://buildrpm.com"
-  },
-  "ai": {
-    "binding": "AI"
   }
 }
