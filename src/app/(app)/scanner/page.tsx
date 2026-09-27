@@ -33,7 +33,6 @@ import {
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
 import { isCompleteIdentity, isWeakIdentity, type IdentityField, type PhotoIdentityResult } from "@/lib/identify-photo";
-
 import { prepareCameraPhoto } from "@/lib/photo-barcode";
 import { planVoiceCommand } from "@/lib/voice-command";
 import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
