@@ -2,43 +2,10 @@ import type { IdentifiedProduct } from "./types";
 import { parseVisionObjects } from "./identify-photo";
 
 export const LENS_PROMPT =
-  "You are a visual product identifier for contractor materials, like Google Lens. Detect EVERY distinct product in the photo — tools, fittings, boxes, reels, breakers, labels, packaged goods. Do not stop at the largest object. Same SKU more than once is one object with quantity. For each object: name the exact commercial product, read printed barcode/UPC/EAN digits, read printed manufacturer/catalog/part/SKU/MPN, and if the exact SKU is a known catalog item fill the canonical UPC and manufacturer number from product knowledge. Give 2 short search queries that would find this SKU. Do not invent random digits. Use an empty string only when that field cannot be determined for the exact SKU. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
+  "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT itself — shape, color, brand marks, packaging, form factor. A printed barcode is not required. For each distinct product return the exact trade name a supplier would use, the standard UPC/EAN for that SKU, and the manufacturer catalog number (MPN). Read digits from the photo when they are visible. If they are not visible but you know the exact SKU from appearance, fill the well-known UPC and catalog number. Name the item even when you are not sure of the UPC. Same SKU more than once is one object with quantity. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
 
 const IDENTITY_PROMPT =
-  "You complete product identity for field inventory. Given a product already seen, return the canonical trade name, UPC/EAN barcode, and manufacturer catalog number (MPN). Only fill barcode and MPN when you know the exact SKU. Do not invent digits. Return JSON { name, brand, manufacturer, barcode, upc, mpn, search_queries }.";
-
-const VISION_SCHEMA = {
-  type: "object",
-  properties: {
-    objects: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          name: { type: "string" },
-          brand: { type: "string" },
-          manufacturer: { type: "string" },
-          barcode: { type: "string" },
-          upc: { type: "string" },
-          mpn: { type: "string" },
-          category: { type: "string" },
-          description: { type: "string" },
-          quantity: { type: "number" },
-          search_queries: { type: "array", items: { type: "string" } },
-          box: {
-            type: "object",
-            properties: {
-              x: { type: "number" },
-              y: { type: "number" },
-              w: { type: "number" },
-              h: { type: "number" },
-            },
-          },
-        },
-      },
-    },
-  },
-};
+  "You complete product identity for field inventory. The item was already recognized visually. Return the canonical trade name, the standard UPC/EAN barcode, and the manufacturer catalog number (MPN) for that exact SKU. Fill barcode and MPN from product knowledge when the SKU is known. Return JSON { name, brand, manufacturer, barcode, upc, mpn, search_queries }.";
 
 type WorkersAi = { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
 
@@ -81,6 +48,12 @@ function asText(payload: unknown): string {
   return "";
 }
 
+function splitImage(image: string) {
+  const match = image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mime: match[1], base64: match[2], dataUrl: image };
+}
+
 async function workersAiBinding(): Promise<WorkersAi | null> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
@@ -118,9 +91,9 @@ export async function canUseVision() {
 
 async function runWorkersAi(model: string, input: Record<string, unknown>) {
   const binding = await workersAiBinding();
-  if (binding) return binding.run(model, input);
+  if (binding) return { ok: true as const, payload: await binding.run(model, input) };
   const rest = workersAiRest();
-  if (!rest) return null;
+  if (!rest) return { ok: false as const, error: "Workers AI is not bound." };
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(rest.account)}/ai/run/${model}`,
     {
@@ -132,9 +105,16 @@ async function runWorkersAi(model: string, input: Record<string, unknown>) {
       body: JSON.stringify(input),
     },
   );
-  const data = (await response.json().catch(() => null)) as { result?: unknown; success?: boolean } | null;
-  if (!response.ok) return null;
-  return data?.result ?? data;
+  const data = (await response.json().catch(() => null)) as { result?: unknown; success?: boolean; errors?: Array<{ message?: string }> } | null;
+  if (!response.ok) {
+    const message = data?.errors?.[0]?.message || `Workers AI ${response.status}`;
+    return { ok: false as const, error: message };
+  }
+  return { ok: true as const, payload: data?.result ?? data };
+}
+
+function objectsFromPayload(payload: unknown) {
+  return parseVisionObjects(parseModelJson(asText(payload)));
 }
 
 async function detectObjectsWithOpenAI(image: string): Promise<IdentifiedProduct[]> {
@@ -155,7 +135,7 @@ async function detectObjectsWithOpenAI(image: string): Promise<IdentifiedProduct
         {
           role: "user",
           content: [
-            { type: "text", text: "Detect and identify every distinct item in this photo." },
+            { type: "text", text: "Look at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible." },
             { type: "image_url", image_url: { url: image, detail: "high" } },
           ],
         },
@@ -171,8 +151,8 @@ async function detectObjectsWithOpenAI(image: string): Promise<IdentifiedProduct
 async function detectObjectsWithGemini(image: string): Promise<IdentifiedProduct[]> {
   const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim();
   if (!key) return [];
-  const match = image.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
-  if (!match) return [];
+  const parts = splitImage(image);
+  if (!parts) return [];
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(key)}`,
     {
@@ -183,8 +163,8 @@ async function detectObjectsWithGemini(image: string): Promise<IdentifiedProduct
         contents: [
           {
             parts: [
-              { text: `${LENS_PROMPT}\nDetect and identify every distinct item in this photo.` },
-              { inline_data: { mime_type: match[1], data: match[2] } },
+              { text: `${LENS_PROMPT}\nLook at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible.` },
+              { inline_data: { mime_type: parts.mime, data: parts.base64 } },
             ],
           },
         ],
@@ -198,42 +178,101 @@ async function detectObjectsWithGemini(image: string): Promise<IdentifiedProduct
   return parseVisionObjects(parseModelJson(raw));
 }
 
-async function detectObjectsWithWorkersAi(image: string): Promise<IdentifiedProduct[]> {
-  if (!image.startsWith("data:image")) return [];
-  if (!(await workersAiBinding()) && !workersAiRest()) return [];
-  const models = ["@cf/meta/llama-4-scout-17b-16e-instruct", "@cf/meta/llama-3.2-11b-vision-instruct"];
-  for (const model of models) {
-    const payload = await runWorkersAi(model, {
-      temperature: 0,
-      max_tokens: 2048,
-      guided_json: VISION_SCHEMA,
-      messages: [
-        { role: "system", content: LENS_PROMPT },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Detect and identify every distinct item in this photo. JSON only." },
-            { type: "image_url", image_url: { url: image } },
-          ],
-        },
-      ],
-    });
-    const objects = parseVisionObjects(parseModelJson(asText(payload)));
-    if (objects.length) return objects;
+async function detectWithCfChat(image: string) {
+  const rest = workersAiRest();
+  if (!rest) return { objects: [] as IdentifiedProduct[], error: "Workers AI is not bound." };
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(rest.account)}/ai/v1/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${rest.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+        temperature: 0,
+        max_tokens: 2048,
+        messages: [
+          { role: "system", content: LENS_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Look at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only." },
+              { type: "image_url", image_url: { url: image } },
+            ],
+          },
+        ],
+      }),
+    },
+  );
+  const data = (await response.json().catch(() => null)) as unknown;
+  if (!response.ok) {
+    const record = data && typeof data === "object" ? (data as { errors?: Array<{ message?: string }> }) : null;
+    return { objects: [] as IdentifiedProduct[], error: record?.errors?.[0]?.message || `Workers AI chat ${response.status}` };
   }
-  return [];
+  return { objects: objectsFromPayload(data), error: undefined };
 }
 
-export async function detectObjectsFromVision(image: string): Promise<IdentifiedProduct[]> {
-  if (!image.startsWith("data:image")) return [];
+async function detectObjectsWithWorkersAi(image: string) {
+  const parts = splitImage(image);
+  if (!parts) return { objects: [] as IdentifiedProduct[], error: "That photo could not be read." };
+  const attempts: Array<() => Promise<{ objects: IdentifiedProduct[]; error?: string }>> = [
+    async () => {
+      const run = await runWorkersAi("@cf/meta/llama-4-scout-17b-16e-instruct", {
+        temperature: 0,
+        max_tokens: 2048,
+        messages: [
+          { role: "system", content: LENS_PROMPT },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Look at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only." },
+              { type: "image_url", image_url: { url: parts.dataUrl } },
+            ],
+          },
+        ],
+      });
+      if (!run.ok) return { objects: [], error: run.error };
+      return { objects: objectsFromPayload(run.payload) };
+    },
+    async () => detectWithCfChat(parts.dataUrl),
+    async () => {
+      await runWorkersAi("@cf/meta/llama-3.2-11b-vision-instruct", { prompt: "agree" });
+      const run = await runWorkersAi("@cf/meta/llama-3.2-11b-vision-instruct", {
+        prompt: `${LENS_PROMPT}\nLook at the objects in this photo. Identify each product from appearance. A barcode does not have to be visible. JSON only.`,
+        image: parts.base64,
+        max_tokens: 2048,
+        temperature: 0,
+      });
+      if (!run.ok) return { objects: [], error: run.error };
+      return { objects: objectsFromPayload(run.payload) };
+    },
+  ];
+
+  let lastError = "";
+  for (const attempt of attempts) {
+    try {
+      const result = await attempt();
+      if (result.objects.length) return result;
+      if (result.error) lastError = result.error;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Vision failed.";
+    }
+  }
+  return { objects: [] as IdentifiedProduct[], error: lastError || "Vision did not recognize an item in this photo." };
+}
+
+export async function detectObjectsFromVision(image: string): Promise<{ objects: IdentifiedProduct[]; error?: string }> {
+  if (!image.startsWith("data:image")) return { objects: [] };
   try {
     const openai = await detectObjectsWithOpenAI(image);
-    if (openai.length) return openai;
+    if (openai.length) return { objects: openai };
     const gemini = await detectObjectsWithGemini(image);
-    if (gemini.length) return gemini;
+    if (gemini.length) return { objects: gemini };
     return await detectObjectsWithWorkersAi(image);
-  } catch {
-    return [];
+  } catch (error) {
+    return { objects: [], error: error instanceof Error ? error.message : "Vision failed." };
   }
 }
 
@@ -278,7 +317,7 @@ export async function completeProductIdentity(product: Partial<IdentifiedProduct
       if (found) return { ...found, source: "photo-knowledge" };
     }
 
-    const payload = await runWorkersAi("@cf/meta/llama-4-scout-17b-16e-instruct", {
+    const run = await runWorkersAi("@cf/meta/llama-4-scout-17b-16e-instruct", {
       temperature: 0,
       max_tokens: 512,
       messages: [
@@ -286,7 +325,8 @@ export async function completeProductIdentity(product: Partial<IdentifiedProduct
         { role: "user", content: hint },
       ],
     });
-    const found = await ask(asText(payload));
+    if (!run.ok) return null;
+    const found = await ask(asText(run.payload));
     return found ? { ...found, source: "photo-knowledge" } : null;
   } catch {
     return null;

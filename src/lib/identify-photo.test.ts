@@ -5,6 +5,7 @@ import {
   identityGaps,
   isCompleteIdentity,
   isWeakIdentity,
+  inferCatalogNumber,
   listingAgrees,
   parseVisionObjects,
   resolvePhotoIdentities,
@@ -19,6 +20,23 @@ test("complete identity requires a real name, barcode, and manufacturer number",
   );
   assert.equal(isWeakIdentity({ name: "Scanned item 123", barcode: "123", source: "scan" }), true);
   assert.equal(buildProductSearchQuery({ brand: "Southwire", name: "12/2 NM-B", mpn: "SW122" }), "Southwire 12/2 NM-B SW122");
+});
+
+test("names a product from appearance and fills barcode without a scanned code", async () => {
+  const found = await resolvePhotoIdentity(
+    "",
+    { name: "Square D QO120 20A breaker", brand: "Square D", barcode: "", source: "photo-vision" },
+    async () => null,
+    async () => null,
+    async () => ({ name: "Square D QO120", barcode: "785901001201", mpn: "QO120", source: "photo-knowledge" }),
+  );
+  assert.equal(found.identified?.name.includes("QO120"), true);
+  assert.equal(found.identified?.barcode, "785901001201");
+  assert.equal(found.identified?.mpn, "QO120");
+});
+
+test("infers a catalog number from a visual name when MPN is blank", () => {
+  assert.equal(inferCatalogNumber({ name: "Square D QO120 20A single pole", source: "photo-vision" }), "QO120");
 });
 
 test("does not call a placeholder identified when nothing is online", async () => {

@@ -42,6 +42,15 @@ export function identityGaps(product: Partial<IdentifiedProduct> | null | undefi
   return missing;
 }
 
+export function inferCatalogNumber(product: Partial<IdentifiedProduct> | null | undefined) {
+  if (filled(product?.mpn)) return String(product?.mpn).trim();
+  const source = [product?.name, product?.description, ...(product?.search_queries || [])].filter(Boolean).join(" ");
+  const sku = source.match(/\b([A-Za-z]{1,8}[-/]?[A-Za-z]?\d{2,}[A-Za-z0-9-]*)\b/);
+  if (sku?.[1]) return sku[1];
+  const catalog = source.match(/\b(\d{5,8})\b/);
+  return catalog?.[1] || "";
+}
+
 export function isCompleteIdentity(product: IdentifiedProduct | null | undefined): product is IdentifiedProduct {
   return identityGaps(product).length === 0;
 }
@@ -281,6 +290,11 @@ export async function resolvePhotoIdentity(
   if (merged.barcode && !merged.mpn) {
     const extra = await identifyCode(merged.barcode);
     if (extra && listingAgrees(merged, extra)) merged = mergeIdentities(merged, extra);
+  }
+
+  if (!merged.mpn) {
+    const inferred = inferCatalogNumber(merged);
+    if (inferred) merged = { ...merged, mpn: inferred };
   }
 
   const missing = identityGaps(merged);
