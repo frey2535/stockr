@@ -33,15 +33,15 @@ import {
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
 import { isCompleteIdentity, isWeakIdentity, type IdentityField, type PhotoIdentityResult } from "@/lib/identify-photo";
+import { prepareCameraPhoto } from "@/lib/photo-barcode";
+import { planVoiceCommand } from "@/lib/voice-command";
+import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
 
 function asIdentityFields(values?: string[]): IdentityField[] {
   const allowed: IdentityField[] = ["name", "barcode", "mpn"];
   const found = (values || []).filter((value): value is IdentityField => allowed.includes(value as IdentityField));
   return found.length ? found : allowed;
 }
-import { prepareCameraPhoto } from "@/lib/photo-barcode";
-import { planVoiceCommand } from "@/lib/voice-command";
-import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
 
 type Detector = {
   detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
@@ -482,7 +482,9 @@ export default function ScannerPage() {
     setUnknownCode(complete ? "" : product.barcode || "");
     setOnHandByLocation({});
     if (complete) toast.success(`Identified ${product.name}`);
-    else toast.message("Not identified. Need name, barcode, and manufacturer number.");
+    else if (product.name && !isWeakIdentity(product)) {
+      toast.message(`Recognized ${product.name}. Need ${missing.length ? missing.join(", ") : "barcode and manufacturer number"}.`);
+    } else toast.message("Not identified. Need name, barcode, and manufacturer number.");
   };
 
   const identifyPhoto = async (file: File) => {
@@ -507,7 +509,9 @@ export default function ScannerPage() {
         missing?: IdentityField[];
         rows?: Material[];
         onHandByLocation?: Record<string, number>;
+        error?: string;
       } | null;
+      if (data?.error) toast.message(data.error);
       const fallback: PhotoIdentityResult = {
         identified: data?.identified || null,
         draft: {
@@ -531,15 +535,21 @@ export default function ScannerPage() {
         toast.success(`Detected ${items.length} items${complete ? ` · ${complete} identified` : ""}`);
         return;
       }
-      if (data?.identified && isCompleteIdentity(data.identified)) {
-        applyIdentified(data.identified, data.onHandByLocation || {}, data.rows || [], []);
-        return;
-      }
+      const first = items[0];
       applyIdentified(
-        { name: "", barcode: "", source: "photo" },
-        {},
-        [],
-        ["name", "barcode", "mpn"],
+        first.identified || {
+          name: first.name,
+          barcode: first.barcode,
+          mpn: first.mpn,
+          brand: first.draft.brand,
+          manufacturer: first.draft.manufacturer,
+          description: first.draft.description,
+          image_url: first.draft.image_url,
+          source: first.draft.source || "photo",
+        },
+        data?.onHandByLocation || {},
+        data?.rows || [],
+        first.missing,
       );
     } finally {
       setPhotoBusy(false);
