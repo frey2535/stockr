@@ -29,14 +29,26 @@ test("prefers an online listing and still requires manufacturer number", async (
     "012345678905",
     { name: "Mystery coil", barcode: "", source: "photo" },
     async () => ({ name: "Diet Coke", barcode: "012345678905", source: "upcitemdb" }),
-    async () => {
-      throw new Error("should not search");
-    },
+    async () => null,
   );
   assert.equal(incomplete.identified, null);
   assert.deepEqual(incomplete.missing, ["mpn"]);
   assert.equal(incomplete.draft.name, "Diet Coke");
   assert.equal(incomplete.draft.barcode, "012345678905");
+});
+
+test("looks the item up online from a Lens-style name until barcode and MPN appear", async () => {
+  const found = await resolvePhotoIdentity(
+    "",
+    { name: "Square D QO 20A breaker", brand: "Square D", barcode: "", source: "photo-vision", search_queries: ["Square D QO120"] },
+    async () => null,
+    async (query) =>
+      query.includes("QO120")
+        ? { name: "QO120", barcode: "785901001201", mpn: "QO120", source: "upcitemdb" }
+        : null,
+  );
+  assert.equal(found.identified?.mpn, "QO120");
+  assert.equal(found.identified?.barcode, "785901001201");
 });
 
 test("identifies only after name, barcode, and MPN are known", async () => {
