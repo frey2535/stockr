@@ -617,7 +617,7 @@ export default function ScannerPage() {
                 </Button>
                 <Button type="button" variant="outline" disabled={photoBusy} onClick={() => photoRef.current?.click()}>
                   <Camera className="mr-1 size-4" />
-                  {photoBusy ? "Reading…" : "Photo"}
+                  {photoBusy ? "Identifying…" : "Photo"}
                 </Button>
                 <Button type="submit" disabled={!barcode.trim() || lookingUp}>
                   {lookingUp ? "…" : "Look Up"}
@@ -642,7 +642,9 @@ export default function ScannerPage() {
 
       {lookingUp ? (
         <Card>
-          <CardContent className="p-5 text-sm text-muted-foreground">Identifying barcode…</CardContent>
+          <CardContent className="p-5 text-sm text-muted-foreground">
+            {photoBusy ? "Looking up this item online for name, barcode, and manufacturer number…" : "Identifying…"}
+          </CardContent>
         </Card>
       ) : null}
 

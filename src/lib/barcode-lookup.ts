@@ -96,12 +96,23 @@ function fromOpenFacts(payload: unknown, source: string): IdentifiedProduct | nu
   };
 }
 
-function fromUpcItemDb(payload: unknown): IdentifiedProduct | null {
-  if (!payload || typeof payload !== "object") return null;
-  const record = payload as Record<string, unknown>;
-  const items = Array.isArray(record.items) ? record.items : [];
-  const item = items[0] as Record<string, unknown> | undefined;
-  if (!item) return null;
+function listingScore(product: IdentifiedProduct) {
+  return (
+    (product.name ? 2 : 0) +
+    (product.barcode ? 3 : 0) +
+    (product.mpn ? 3 : 0) +
+    (product.brand || product.manufacturer ? 1 : 0) +
+    (product.image_url ? 1 : 0)
+  );
+}
+
+export function pickBestListing(products: Array<IdentifiedProduct | null | undefined>) {
+  return products
+    .filter((row): row is IdentifiedProduct => Boolean(row?.name))
+    .sort((left, right) => listingScore(right) - listingScore(left))[0] || null;
+}
+
+function fromUpcItem(item: Record<string, unknown>): IdentifiedProduct | null {
   const name = firstString(item.title, item.description);
   if (!name) return null;
   const images = Array.isArray(item.images) ? item.images : [];
@@ -120,6 +131,13 @@ function fromUpcItemDb(payload: unknown): IdentifiedProduct | null {
   };
 }
 
+function fromUpcItemDb(payload: unknown): IdentifiedProduct | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as Record<string, unknown>;
+  const items = Array.isArray(record.items) ? record.items : [];
+  return pickBestListing(items.map((item) => (item && typeof item === "object" ? fromUpcItem(item as Record<string, unknown>) : null)));
+}
+
 async function lookupOpenFacts(code: string, host: string, source: string) {
   const { json } = await readJson(`https://${host}/api/v2/product/${encodeURIComponent(code)}.json`);
   return fromOpenFacts(json, source);
@@ -136,14 +154,43 @@ async function lookupUpcItemDb(code: string) {
 
 async function searchOpenFacts(query: string, host: string, source: string) {
   const { json } = await readJson(
-    `https://${host}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5`,
+    `https://${host}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=10`,
   );
   if (!json || typeof json !== "object") return null;
   const products = (json as { products?: unknown[] }).products;
-  const product = Array.isArray(products) ? products[0] : null;
-  if (!product || typeof product !== "object") return null;
-  const record = product as Record<string, unknown>;
-  return fromOpenFacts({ status: 1, code: record.code, product: record }, source);
+  if (!Array.isArray(products)) return null;
+  return pickBestListing(
+    products.slice(0, 10).map((product) => {
+      if (!product || typeof product !== "object") return null;
+      const record = product as Record<string, unknown>;
+      return fromOpenFacts({ status: 1, code: record.code, product: record }, source);
+    }),
+  );
+}
+
+async function searchDuckDuckGo(query: string) {
+  const { json } = await readJson(
+    `https://api.duckduckgo.com/?q=${encodeURIComponent(`${query} UPC MPN`)}&format=json&no_html=1&skip_disambig=1`,
+  );
+  if (!json || typeof json !== "object") return null;
+  const record = json as Record<string, unknown>;
+  const name = firstString(record.Heading, record.Answer);
+  if (!name) return null;
+  const infobox = record.Infobox && typeof record.Infobox === "object" ? (record.Infobox as { content?: Array<{ label?: string; value?: string }> }) : null;
+  const field = (label: string) =>
+    firstString(infobox?.content?.find((row) => String(row.label || "").toLowerCase().includes(label))?.value);
+  const barcode = firstString(field("upc"), field("ean"), field("gtin"), field("barcode"));
+  const mpn = firstString(field("mpn"), field("model"), field("part"), field("sku"));
+  return {
+    name,
+    brand: firstString(field("brand"), field("manufacturer")) || undefined,
+    manufacturer: firstString(field("manufacturer"), field("brand")) || undefined,
+    description: firstString(record.Abstract) || undefined,
+    barcode,
+    upc: barcode || undefined,
+    mpn: mpn || undefined,
+    source: "duckduckgo",
+  } satisfies IdentifiedProduct;
 }
 
 async function searchUpcItemDb(query: string) {
@@ -163,9 +210,11 @@ export async function searchRemoteProduct(query: string): Promise<IdentifiedProd
   const results = await Promise.all([
     searchOpenFacts(trimmed, "world.openproductsfacts.org", "open-products-facts"),
     searchOpenFacts(trimmed, "world.openfoodfacts.org", "open-food-facts"),
+    searchOpenFacts(trimmed, "world.openbeautyfacts.org", "open-beauty-facts"),
     searchUpcItemDb(trimmed),
+    searchDuckDuckGo(trimmed),
   ]);
-  const found = results.find(Boolean) || null;
+  const found = pickBestListing(results);
   remember(`q:${trimmed.toLowerCase()}`, found);
   return found;
 }

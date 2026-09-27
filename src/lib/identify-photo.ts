@@ -44,6 +44,20 @@ export function buildProductSearchQuery(product: Partial<IdentifiedProduct>) {
     .trim();
 }
 
+export function visionSearchQueries(vision: IdentifiedProduct | null, extra: string[] = []) {
+  const queries = [
+    ...extra,
+    ...(vision?.search_queries || []),
+    vision?.mpn || "",
+    vision?.barcode || "",
+    vision && !isWeakIdentity(vision) ? buildProductSearchQuery(vision) : "",
+    vision && !isWeakIdentity(vision) ? [vision.brand || vision.manufacturer, vision.mpn || vision.name].filter(Boolean).join(" ") : "",
+    vision && !isWeakIdentity(vision) ? `${buildProductSearchQuery(vision)} UPC` : "",
+    vision && !isWeakIdentity(vision) ? `${buildProductSearchQuery(vision)} barcode` : "",
+  ];
+  return Array.from(new Set(queries.map((value) => value.replace(/\s+/g, " ").trim()).filter((value) => value.length >= 3)));
+}
+
 function firstFilled(...values: Array<string | undefined | null>) {
   for (const value of values) {
     if (filled(value)) return String(value).trim();
@@ -89,12 +103,26 @@ export async function resolvePhotoIdentity(
   search: (query: string) => Promise<IdentifiedProduct | null>,
 ): Promise<PhotoIdentityResult> {
   const code = (barcode || vision?.barcode || "").trim();
-  const remote = code ? await identifyCode(code) : null;
-  const query = vision && !isWeakIdentity(vision) ? buildProductSearchQuery(vision) : "";
-  const searched = query.length >= 3 ? await search(query) : null;
+  const listings: IdentifiedProduct[] = [];
+  const rememberListing = (row: IdentifiedProduct | null) => {
+    if (row && !isWeakIdentity(row)) listings.push(row);
+  };
+
+  if (code) rememberListing(await identifyCode(code));
+
+  for (const query of visionSearchQueries(vision, [code]).slice(0, 6)) {
+    rememberListing(await search(query));
+    const soFar = mergeIdentities(
+      ...listings,
+      vision && !isWeakIdentity(vision) ? vision : null,
+      code ? { name: "", barcode: code, source: "photo" } : null,
+    );
+    if (soFar.barcode && !soFar.mpn) rememberListing(await identifyCode(soFar.barcode));
+    if (isCompleteIdentity(mergeIdentities(...listings, vision))) break;
+  }
+
   const merged = mergeIdentities(
-    remote && !isWeakIdentity(remote) ? remote : null,
-    searched && !isWeakIdentity(searched) ? searched : null,
+    ...listings,
     vision && !isWeakIdentity(vision) ? { ...vision, barcode: vision.barcode || code, mpn: vision.mpn } : null,
     code ? { name: "", barcode: code, source: "photo" } : null,
   );

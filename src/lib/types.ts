@@ -61,6 +61,7 @@ export type IdentifiedProduct = {
   upc?: string;
   mpn?: string;
   source: string;
+  search_queries?: string[];
 };
 
 export type StockRule = {
