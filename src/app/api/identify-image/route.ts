@@ -17,9 +17,9 @@ export async function POST(request: Request) {
     new Set([body?.barcode, ...(Array.isArray(body?.barcodes) ? body.barcodes : [])].map((value) => String(value || "").trim()).filter(Boolean)),
   );
   const image = String(body?.image || "");
-  const objects = image.startsWith("data:image") ? await detectObjectsFromVision(image) : [];
+  const vision = image.startsWith("data:image") ? await detectObjectsFromVision(image) : { objects: [] as Awaited<ReturnType<typeof detectObjectsFromVision>>["objects"] };
   const items = await resolvePhotoIdentities(
-    objects,
+    vision.objects,
     barcodes,
     identifyRemoteProduct,
     searchRemoteProduct,
@@ -33,11 +33,12 @@ export async function POST(request: Request) {
     : { rows: [], onHandByLocation: {} };
   const rows = (catalog.rows || []).filter((row) => catalogQuery && materialMatchesCode(row, catalogQuery));
   const identifiedCount = items.filter((item) => item.identified && isCompleteIdentity(item.identified)).length;
+  const named = items.some((item) => item.identified?.name || item.draft.name);
   const error =
-    !objects.length && !identifiedCount && image.startsWith("data:image") && !(await canUseVision())
-      ? "Photo ID needs a vision model. Production uses Cloudflare Workers AI — merge this update so photos can be identified."
-      : !objects.length && !identifiedCount && image.startsWith("data:image")
-        ? "Nothing in this photo could be identified yet. Try a closer shot of the label or barcode."
+    !vision.objects.length && !identifiedCount && image.startsWith("data:image") && !(await canUseVision())
+      ? "Photo ID needs Workers AI on this deploy. The next production deploy binds it."
+      : !named && image.startsWith("data:image")
+        ? vision.error || "Could not recognize the item in this photo. Try a clearer shot of the product itself."
         : undefined;
 
   return NextResponse.json({

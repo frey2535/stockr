@@ -577,7 +577,7 @@ export default function ScannerPage() {
       <PageHeader
         eyebrow="Field"
         title="Scanner"
-        description="Photograph the pile or the shelf. Stockr detects every item and identifies each with name, barcode, and manufacturer number."
+        description="Photograph the item. Stockr recognizes the product from appearance and fills name, barcode, and manufacturer number — no barcode scan required."
         icon={<ScanLine className="size-8 text-primary" />}
       />
 
@@ -630,7 +630,7 @@ export default function ScannerPage() {
               <p className="text-center text-sm text-destructive">{cameraError}</p>
             ) : null}
             <p className="text-center text-sm text-muted-foreground">
-              Snap the label or the item. Every photo gets an identity you can add to the catalog.
+              Photograph the product itself. Stockr names it and produces the barcode — you do not need to scan one first.
             </p>
             <form
               className="space-y-3"
@@ -679,7 +679,7 @@ export default function ScannerPage() {
       {lookingUp ? (
         <Card>
           <CardContent className="p-5 text-sm text-muted-foreground">
-            {photoBusy ? "Looking up this item online for name, barcode, and manufacturer number…" : "Identifying…"}
+            {photoBusy ? "Recognizing the item in this photo…" : "Identifying…"}
           </CardContent>
         </Card>
       ) : null}
