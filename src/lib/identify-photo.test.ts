@@ -5,6 +5,7 @@ import {
   identityGaps,
   isCompleteIdentity,
   isWeakIdentity,
+  listingAgrees,
   parseVisionObjects,
   resolvePhotoIdentities,
   resolvePhotoIdentity,
@@ -91,6 +92,37 @@ test("resolves leftover barcodes as extra items in the same photo", async () => 
   assert.equal(items.length, 2);
   assert.equal(items[0]?.identified?.mpn, "QO120");
   assert.equal(items[1]?.identified?.name, "12/2 NM-B");
+});
+
+test("does not merge an unrelated catalog hit onto a vision identity", async () => {
+  const found = await resolvePhotoIdentity(
+    "",
+    { name: "Square D QO 20A breaker", brand: "Square D", barcode: "", mpn: "QO120", source: "photo-vision" },
+    async () => null,
+    async () => ({ name: "Diet Coke", barcode: "049000042566", source: "open-food-facts" }),
+  );
+  assert.equal(found.draft.name, "Square D QO 20A breaker");
+  assert.notEqual(found.draft.barcode, "049000042566");
+  assert.equal(found.identified, null);
+  assert.equal(
+    listingAgrees(
+      { name: "Square D QO 20A breaker", brand: "Square D", search_queries: ["Square D QO120"] },
+      { name: "QO120", barcode: "785901001201", mpn: "QO120", source: "upcitemdb" },
+    ),
+    true,
+  );
+});
+
+test("fills barcode and MPN from product knowledge when catalogs miss", async () => {
+  const found = await resolvePhotoIdentity(
+    "",
+    { name: "Square D QO 20A breaker", brand: "Square D", barcode: "", source: "photo-vision" },
+    async () => null,
+    async () => null,
+    async () => ({ name: "Square D QO120", barcode: "785901001201", mpn: "QO120", source: "photo-knowledge" }),
+  );
+  assert.equal(found.identified?.mpn, "QO120");
+  assert.equal(found.identified?.barcode, "785901001201");
 });
 
 test("label-read name, barcode, and MPN count as identified", async () => {

@@ -1,5 +1,15 @@
 import type { IdentifiedProduct } from "./types.ts";
 
+function codesOverlap(left: string, right: string) {
+  const rawLeft = left.trim();
+  const rawRight = right.trim();
+  if (rawLeft && rawLeft === rawRight) return true;
+  const digitsLeft = rawLeft.replace(/\D/g, "");
+  const digitsRight = rawRight.replace(/\D/g, "");
+  if (!digitsLeft || !digitsRight) return false;
+  return digitsLeft === digitsRight || digitsLeft.endsWith(digitsRight) || digitsRight.endsWith(digitsLeft);
+}
+
 export type IdentityField = "name" | "barcode" | "mpn";
 
 export type PhotoIdentityResult = {
@@ -148,11 +158,62 @@ export function parseVisionObjects(payload: unknown): IdentifiedProduct[] {
   return objects;
 }
 
+const STOP_WORDS = new Set(["the", "and", "for", "with", "from", "inch", "in", "of", "a", "an", "to", "by"]);
+
+function normalizeSku(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function significantTokens(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
+}
+
+export function listingAgrees(known: Partial<IdentifiedProduct> | null | undefined, listing: IdentifiedProduct) {
+  if (isWeakIdentity(listing)) return false;
+  const name = known?.name?.trim() || "";
+  const mpn = known?.mpn?.trim() || "";
+  const barcode = known?.barcode?.trim() || "";
+  const brand = (known?.brand || known?.manufacturer || "").trim();
+  if (!name && !mpn && !barcode) return true;
+  if (barcode && listing.barcode && codesOverlap(barcode, listing.barcode)) {
+    return true;
+  }
+  if (mpn && listing.mpn && normalizeSku(mpn) === normalizeSku(listing.mpn)) return true;
+  const haystack = [listing.name, listing.mpn, listing.brand, listing.manufacturer, ...(listing.search_queries || [])]
+    .filter(Boolean)
+    .join(" ");
+  const needles = [mpn, name, ...(known?.search_queries || [])].filter(Boolean);
+  if (needles.some((needle) => normalizeSku(needle) && normalizeSku(haystack).includes(normalizeSku(needle)))) return true;
+  if (listing.mpn && name && normalizeSku(name).includes(normalizeSku(listing.mpn))) return true;
+  const knownTokens = significantTokens([brand, name, mpn, ...(known?.search_queries || [])].filter(Boolean).join(" "));
+  const listingTokens = significantTokens([listing.brand, listing.manufacturer, listing.name, listing.mpn].filter(Boolean).join(" "));
+  const overlap = knownTokens.filter((token) => listingTokens.includes(token));
+  if (overlap.some((token) => /\d/.test(token) && token.length >= 3)) return true;
+  if (
+    knownTokens.some((knownToken) =>
+      listingTokens.some((listingToken) => {
+        if (knownToken === listingToken) return false;
+        return (/\d/.test(knownToken) || /\d/.test(listingToken)) && (knownToken.includes(listingToken) || listingToken.includes(knownToken));
+      }),
+    )
+  ) {
+    return true;
+  }
+  if (brand && (listing.brand || listing.manufacturer) && normalizeSku(brand) === normalizeSku(listing.brand || listing.manufacturer || "") && overlap.length >= 1) {
+    return true;
+  }
+  return overlap.length >= 2;
+}
+
 export async function resolvePhotoIdentities(
   visions: IdentifiedProduct[],
   barcodes: string[],
   identifyCode: (code: string) => Promise<IdentifiedProduct | null>,
   search: (query: string) => Promise<IdentifiedProduct | null>,
+  completeIdentity?: (product: Partial<IdentifiedProduct>) => Promise<IdentifiedProduct | null>,
 ): Promise<PhotoIdentityResult[]> {
   const used = new Set<string>();
   const uniqueVisions = visions.slice(0, 12);
@@ -160,20 +221,20 @@ export async function resolvePhotoIdentities(
     uniqueVisions.map((vision) => {
       const code = (vision.barcode || "").trim();
       if (code) used.add(code);
-      return resolvePhotoIdentity(code, vision, identifyCode, search);
+      return resolvePhotoIdentity(code, vision, identifyCode, search, completeIdentity);
     }),
   );
   const leftovers = barcodes
     .map((code) => code.trim())
     .filter((code) => code && !used.has(code) && !results.some((row) => row.draft.barcode === code || row.identified?.barcode === code));
   for (const code of leftovers.slice(0, 8)) {
-    results.push(await resolvePhotoIdentity(code, null, identifyCode, search));
+    results.push(await resolvePhotoIdentity(code, null, identifyCode, search, completeIdentity));
   }
   if (!results.length && barcodes[0]) {
-    results.push(await resolvePhotoIdentity(barcodes[0], null, identifyCode, search));
+    results.push(await resolvePhotoIdentity(barcodes[0], null, identifyCode, search, completeIdentity));
   }
   if (!results.length) {
-    results.push(await resolvePhotoIdentity("", null, identifyCode, search));
+    results.push(await resolvePhotoIdentity("", null, identifyCode, search, completeIdentity));
   }
   return results;
 }
@@ -183,31 +244,45 @@ export async function resolvePhotoIdentity(
   vision: IdentifiedProduct | null,
   identifyCode: (code: string) => Promise<IdentifiedProduct | null>,
   search: (query: string) => Promise<IdentifiedProduct | null>,
+  completeIdentity?: (product: Partial<IdentifiedProduct>) => Promise<IdentifiedProduct | null>,
 ): Promise<PhotoIdentityResult> {
   const code = (barcode || vision?.barcode || "").trim();
+  const seed = mergeIdentities(
+    vision && !isWeakIdentity(vision) ? { ...vision, barcode: vision.barcode || code, mpn: vision.mpn } : null,
+    code ? { name: vision && !isWeakIdentity(vision) ? vision.name : "", barcode: code, source: "photo" } : null,
+  );
+  if (isCompleteIdentity(seed)) {
+    return { identified: seed, draft: toDraft(seed), missing: [] };
+  }
+
   const listings: IdentifiedProduct[] = [];
   const rememberListing = (row: IdentifiedProduct | null) => {
-    if (row && !isWeakIdentity(row)) listings.push(row);
+    if (row && listingAgrees(seed, row)) listings.push(row);
   };
 
   if (code) rememberListing(await identifyCode(code));
 
-  for (const query of visionSearchQueries(vision, [code]).slice(0, 6)) {
-    rememberListing(await search(query));
-    const soFar = mergeIdentities(
-      ...listings,
-      vision && !isWeakIdentity(vision) ? vision : null,
-      code ? { name: "", barcode: code, source: "photo" } : null,
-    );
-    if (soFar.barcode && !soFar.mpn) rememberListing(await identifyCode(soFar.barcode));
-    if (isCompleteIdentity(mergeIdentities(...listings, vision))) break;
+  const searched = await Promise.all(visionSearchQueries(vision, [code]).slice(0, 4).map((query) => search(query)));
+  for (const row of searched) rememberListing(row);
+
+  let merged = mergeIdentities(...listings, seed);
+  if (merged.barcode && !merged.mpn) rememberListing(await identifyCode(merged.barcode));
+  merged = mergeIdentities(...listings, seed);
+
+  if (identityGaps(merged).length && completeIdentity) {
+    const known = await completeIdentity(merged);
+    if (known && listingAgrees(merged, { ...known, source: known.source || "photo-knowledge" })) {
+      merged = mergeIdentities(merged, { ...known, source: known.source || "photo-knowledge" });
+    } else if (known && !merged.name && !isWeakIdentity(known)) {
+      merged = mergeIdentities(merged, known);
+    }
   }
 
-  const merged = mergeIdentities(
-    ...listings,
-    vision && !isWeakIdentity(vision) ? { ...vision, barcode: vision.barcode || code, mpn: vision.mpn } : null,
-    code ? { name: "", barcode: code, source: "photo" } : null,
-  );
+  if (merged.barcode && !merged.mpn) {
+    const extra = await identifyCode(merged.barcode);
+    if (extra && listingAgrees(merged, extra)) merged = mergeIdentities(merged, extra);
+  }
+
   const missing = identityGaps(merged);
   if (!missing.length) {
     return { identified: merged, draft: toDraft(merged), missing };
