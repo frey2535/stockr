@@ -226,9 +226,10 @@ export function cropCanvas(source: HTMLCanvasElement, box: { x: number; y: numbe
 export async function prepareCameraPhoto(file: Blob) {
   const canvas = await fileToCanvas(file, 1600);
   const barcodes = await detectBarcodesOnCanvas(canvas);
+  const vision = scaledCopy(canvas, 1024);
   return {
     barcode: barcodes[0] || "",
     barcodes,
-    imageDataUrl: canvas.toDataURL("image/jpeg", 0.9),
+    imageDataUrl: vision.toDataURL("image/jpeg", 0.75),
   };
 }

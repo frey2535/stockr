@@ -36,9 +36,9 @@ export async function POST(request: Request) {
   const named = items.some((item) => item.identified?.name || item.draft.name);
   const error =
     !vision.objects.length && !identifiedCount && image.startsWith("data:image") && !(await canUseVision())
-      ? "Photo ID needs Workers AI on this deploy. The next production deploy binds it."
+      ? "Photo ID needs Workers AI on this deploy."
       : !named && image.startsWith("data:image")
-        ? vision.error || "Could not recognize the item in this photo. Try a clearer shot of the product itself."
+        ? vision.error || "Could not recognize the item in this photo. Photograph the product itself."
         : undefined;
 
   return NextResponse.json({

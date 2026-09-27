@@ -502,6 +502,11 @@ export default function ScannerPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: prepared.imageDataUrl, barcode: prepared.barcode, barcodes: prepared.barcodes }),
       });
+      if (!response.ok) {
+        toast.error(response.status === 504 || response.status === 524 ? "Photo ID timed out. Try a closer photo of one item." : "Photo ID failed. Try again.");
+        applyIdentified({ name: "", barcode: "", source: "photo" }, {}, [], ["name", "barcode", "mpn"]);
+        return;
+      }
       const data = (await response.json().catch(() => null)) as {
         items?: PhotoIdentityResult[];
         identified?: IdentifiedProduct | null;
