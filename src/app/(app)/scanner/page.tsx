@@ -32,7 +32,13 @@ import {
   writeScannerPrefs,
 } from "@/lib/offline-queue";
 import { actionVerb, needsFrom, needsProject, needsTo } from "@/lib/tx";
-import { isCompleteIdentity, isWeakIdentity, type PhotoIdentityResult } from "@/lib/identify-photo";
+import { isCompleteIdentity, isWeakIdentity, type IdentityField, type PhotoIdentityResult } from "@/lib/identify-photo";
+
+function asIdentityFields(values?: string[]): IdentityField[] {
+  const allowed: IdentityField[] = ["name", "barcode", "mpn"];
+  const found = (values || []).filter((value): value is IdentityField => allowed.includes(value as IdentityField));
+  return found.length ? found : allowed;
+}
 import { prepareCameraPhoto } from "@/lib/photo-barcode";
 import { planVoiceCommand } from "@/lib/voice-command";
 import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
@@ -498,22 +504,21 @@ export default function ScannerPage() {
         items?: PhotoIdentityResult[];
         identified?: IdentifiedProduct | null;
         draft?: { name?: string; barcode?: string; mpn?: string; brand?: string; manufacturer?: string; description?: string; image_url?: string; source?: string };
-        missing?: string[];
+        missing?: IdentityField[];
         rows?: Material[];
         onHandByLocation?: Record<string, number>;
       } | null;
-      const items = (data?.items?.length ? data.items : [
-        {
-          identified: data?.identified || null,
-          draft: {
-            name: data?.draft?.name || "",
-            barcode: data?.draft?.barcode || prepared.barcode || "",
-            mpn: data?.draft?.mpn || "",
-            source: data?.draft?.source || "photo",
-          },
-          missing: data?.missing || ["name", "barcode", "mpn"],
+      const fallback: PhotoIdentityResult = {
+        identified: data?.identified || null,
+        draft: {
+          name: data?.draft?.name || "",
+          barcode: data?.draft?.barcode || prepared.barcode || "",
+          mpn: data?.draft?.mpn || "",
+          source: data?.draft?.source || "photo",
         },
-      ]).map((item, index) => ({
+        missing: asIdentityFields(data?.missing),
+      };
+      const items = (data?.items?.length ? data.items : [fallback]).map((item, index) => ({
         ...item,
         key: `${item.identified?.barcode || item.draft.barcode || "item"}-${index}`,
         name: item.identified?.name || item.draft.name,
