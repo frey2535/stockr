@@ -1,12 +1,12 @@
 import type { IdentifiedProduct } from "./types";
-import { collapseVisionObjects, mergeIdentities, parseVisionObjects, parseVisionText } from "./identify-photo";
+import { collapseVisionObjects, isGenericName, mergeIdentities, parseVisionObjects, parseVisionText } from "./identify-photo";
 import { matchKnownProduct } from "./known-products";
 
 export const LENS_PROMPT =
-  "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT itself — shape, color, brand marks, packaging, form factor. A printed barcode is not required. If the photo is one product, return exactly one object. Do not list alternate SKUs, attributes, or guesses as extra objects. Only add another object when a physically different product is visible. Same SKU more than once is one object with quantity. Return the exact trade name a supplier would use, the standard UPC/EAN, and the manufacturer catalog number (MPN). Read digits when visible; if not visible but the SKU is known, fill the well-known UPC and catalog number. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
+  "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT itself — shape, color, brand marks, packaging, form factor. A printed barcode is not required. If the photo is one product, return exactly one object. Never return a generic noun like mouse, keyboard, or breaker as the name — return brand + specific model. Always fill manufacturer, the standard UPC/EAN barcode, and the manufacturer catalog number (MPN). Read digits when visible; if not visible but the SKU is known, fill the well-known UPC and catalog number. Same SKU more than once is one object with quantity. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
 
 const IDENTITY_PROMPT =
-  "You complete product identity for field inventory. The item was already recognized visually. Return the canonical trade name, the standard UPC/EAN barcode, and the manufacturer catalog number (MPN) for that exact SKU. Fill barcode and MPN from product knowledge when the SKU is known. Return JSON { name, brand, manufacturer, barcode, upc, mpn, search_queries }.";
+  "You complete product identity for field inventory. The item was already recognized visually. Never return a generic class word (mouse, breaker, cable) as the name. Return the canonical trade name (brand + model), manufacturer, the standard UPC/EAN barcode, and the manufacturer catalog number (MPN) for that exact SKU. Fill barcode, manufacturer, and MPN from product knowledge when the SKU is known. Return JSON { name, brand, manufacturer, barcode, upc, mpn, search_queries }.";
 
 type WorkersAi = { run: (model: string, input: Record<string, unknown>) => Promise<unknown> };
 
@@ -349,7 +349,7 @@ export async function completeProductIdentity(product: Partial<IdentifiedProduct
         choices?: Array<{ message?: { content?: string } }>;
       } | null;
       const found = await ask(data?.choices?.[0]?.message?.content || "");
-      if (found) return { ...found, source: "photo-knowledge" };
+      if (found && !isGenericName(found.name) && found.barcode && found.mpn) return { ...found, source: "photo-knowledge" };
     }
 
     const run = await runWorkersAi("@cf/meta/llama-4-scout-17b-16e-instruct", {
@@ -362,7 +362,7 @@ export async function completeProductIdentity(product: Partial<IdentifiedProduct
     });
     if (!run.ok) return null;
     const found = await ask(asText(run.payload));
-    return found ? { ...found, source: "photo-knowledge" } : null;
+    return found && !isGenericName(found.name) && found.barcode && found.mpn ? { ...found, source: "photo-knowledge" } : null;
   } catch {
     return null;
   }

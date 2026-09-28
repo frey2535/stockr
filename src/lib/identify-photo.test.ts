@@ -5,6 +5,7 @@ import {
   collapseVisionObjects,
   identityGaps,
   isCompleteIdentity,
+  isGenericName,
   isWeakIdentity,
   inferCatalogNumber,
   listingAgrees,
@@ -13,6 +14,32 @@ import {
   resolvePhotoIdentities,
   resolvePhotoIdentity,
 } from "./identify-photo.ts";
+
+test("a generic noun like mouse is not a complete identity", async () => {
+  assert.equal(isGenericName("mouse"), true);
+  assert.equal(isWeakIdentity({ name: "mouse", barcode: "", source: "photo-vision" }), true);
+  assert.deepEqual(identityGaps({ name: "mouse", source: "photo-vision" }).sort(), ["barcode", "mpn", "name"]);
+  const found = await resolvePhotoIdentity(
+    "",
+    { name: "mouse", barcode: "", source: "photo-vision" },
+    async () => null,
+    async (query) =>
+      query.toLowerCase().includes("mouse")
+        ? {
+            name: "Logitech M185 Wireless Mouse",
+            brand: "Logitech",
+            manufacturer: "Logitech",
+            barcode: "097855082085",
+            mpn: "M185",
+            source: "upcitemdb",
+          }
+        : null,
+  );
+  assert.equal(found.identified?.name, "Logitech M185 Wireless Mouse");
+  assert.equal(found.identified?.manufacturer, "Logitech");
+  assert.equal(found.identified?.barcode, "097855082085");
+  assert.equal(found.identified?.mpn, "M185");
+});
 
 test("complete identity requires a real name, barcode, and manufacturer number", () => {
   assert.deepEqual(identityGaps({ name: "Item from camera photo", barcode: "123", source: "photo" }), ["name", "mpn"]);
