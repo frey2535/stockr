@@ -1,5 +1,6 @@
 import type { IdentifiedProduct } from "./types";
-import { parseVisionObjects } from "./identify-photo";
+import { mergeIdentities, parseVisionObjects, parseVisionText } from "./identify-photo";
+import { matchKnownProduct } from "./known-products";
 
 export const LENS_PROMPT =
   "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT itself — shape, color, brand marks, packaging, form factor. A printed barcode is not required. For each distinct product return the exact trade name a supplier would use, the standard UPC/EAN for that SKU, and the manufacturer catalog number (MPN). Read digits from the photo when they are visible. If they are not visible but you know the exact SKU from appearance, fill the well-known UPC and catalog number. Name the item even when you are not sure of the UPC. Same SKU more than once is one object with quantity. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
@@ -75,11 +76,27 @@ function workersAiRest(): { account: string; token: string } | null {
   return { account, token };
 }
 
+function visionWorkerUrl() {
+  return process.env.STOCKR_VISION_URL?.trim() || "";
+}
+
+function visionWorkerSecret() {
+  return process.env.STOCKR_VISION_SECRET?.trim() || process.env.CLOUDFLARE_API_TOKEN?.trim() || "";
+}
+
+function enrichKnown(objects: IdentifiedProduct[]) {
+  return objects.map((object) => {
+    const known = matchKnownProduct([object.brand, object.name, object.mpn, ...(object.search_queries || [])].filter(Boolean).join(" "));
+    return known ? mergeIdentities(object, known) : object;
+  });
+}
+
 export function hasVisionProvider() {
   return Boolean(
     process.env.OPENAI_API_KEY?.trim() ||
       process.env.GEMINI_API_KEY?.trim() ||
       process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim() ||
+      visionWorkerUrl() ||
       process.env.CLOUDFLARE_ACCOUNT_ID?.trim(),
   );
 }
@@ -253,14 +270,40 @@ async function detectObjectsWithWorkersAi(image: string) {
   return { objects: [] as IdentifiedProduct[], error: lastError || "Vision did not recognize an item in this photo." };
 }
 
+async function detectObjectsWithVisionWorker(image: string) {
+  const url = visionWorkerUrl();
+  if (!url) return { objects: [] as IdentifiedProduct[], error: "" };
+  try {
+    const response = await fetch(url.replace(/\/$/, ""), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(visionWorkerSecret() ? { Authorization: `Bearer ${visionWorkerSecret()}` } : {}),
+      },
+      body: JSON.stringify({ image }),
+      signal: AbortSignal.timeout(28000),
+    });
+    const data = (await response.json().catch(() => null)) as { objects?: unknown; caption?: string; error?: string } | null;
+    if (!response.ok) return { objects: [] as IdentifiedProduct[], error: data?.error || `Vision worker ${response.status}` };
+    const fromJson = parseVisionObjects({ objects: data?.objects });
+    const objects = fromJson.length ? fromJson : parseVisionText(String(data?.caption || ""));
+    return { objects: enrichKnown(objects), error: objects.length ? undefined : data?.error };
+  } catch (error) {
+    return { objects: [] as IdentifiedProduct[], error: error instanceof Error ? error.message : "Vision worker failed." };
+  }
+}
+
 export async function detectObjectsFromVision(image: string): Promise<{ objects: IdentifiedProduct[]; error?: string }> {
   if (!image.startsWith("data:image")) return { objects: [] };
   try {
-    const openai = await detectObjectsWithOpenAI(image);
+    const worker = await detectObjectsWithVisionWorker(image);
+    if (worker.objects.length) return worker;
+    const openai = enrichKnown(await detectObjectsWithOpenAI(image));
     if (openai.length) return { objects: openai };
-    const gemini = await detectObjectsWithGemini(image);
+    const gemini = enrichKnown(await detectObjectsWithGemini(image));
     if (gemini.length) return { objects: gemini };
-    return await detectObjectsWithWorkersAi(image);
+    const fallback = await detectObjectsWithWorkersAi(image);
+    return { objects: enrichKnown(fallback.objects), error: fallback.objects.length ? undefined : worker.error || fallback.error };
   } catch (error) {
     return { objects: [], error: error instanceof Error ? error.message : "Vision failed." };
   }
