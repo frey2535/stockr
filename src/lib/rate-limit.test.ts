@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clientKey, rateLimit } from "./rate-limit.ts";
+import { clientKey, rateLimitMemory } from "./rate-limit.ts";
 
 test("rateLimit blocks after the window fills", () => {
   const key = `test-${Date.now()}`;
-  assert.equal(rateLimit(key, 2, 60_000).ok, true);
-  assert.equal(rateLimit(key, 2, 60_000).ok, true);
-  assert.equal(rateLimit(key, 2, 60_000).ok, false);
+  assert.equal(rateLimitMemory(key, 2, 60_000).ok, true);
+  assert.equal(rateLimitMemory(key, 2, 60_000).ok, true);
+  assert.equal(rateLimitMemory(key, 2, 60_000).ok, false);
 });
 
 test("clientKey prefers Cloudflare connecting IP", () => {

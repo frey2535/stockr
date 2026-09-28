@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (account.role !== "owner") {
     return NextResponse.json({ error: "Only the company owner can delete this workspace." }, { status: 403 });
   }
-  const limited = rateLimit(clientKey(request, `delete:${account.company.id}`), 3, 60 * 60 * 1000);
+  const limited = await rateLimit(clientKey(request, `delete:${account.company.id}`), 3, 60 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json({ error: "Too many delete attempts." }, { status: 429 });
   }

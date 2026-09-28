@@ -28,6 +28,17 @@ function isMissingTable(error: { message?: string; code?: string } | null) {
 }
 
 async function catalog(companyId: string) {
+  if (isSupabaseConfigured()) {
+    const { selectAllForCompany } = await import("./supabase-page");
+    const { getSupabaseAdmin } = await import("./supabase-admin");
+    const rows = await selectAllForCompany<{ id: string; name: string }>(
+      getSupabaseAdmin(),
+      "stockr_materials",
+      companyId,
+      "id, name",
+    );
+    return rows.map((row) => ({ id: row.id, name: row.name }));
+  }
   const state = await getCompanyState(companyId);
   return state.materials.map((row) => ({ id: row.id, name: row.name }));
 }

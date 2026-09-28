@@ -5,7 +5,7 @@ import { clientKey, rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const limited = rateLimit(clientKey(request, "reset"), 8, 15 * 60 * 1000);
+  const limited = await rateLimit(clientKey(request, "reset"), 8, 15 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
   }
