@@ -191,8 +191,22 @@ export function parseVisionText(raw: string): IdentifiedProduct[] {
     .split(/\n+/)
     .map((line) => line.replace(/^[-*\d.)\]]+\s*/, "").trim())
     .filter((line) => line.length >= 3 && line.length <= 80)
-    .filter((line) => !/^(here|json|sure|the image|i see|objects|return)\b/i.test(line));
-  return lines.slice(0, 8).map((name) => ({ name, barcode: "", source: "photo-vision" }));
+    .filter((line) => !isCaptionNoise(line));
+  const productLines = lines.filter(isProductLine);
+  const chosen = (productLines.length ? productLines : lines.slice(0, 1)).slice(0, 6);
+  return collapseVisionObjects(chosen.map((name) => ({ name, barcode: "", source: "photo-vision" })));
+}
+
+function isCaptionNoise(line: string) {
+  return /^(here|json|sure|the image|i see|objects|return|this (is|photo)|it (looks|appears)|possibly|maybe|could be|also|or)\b/i.test(
+    line,
+  );
+}
+
+function isProductLine(line: string) {
+  if (line.length < 6) return false;
+  if (isCaptionNoise(line)) return false;
+  return /\d/.test(line) || /\b[A-Z]{2,}[A-Z0-9-]{2,}\b/.test(line);
 }
 
 const STOP_WORDS = new Set(["the", "and", "for", "with", "from", "inch", "in", "of", "a", "an", "to", "by"]);
@@ -206,6 +220,120 @@ function significantTokens(value: string) {
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
+}
+
+const PRODUCT_FAMILIES = ["breaker", "romex", "nmb", "thhn", "emt", "conduit", "pvc", "box", "receptacle", "switch", "wire", "cable"];
+
+function catalogHints(text: string) {
+  const sku = text.match(/\b([A-Za-z]{1,8}[-/]?[A-Za-z]?\d{2,}[A-Za-z0-9-]*)\b/g) || [];
+  const sized = text.match(/\b(\d+\s*\/\s*\d+\s*(nm-?b|romex|thhn|emt|pvc)|qo\s*\d{2,4})\b/gi) || [];
+  return [...sku, ...sized].map(normalizeSku).filter((hint) => hint.length >= 4);
+}
+
+function objectHint(product: Partial<IdentifiedProduct>) {
+  const barcode = String(product.barcode || "").replace(/\D/g, "");
+  if (barcode.length >= 8) return `bc:${barcode}`;
+  if (product.mpn?.trim()) return `mpn:${normalizeSku(product.mpn)}`;
+  const hint = catalogHints([product.name, product.mpn, ...(product.search_queries || [])].filter(Boolean).join(" "))[0];
+  return hint ? `sku:${hint}` : "";
+}
+
+function brandName(product: Partial<IdentifiedProduct>) {
+  const text = [product.brand, product.manufacturer, product.name].filter(Boolean).join(" ").toLowerCase();
+  return String(product.brand || product.manufacturer || text.match(/\b(square d|southwire|leviton|raco|allied|cantex|ideal)\b/)?.[0] || "")
+    .toLowerCase()
+    .trim();
+}
+
+function skuPrefix(product: Partial<IdentifiedProduct>) {
+  const sku = product.mpn?.trim() ? normalizeSku(product.mpn) : catalogHints([product.name, ...(product.search_queries || [])].filter(Boolean).join(" "))[0] || "";
+  const prefix = sku.replace(/\d+$/, "");
+  return prefix.length >= 2 && /[a-z]/.test(prefix) ? prefix : "";
+}
+
+function familyKey(product: Partial<IdentifiedProduct>) {
+  const text = [product.brand, product.manufacturer, product.name].filter(Boolean).join(" ").toLowerCase();
+  const brand = brandName(product);
+  const family = PRODUCT_FAMILIES.find((word) => text.includes(word)) || "";
+  const prefix = skuPrefix(product);
+  if (brand && prefix) return `${brand}:${prefix}`;
+  if (brand && family) return `${brand}:${family}`;
+  if (prefix) return `:${prefix}`;
+  if (family) return `:${family}`;
+  return "";
+}
+
+function identityScore(product: IdentifiedProduct) {
+  return (
+    (product.barcode ? 8 : 0) +
+    (product.mpn ? 4 : 0) +
+    (/\d/.test(product.name) ? 2 : 0) +
+    Math.min(product.name.length, 40) / 40
+  );
+}
+
+function rankIdentities(rows: IdentifiedProduct[]) {
+  return [...rows].sort((left, right) => identityScore(right) - identityScore(left));
+}
+
+export function collapseVisionObjects(objects: IdentifiedProduct[]): IdentifiedProduct[] {
+  if (objects.length <= 1) return objects;
+
+  const hinted = new Map<string, IdentifiedProduct[]>();
+  const loose: IdentifiedProduct[] = [];
+  for (const object of objects) {
+    const hint = objectHint(object);
+    if (hint) {
+      const rows = hinted.get(hint) || [];
+      rows.push(object);
+      hinted.set(hint, rows);
+    } else {
+      loose.push(object);
+    }
+  }
+
+  const groups = Array.from(hinted.values());
+  for (const object of loose) {
+    const tokens = significantTokens(object.name);
+    const match = groups.find((rows) => {
+      const hay = significantTokens(rows.map((row) => row.name).join(" "));
+      return tokens.some((token) => hay.includes(token));
+    });
+    if (match) match.push(object);
+    else if (groups.length === 1) groups[0].push(object);
+    else if (!groups.length) groups.push([object]);
+  }
+
+  if (!groups.length) return [mergeIdentities(...rankIdentities(objects))];
+
+  const merged = groups.map((rows) => mergeIdentities(...rankIdentities(rows)));
+  const families = new Map<string, IdentifiedProduct[]>();
+  const distinct: IdentifiedProduct[] = [];
+  for (const object of merged) {
+    const family = familyKey(object);
+    if (family && !objectHint(object).startsWith("bc:")) {
+      const rows = families.get(family) || [];
+      rows.push(object);
+      families.set(family, rows);
+    } else {
+      distinct.push(object);
+    }
+  }
+  for (const rows of families.values()) {
+    distinct.push(mergeIdentities(...rankIdentities(rows)));
+  }
+
+  const unique = distinct.filter(
+    (object, index, all) => all.findIndex((other) => objectHint(object) && objectHint(object) === objectHint(other)) === index || !objectHint(object),
+  );
+  const withSku = unique.filter((object) => objectHint(object));
+  if (withSku.length <= 1) return [mergeIdentities(...rankIdentities(unique))];
+  return unique.slice(0, 6);
+}
+
+export function plausibleGtin(code: string) {
+  const digits = code.replace(/\D/g, "");
+  return digits.length === 8 || digits.length === 12 || digits.length === 13 || digits.length === 14;
 }
 
 export function listingAgrees(known: Partial<IdentifiedProduct> | null | undefined, listing: IdentifiedProduct) {
@@ -253,7 +381,7 @@ export async function resolvePhotoIdentities(
   completeIdentity?: (product: Partial<IdentifiedProduct>) => Promise<IdentifiedProduct | null>,
 ): Promise<PhotoIdentityResult[]> {
   const used = new Set<string>();
-  const uniqueVisions = visions.slice(0, 12);
+  const uniqueVisions = collapseVisionObjects(visions).slice(0, 6);
   const results = await Promise.all(
     uniqueVisions.map((vision) => {
       const code = (vision.barcode || "").trim();
@@ -261,11 +389,13 @@ export async function resolvePhotoIdentities(
       return resolvePhotoIdentity(code, vision, identifyCode, search, completeIdentity);
     }),
   );
-  const leftovers = barcodes
-    .map((code) => code.trim())
-    .filter((code) => code && !used.has(code) && !results.some((row) => row.draft.barcode === code || row.identified?.barcode === code));
-  for (const code of leftovers.slice(0, 8)) {
-    results.push(await resolvePhotoIdentity(code, null, identifyCode, search, completeIdentity));
+  if (!uniqueVisions.length) {
+    const leftovers = barcodes
+      .map((code) => code.trim())
+      .filter((code) => plausibleGtin(code) && !used.has(code));
+    for (const code of leftovers.slice(0, 3)) {
+      results.push(await resolvePhotoIdentity(code, null, identifyCode, search, completeIdentity));
+    }
   }
   if (!results.length && barcodes[0]) {
     results.push(await resolvePhotoIdentity(barcodes[0], null, identifyCode, search, completeIdentity));

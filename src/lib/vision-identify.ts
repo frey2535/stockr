@@ -1,9 +1,9 @@
 import type { IdentifiedProduct } from "./types";
-import { mergeIdentities, parseVisionObjects, parseVisionText } from "./identify-photo";
+import { collapseVisionObjects, mergeIdentities, parseVisionObjects, parseVisionText } from "./identify-photo";
 import { matchKnownProduct } from "./known-products";
 
 export const LENS_PROMPT =
-  "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT itself — shape, color, brand marks, packaging, form factor. A printed barcode is not required. For each distinct product return the exact trade name a supplier would use, the standard UPC/EAN for that SKU, and the manufacturer catalog number (MPN). Read digits from the photo when they are visible. If they are not visible but you know the exact SKU from appearance, fill the well-known UPC and catalog number. Name the item even when you are not sure of the UPC. Same SKU more than once is one object with quantity. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
+  "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT itself — shape, color, brand marks, packaging, form factor. A printed barcode is not required. If the photo is one product, return exactly one object. Do not list alternate SKUs, attributes, or guesses as extra objects. Only add another object when a physically different product is visible. Same SKU more than once is one object with quantity. Return the exact trade name a supplier would use, the standard UPC/EAN, and the manufacturer catalog number (MPN). Read digits when visible; if not visible but the SKU is known, fill the well-known UPC and catalog number. Return JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, category, description, quantity, search_queries, box: { x, y, w, h } }] }. box values are 0-1 fractions of the image.";
 
 const IDENTITY_PROMPT =
   "You complete product identity for field inventory. The item was already recognized visually. Return the canonical trade name, the standard UPC/EAN barcode, and the manufacturer catalog number (MPN) for that exact SKU. Fill barcode and MPN from product knowledge when the SKU is known. Return JSON { name, brand, manufacturer, barcode, upc, mpn, search_queries }.";
@@ -85,10 +85,12 @@ function visionWorkerSecret() {
 }
 
 function enrichKnown(objects: IdentifiedProduct[]) {
-  return objects.map((object) => {
-    const known = matchKnownProduct([object.brand, object.name, object.mpn, ...(object.search_queries || [])].filter(Boolean).join(" "));
-    return known ? mergeIdentities(object, known) : object;
-  });
+  return collapseVisionObjects(
+    objects.map((object) => {
+      const known = matchKnownProduct([object.brand, object.name, object.mpn, ...(object.search_queries || [])].filter(Boolean).join(" "));
+      return known ? mergeIdentities(object, known) : object;
+    }),
+  );
 }
 
 export function hasVisionProvider() {
