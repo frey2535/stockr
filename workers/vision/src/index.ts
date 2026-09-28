@@ -4,13 +4,28 @@ type Env = {
 };
 
 const NAME_PROMPT =
-  "You are Google Lens for contractor materials and packaged goods. Look at the OBJECT, not a barcode. Name the main commercial product you actually see: brand + trade name + catalog number if known. If the photo is one item, write one line only. Do not list alternate SKUs, attributes, or guesses. Only add another line when a physically different product is visible. No intro, no bullets, no JSON.";
+  "You are Google Lens for contractor materials, tools, and packaged goods. Look at the OBJECT, not a barcode. Name the main commercial product: brand + specific model + catalog number. Never return a generic noun like mouse, breaker, or cable. If the photo is one item, write one line only. Do not list alternate SKUs. Only add another line when a physically different product is visible. No intro, no bullets, no JSON.";
 
 const JSON_PROMPT =
-  "Turn these visually recognized products into inventory identity JSON. If the input is one product described several ways, return exactly one object. Only return multiple objects for physically different products. Fill the standard UPC/EAN barcode and manufacturer catalog number (MPN) when the exact SKU is known. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
+  "Turn these visually recognized products into inventory identity JSON. If the input is one product described several ways, return exactly one object. Never use a generic noun as the name. Always fill manufacturer, the standard UPC/EAN barcode, and the manufacturer catalog number (MPN) when the SKU can be known from appearance. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
 
 const DETECT_PROMPT =
-  "Look at this photo. Identify the commercial product you actually see. If the photo is one item, return exactly one object. Do not list alternate SKUs, attributes, or guesses as extra objects. Only add another object when a physically different product is visible. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
+  "Look at this photo. Identify the commercial product you actually see as brand + specific model. Never return only a generic noun like mouse, keyboard, or breaker. If the photo is one item, return exactly one object. Always fill manufacturer, barcode (UPC/EAN), and mpn when the SKU is known. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
+
+function isGenericNoun(name: string) {
+  return /^(a |an |the )?(mouse|computer mouse|wireless mouse|keyboard|item|product|object|tool|device|cable|wire|box|breaker|phone|adapter|charger)$/i.test(
+    name.trim(),
+  );
+}
+
+function isThinObject(object: { name?: string; brand?: string; manufacturer?: string; barcode?: string; mpn?: string }) {
+  return (
+    !object.barcode ||
+    !object.mpn ||
+    !(object.manufacturer || object.brand) ||
+    isGenericNoun(String(object.name || ""))
+  );
+}
 
 function asText(payload: unknown): string {
   if (typeof payload === "string") return payload;
@@ -201,14 +216,16 @@ export default {
       return Response.json({ objects: [], error: "Send a photo." }, { status: 400 });
     }
     const direct = await detectJson(env, image);
-    if (direct.length) {
+    const thin = !direct.length || direct.some((row) => isThinObject(row as { name?: string; brand?: string; manufacturer?: string; barcode?: string; mpn?: string }));
+    if (direct.length && !thin) {
       return Response.json({ objects: direct });
     }
     const named = await caption(env, image);
-    const objects = named ? await complete(env, named) : [];
-    if (!objects.length && named) {
+    const objects = await complete(env, [named, direct.length ? JSON.stringify({ objects: direct }) : ""].filter(Boolean).join("\n"));
+    const best = objects.length ? objects : direct;
+    if (!best.length && named) {
       return Response.json({ objects: objectsFrom(named), caption: named });
     }
-    return Response.json({ objects, caption: named || undefined });
+    return Response.json({ objects: best, caption: named || undefined });
   },
 };

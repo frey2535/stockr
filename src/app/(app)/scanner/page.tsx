@@ -810,18 +810,19 @@ export default function ScannerPage() {
             <CardTitle className="text-base">
               {identityMissing.length ? "Not identified" : identified.name}
             </CardTitle>
-            {identityMissing.length === 0 ? (
+            {(identified.manufacturer || identified.brand || identified.mpn || identified.barcode) ? (
               <p className="text-sm text-muted-foreground">
                 {[identified.manufacturer || identified.brand, identified.mpn, identified.barcode]
                   .filter(Boolean)
                   .join(" · ")}
               </p>
-            ) : (
+            ) : null}
+            {identityMissing.length ? (
               <p className="text-sm text-muted-foreground">
                 A photo is not an identity. Enter the name, barcode, and manufacturer number
-                {identityMissing.length ? ` (missing ${identityMissing.join(", ")})` : ""}.
+                {` (missing ${identityMissing.join(", ")})`}.
               </p>
-            )}
+            ) : null}
             <Badge variant="outline" className="w-fit">
               {identityMissing.length
                 ? "Needs name, barcode, and MPN"
@@ -844,6 +845,10 @@ export default function ScannerPage() {
               <div className="space-y-1 sm:col-span-2">
                 <Label className="text-xs">Name *</Label>
                 <Input value={draftName} onChange={(event) => setDraftName(event.target.value)} placeholder="Trade name" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Manufacturer</Label>
+                <Input value={identified.manufacturer || identified.brand || ""} readOnly placeholder="Manufacturer" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Barcode / UPC *</Label>

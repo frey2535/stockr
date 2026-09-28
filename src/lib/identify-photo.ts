@@ -22,9 +22,40 @@ function filled(value?: string | null) {
   return Boolean(value?.trim());
 }
 
+const GENERIC_NOUNS = new Set([
+  "mouse",
+  "computer mouse",
+  "wireless mouse",
+  "keyboard",
+  "item",
+  "product",
+  "object",
+  "tool",
+  "device",
+  "cable",
+  "wire",
+  "box",
+  "breaker",
+  "phone",
+  "adapter",
+  "charger",
+  "remote",
+  "headset",
+  "speaker",
+]);
+
+export function isGenericName(name?: string | null) {
+  const trimmed = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^(a|an|the)\s+/, "");
+  return GENERIC_NOUNS.has(trimmed);
+}
+
 export function isWeakIdentity(product: IdentifiedProduct | null | undefined) {
   if (!product?.name?.trim()) return true;
   return (
+    isGenericName(product.name) ||
     product.source === "scan" ||
     product.source === "photo" ||
     /^scanned item\b/i.test(product.name) ||
@@ -64,11 +95,16 @@ export function buildProductSearchQuery(product: Partial<IdentifiedProduct>) {
 }
 
 export function visionSearchQueries(vision: IdentifiedProduct | null, extra: string[] = []) {
+  const name = vision?.name?.trim() || "";
   const queries = [
     ...extra,
     ...(vision?.search_queries || []),
     vision?.mpn || "",
     vision?.barcode || "",
+    name,
+    name ? `${name} UPC` : "",
+    name ? `${name} barcode` : "",
+    name ? `${name} manufacturer part number` : "",
     vision && !isWeakIdentity(vision) ? buildProductSearchQuery(vision) : "",
     vision && !isWeakIdentity(vision) ? [vision.brand || vision.manufacturer, vision.mpn || vision.name].filter(Boolean).join(" ") : "",
     vision && !isWeakIdentity(vision) ? `${buildProductSearchQuery(vision)} UPC` : "",
@@ -343,6 +379,12 @@ export function listingAgrees(known: Partial<IdentifiedProduct> | null | undefin
   const barcode = known?.barcode?.trim() || "";
   const brand = (known?.brand || known?.manufacturer || "").trim();
   if (!name && !mpn && !barcode) return true;
+  if (isGenericName(name)) {
+    const noun = name.toLowerCase().replace(/^(a|an|the)\s+/, "");
+    if (listing.name.toLowerCase().includes(noun) && (listing.barcode || listing.mpn) && !isGenericName(listing.name)) {
+      return true;
+    }
+  }
   if (barcode && listing.barcode && codesOverlap(barcode, listing.barcode)) {
     return true;
   }
@@ -382,6 +424,10 @@ export async function resolvePhotoIdentities(
 ): Promise<PhotoIdentityResult[]> {
   const used = new Set<string>();
   const uniqueVisions = collapseVisionObjects(visions).slice(0, 6);
+  const leftoverGtins = barcodes.map((code) => code.trim()).filter((code) => plausibleGtin(code));
+  if (uniqueVisions.length === 1 && !uniqueVisions[0]?.barcode && leftoverGtins[0]) {
+    uniqueVisions[0] = { ...uniqueVisions[0], barcode: leftoverGtins[0] };
+  }
   const results = await Promise.all(
     uniqueVisions.map((vision) => {
       const code = (vision.barcode || "").trim();
@@ -390,10 +436,7 @@ export async function resolvePhotoIdentities(
     }),
   );
   if (!uniqueVisions.length) {
-    const leftovers = barcodes
-      .map((code) => code.trim())
-      .filter((code) => plausibleGtin(code) && !used.has(code));
-    for (const code of leftovers.slice(0, 3)) {
+    for (const code of leftoverGtins.filter((code) => !used.has(code)).slice(0, 3)) {
       results.push(await resolvePhotoIdentity(code, null, identifyCode, search, completeIdentity));
     }
   }
@@ -415,8 +458,10 @@ export async function resolvePhotoIdentity(
 ): Promise<PhotoIdentityResult> {
   const code = (barcode || vision?.barcode || "").trim();
   const seed = mergeIdentities(
-    vision && !isWeakIdentity(vision) ? { ...vision, barcode: vision.barcode || code, mpn: vision.mpn } : null,
-    code ? { name: vision && !isWeakIdentity(vision) ? vision.name : "", barcode: code, source: "photo" } : null,
+    vision
+      ? { ...vision, barcode: vision.barcode || code, mpn: vision.mpn }
+      : null,
+    code ? { name: vision && !isWeakIdentity(vision) ? vision.name : vision?.name || "", barcode: code, source: "photo" } : null,
   );
   if (isCompleteIdentity(seed)) {
     return { identified: seed, draft: toDraft(seed), missing: [] };
@@ -438,10 +483,13 @@ export async function resolvePhotoIdentity(
 
   if (identityGaps(merged).length && completeIdentity) {
     const known = await completeIdentity(merged);
-    if (known && listingAgrees(merged, { ...known, source: known.source || "photo-knowledge" })) {
+    const usable =
+      known &&
+      !isGenericName(known.name) &&
+      (listingAgrees(merged, { ...known, source: known.source || "photo-knowledge" }) ||
+        ((isGenericName(merged.name) || !merged.name) && Boolean(known.barcode && known.mpn)));
+    if (usable && known) {
       merged = mergeIdentities(merged, { ...known, source: known.source || "photo-knowledge" });
-    } else if (known && !merged.name && !isWeakIdentity(known)) {
-      merged = mergeIdentities(merged, known);
     }
   }
 
