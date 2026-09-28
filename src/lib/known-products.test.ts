@@ -19,3 +19,9 @@ test("parses a free-text Lens caption into product names", () => {
   assert.equal(objects.length, 2);
   assert.equal(objects[0]?.name.includes("QO120"), true);
 });
+
+test("does not treat a generic word as a catalog SKU", () => {
+  assert.equal(matchKnownProduct("emt"), null);
+  assert.equal(matchKnownProduct("thhn"), null);
+  assert.equal(matchKnownProduct("square box"), null);
+});

@@ -7,7 +7,7 @@ type KnownProduct = {
 
 const KNOWN: KnownProduct[] = [
   {
-    match: /\b(qo\s*120|20a (single[- ]pole )?breaker|square d.*(20a|qo)|qo breaker)\b/i,
+    match: /\b(qo\s*120|square d.{0,40}(qo\s*120|20a (single[- ]pole )?breaker)|20a single[- ]pole breaker)\b/i,
     product: {
       name: "Square D QO120 20A Single Pole Breaker",
       brand: "Square D",
@@ -18,7 +18,7 @@ const KNOWN: KnownProduct[] = [
     },
   },
   {
-    match: /\b(12\s*\/\s*2|12-2).*(nm-?b|romex)|romex|nm-?b\b/i,
+    match: /\b((12\s*\/\s*2|12-2).{0,24}(nm-?b|romex)|nm-?b romex)\b/i,
     product: {
       name: "Southwire 12/2 NM-B Romex",
       brand: "Southwire",
@@ -29,7 +29,7 @@ const KNOWN: KnownProduct[] = [
     },
   },
   {
-    match: /\b(#?\s*12|number 12).*(thhn)|thhn\b/i,
+    match: /\b(#?\s*12|number 12).{0,16}thhn\b/i,
     product: {
       name: "Southwire #12 THHN Black",
       brand: "Southwire",
@@ -40,7 +40,7 @@ const KNOWN: KnownProduct[] = [
     },
   },
   {
-    match: /\b(3\s*\/\s*4|3-4).*(emt|conduit)|emt\b/i,
+    match: /\b(3\s*\/\s*4|3-4).{0,16}(emt|conduit)\b/i,
     product: {
       name: '3/4" EMT Conduit',
       brand: "Allied",
@@ -51,7 +51,7 @@ const KNOWN: KnownProduct[] = [
     },
   },
   {
-    match: /\b(1\s*\/\s*2|1-2).*(pvc|conduit)|pvc conduit\b/i,
+    match: /\b(1\s*\/\s*2|1-2).{0,16}pvc\b/i,
     product: {
       name: '1/2" PVC Conduit',
       brand: "Cantex",
@@ -62,7 +62,7 @@ const KNOWN: KnownProduct[] = [
     },
   },
   {
-    match: /\b4"?\s*square box|square box|raco\b/i,
+    match: /\b(4"?\s*square box|raco[- ]?190)\b/i,
     product: {
       name: '4" Square Box',
       brand: "Raco",

@@ -537,6 +537,23 @@ export default function ScannerPage() {
         mpn: item.identified?.mpn || item.draft.mpn,
       }));
       setDetectedItems(items);
+      try {
+        localStorage.setItem(
+          "stockr_last_photo_identity",
+          JSON.stringify({
+            at: Date.now(),
+            items: items.map((item) => ({
+              name: item.name,
+              barcode: item.barcode,
+              mpn: item.mpn,
+              missing: item.missing,
+              source: item.draft.source,
+            })),
+          }),
+        );
+      } catch {
+        /* private mode */
+      }
       if (items.length > 1) {
         const complete = items.filter((item) => item.identified).length;
         toast.success(`Detected ${items.length} items${complete ? ` · ${complete} identified` : ""}`);

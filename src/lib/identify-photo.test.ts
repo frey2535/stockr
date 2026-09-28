@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildProductSearchQuery,
+  collapseVisionObjects,
   identityGaps,
   isCompleteIdentity,
   isWeakIdentity,
   inferCatalogNumber,
   listingAgrees,
   parseVisionObjects,
+  parseVisionText,
   resolvePhotoIdentities,
   resolvePhotoIdentity,
 } from "./identify-photo.ts";
@@ -102,19 +104,51 @@ test("parses numerous objects from one vision payload", () => {
   assert.equal(objects[0]?.box?.w, 0.3);
 });
 
-test("resolves leftover barcodes as extra items in the same photo", async () => {
+test("does not treat leftover camera barcodes as extra items when the photo already named the product", async () => {
   const items = await resolvePhotoIdentities(
     [{ name: "QO120", barcode: "785901001201", mpn: "QO120", source: "photo-vision" }],
-    ["785901001201", "032886902245"],
+    ["785901001201", "049000028911"],
     async (code) =>
-      code === "032886902245"
-        ? { name: "12/2 NM-B", barcode: code, mpn: "288290", source: "upcitemdb" }
-        : null,
+      code === "049000028911" ? { name: "Diet Coke", barcode: code, mpn: "COKE", source: "upcitemdb" } : null,
     async () => null,
   );
-  assert.equal(items.length, 2);
+  assert.equal(items.length, 1);
   assert.equal(items[0]?.identified?.mpn, "QO120");
-  assert.equal(items[1]?.identified?.name, "12/2 NM-B");
+});
+
+test("uses a leftover barcode only when vision saw nothing", async () => {
+  const items = await resolvePhotoIdentities(
+    [],
+    ["032886902245"],
+    async (code) => ({ name: "12/2 NM-B", barcode: code, mpn: "288290", source: "upcitemdb" }),
+    async () => null,
+  );
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.identified?.name, "12/2 NM-B");
+});
+
+test("collapses eight guesses of the same breaker into one identity", () => {
+  const objects = collapseVisionObjects(
+    parseVisionText(
+      [
+        "Circuit breaker",
+        "Square D QO120 20A single pole",
+        "20A breaker",
+        "QO120",
+        "black handle",
+        "Square D QO115 maybe",
+        "electrical breaker",
+        "20 amp Square D",
+      ].join("\n"),
+    ),
+  );
+  assert.equal(objects.length, 1);
+  assert.equal(objects[0]?.name.toLowerCase().includes("qo") || objects[0]?.name.toLowerCase().includes("breaker"), true);
+});
+
+test("keeps two physically different products from one caption", () => {
+  const objects = parseVisionText("Square D QO120 20A breaker\nSouthwire 12/2 NM-B Romex");
+  assert.equal(objects.length, 2);
 });
 
 test("does not merge an unrelated catalog hit onto a vision identity", async () => {

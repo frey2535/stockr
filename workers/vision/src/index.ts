@@ -4,10 +4,13 @@ type Env = {
 };
 
 const NAME_PROMPT =
-  "You are Google Lens for contractor materials and packaged goods. Look at the OBJECT, not a barcode. List every distinct commercial product you see. One product per line: brand + trade name + catalog number if known. No intro, no bullets, no JSON.";
+  "You are Google Lens for contractor materials and packaged goods. Look at the OBJECT, not a barcode. Name the main commercial product you actually see: brand + trade name + catalog number if known. If the photo is one item, write one line only. Do not list alternate SKUs, attributes, or guesses. Only add another line when a physically different product is visible. No intro, no bullets, no JSON.";
 
 const JSON_PROMPT =
-  "Turn these visually recognized products into inventory identity JSON. For each product fill the standard UPC/EAN barcode and manufacturer catalog number (MPN) when the exact SKU is known. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
+  "Turn these visually recognized products into inventory identity JSON. If the input is one product described several ways, return exactly one object. Only return multiple objects for physically different products. Fill the standard UPC/EAN barcode and manufacturer catalog number (MPN) when the exact SKU is known. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
+
+const DETECT_PROMPT =
+  "Look at this photo. Identify the commercial product you actually see. If the photo is one item, return exactly one object. Do not list alternate SKUs, attributes, or guesses as extra objects. Only add another object when a physically different product is visible. Return only JSON { objects: [{ name, brand, manufacturer, barcode, upc, mpn, search_queries }] }.";
 
 function asText(payload: unknown): string {
   if (typeof payload === "string") return payload;
@@ -44,13 +47,24 @@ function parseJson(raw: string) {
 }
 
 function linesToObjects(raw: string) {
-  return raw
+  const lines = raw
     .split(/\n+/)
     .map((line) => line.replace(/^[-*\d.)\]]+\s*/, "").trim())
-    .filter((line) => line.length >= 3 && line.length <= 80)
-    .filter((line) => !/^(here|json|sure|the image|i see|objects)\b/i.test(line))
-    .slice(0, 8)
-    .map((name) => ({ name, brand: "", barcode: "", mpn: "", search_queries: [name] }));
+    .filter((line) => line.length >= 6 && line.length <= 80)
+    .filter((line) => !/^(here|json|sure|the image|i see|objects|this|it |possibly|maybe|could|also|or )\b/i.test(line))
+    .filter((line) => /\d/.test(line) || /\b[A-Z]{2,}[A-Z0-9-]{2,}\b/.test(line));
+  const chosen = (lines.length ? lines : raw.split(/\n+/).map((line) => line.trim()).filter((line) => line.length >= 6)).slice(0, 1);
+  return chosen.map((name) => ({ name, brand: "", barcode: "", mpn: "", search_queries: [name] }));
+}
+
+function collapseObjects(objects: Array<Record<string, string | string[]>>) {
+  if (objects.length <= 1) return objects;
+  const keys = objects
+    .map((row) => String(row.mpn || row.barcode || "").replace(/\W/g, "").toLowerCase())
+    .filter(Boolean);
+  if (new Set(keys).size > 1) return objects.slice(0, 6);
+  const best = objects.find((row) => row.barcode || row.mpn) || objects[0];
+  return best ? [best] : objects.slice(0, 1);
 }
 
 function objectsFrom(raw: string) {
@@ -77,9 +91,9 @@ function objectsFrom(raw: string) {
         };
       })
       .filter(Boolean);
-    if (objects.length) return objects;
+    if (objects.length) return collapseObjects(objects as Array<Record<string, string | string[]>>);
   }
-  return linesToObjects(raw);
+  return collapseObjects(linesToObjects(raw));
 }
 
 function splitImage(image: string) {
@@ -90,6 +104,29 @@ function splitImage(image: string) {
 
 async function run(env: Env, model: string, input: Record<string, unknown>) {
   return env.AI.run(model, input);
+}
+
+async function detectJson(env: Env, image: string) {
+  const parts = splitImage(image);
+  if (!parts) return [];
+  try {
+    const scout = await run(env, "@cf/meta/llama-4-scout-17b-16e-instruct", {
+      temperature: 0,
+      max_tokens: 500,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: DETECT_PROMPT },
+            { type: "image_url", image_url: { url: parts.dataUrl } },
+          ],
+        },
+      ],
+    });
+    return objectsFrom(asText(scout).trim());
+  } catch {
+    return [];
+  }
 }
 
 async function caption(env: Env, image: string) {
@@ -162,6 +199,10 @@ export default {
     const image = String(body?.image || "");
     if (!image.startsWith("data:image")) {
       return Response.json({ objects: [], error: "Send a photo." }, { status: 400 });
+    }
+    const direct = await detectJson(env, image);
+    if (direct.length) {
+      return Response.json({ objects: direct });
     }
     const named = await caption(env, image);
     const objects = named ? await complete(env, named) : [];
