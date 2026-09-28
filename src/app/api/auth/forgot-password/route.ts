@@ -26,7 +26,7 @@ async function sendResetEmail(email: string, token: string) {
 }
 
 export async function POST(request: Request) {
-  const limited = rateLimit(clientKey(request, "forgot"), 5, 15 * 60 * 1000);
+  const limited = await rateLimit(clientKey(request, "forgot"), 5, 15 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json({ error: "Too many reset requests. Try again later." }, { status: 429 });
   }

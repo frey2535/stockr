@@ -4,6 +4,8 @@ import { encodeStateForPersist } from "./persist-state";
 import { toolsFromProjects } from "./tools-state";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { selectAllForCompany } from "./supabase-page";
+import { tokenLookup } from "./token-lookup";
 import { uid } from "./id";
 import {
   PLATFORM_OWNER_COMPANY_ID,
@@ -46,6 +48,9 @@ type CompanyRow = {
   accent_color: string;
   buildr_linked: boolean;
   buildr_company_id: string;
+  play_product_id?: string | null;
+  play_purchase_token?: string | null;
+  play_expires_at?: string | null;
 };
 
 type SessionRow = {
@@ -66,29 +71,33 @@ function throwIfError(error: { message: string } | null, action: string) {
 
 export async function getCompanyState(companyId: string): Promise<StoreState> {
   const supabase = getSupabaseAdmin();
-  const [companyRes, locationsRes, materialsRes, inventoryRes, txRes, poRes, lineRes, codesRes, projectsRes, toolsRes] =
+  const [companyRes, locations, materials, inventory, transactions, purchaseOrders, lines, accessCodes, projects, tools] =
     await Promise.all([
       supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
-      supabase.from("stockr_locations").select("*").eq("company_id", companyId),
-      supabase.from("stockr_materials").select("*").eq("company_id", companyId),
-      supabase.from("stockr_inventory").select("*").eq("company_id", companyId),
-      supabase.from("stockr_transactions").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
-      supabase.from("stockr_purchase_orders").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
-      supabase.from("stockr_purchase_order_lines").select("*").eq("company_id", companyId),
-      supabase.from("stockr_access_codes").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
-      supabase.from("stockr_projects").select("*").eq("company_id", companyId),
-      supabase.from("stockr_tools").select("*").eq("company_id", companyId),
+      selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
+      selectAllForCompany<Material>(supabase, "stockr_materials", companyId),
+      selectAllForCompany<InventoryItem>(supabase, "stockr_inventory", companyId),
+      selectAllForCompany<Transaction>(supabase, "stockr_transactions", companyId),
+      selectAllForCompany<PurchaseOrder>(supabase, "stockr_purchase_orders", companyId),
+      selectAllForCompany<{
+        purchase_order_id: string;
+        material_id: string;
+        expected_quantity: number;
+        received_quantity: number;
+        unit_cost: number | null;
+      }>(supabase, "stockr_purchase_order_lines", companyId),
+      selectAllForCompany<AccessCode>(supabase, "stockr_access_codes", companyId),
+      selectAllForCompany<Project>(supabase, "stockr_projects", companyId),
+      selectAllForCompany<Tool>(supabase, "stockr_tools", companyId),
     ]);
 
-  for (const result of [companyRes, locationsRes, materialsRes, inventoryRes, txRes, poRes, lineRes, codesRes, projectsRes]) {
-    if (result.error) throwIfError(result.error, "Load company workspace");
-  }
+  throwIfError(companyRes.error, "Load company workspace");
 
   const company = companyRes.data as CompanyRow | null;
   if (!company) return createEmptyState("New company");
 
   const linesByPo = new Map<string, PurchaseOrder["lines"]>();
-  for (const line of lineRes.data || []) {
+  for (const line of lines) {
     const rows = linesByPo.get(line.purchase_order_id) || [];
     rows.push({
       material_id: line.material_id,
@@ -99,7 +108,7 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
     linesByPo.set(line.purchase_order_id, rows);
   }
 
-  const purchaseOrders: PurchaseOrder[] = (poRes.data || []).map((row) => ({
+  const purchaseOrdersMapped: PurchaseOrder[] = purchaseOrders.map((row) => ({
     id: row.id,
     po_number: row.po_number,
     supplier: row.supplier,
@@ -118,32 +127,28 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
       buildr_linked: company.buildr_linked,
       buildr_company_id: company.buildr_company_id,
     },
-    locations: (locationsRes.data || []) as Location[],
-    materials: (materialsRes.data || []).map((row) => ({
+    locations,
+    materials: materials.map((row) => ({
       ...row,
       unit_cost: row.unit_cost == null ? null : Number(row.unit_cost),
       reorder_point: row.reorder_point == null ? null : Number(row.reorder_point),
       min_stock_level: row.min_stock_level == null ? null : Number(row.min_stock_level),
       aliases: Array.isArray(row.aliases) ? row.aliases : [],
-    })) as Material[],
-    inventory: (inventoryRes.data || []).map((row) => ({
+    })),
+    inventory: inventory.map((row) => ({
       id: row.id,
       material_id: row.material_id,
       location_id: row.location_id,
       quantity: Number(row.quantity),
-    })) as InventoryItem[],
-    transactions: (txRes.data || []).map((row) => ({
+    })),
+    transactions: transactions.map((row) => ({
       ...row,
       quantity: Number(row.quantity),
-    })) as Transaction[],
-    purchaseOrders,
-    accessCodes: (codesRes.data || []) as AccessCode[],
-    projects: (projectsRes.data || []) as Project[],
-    tools: toolsRes.error
-      ? toolsFromProjects((projectsRes.data || []) as Project[], [])
-      : ((toolsRes.data || []) as Tool[]).length
-        ? ((toolsRes.data || []) as Tool[])
-        : toolsFromProjects((projectsRes.data || []) as Project[], []),
+    })),
+    purchaseOrders: purchaseOrdersMapped,
+    accessCodes,
+    projects,
+    tools: tools.length ? tools : toolsFromProjects(projects, []),
     stockRules: [],
   });
 }
@@ -232,14 +237,15 @@ export async function getAccount(
   ]);
   throwIfError(membershipRes.error, "Look up membership");
   if (!user || !company || !membershipRes.data) return null;
+  const live = await expirePlayPlan(company);
   return {
     user: { id: user.id, email: user.email, name: user.name },
     company: {
-      id: company.id,
-      name: company.name,
-      slug: company.slug,
-      plan: company.plan,
-      planStatus: company.plan_status,
+      id: live.id,
+      name: live.name,
+      slug: live.slug,
+      plan: live.plan,
+      planStatus: live.plan_status,
     },
     role: membershipRes.data.role as MemberRole,
     members: options?.members === false ? [] : await listMembers(companyId),
@@ -450,6 +456,33 @@ export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: s
   };
 }
 
+export async function setPlayPurchase(
+  companyId: string,
+  input: { productId: string; purchaseToken: string; expiresAt?: string | null },
+) {
+  const { error } = await getSupabaseAdmin()
+    .from("stockr_companies")
+    .update({
+      play_product_id: input.productId,
+      play_purchase_token: input.purchaseToken,
+      play_expires_at: input.expiresAt || null,
+    })
+    .eq("id", companyId);
+  throwIfError(error, "Save Play purchase");
+}
+
+async function expirePlayPlan(company: CompanyRow) {
+  if (!company.play_purchase_token || !company.play_expires_at) return company;
+  if (new Date(company.play_expires_at).getTime() > Date.now()) return company;
+  if (company.plan === "starter") return company;
+  await setCompanyPlan(company.id, "starter");
+  await getSupabaseAdmin()
+    .from("stockr_companies")
+    .update({ play_product_id: null, play_purchase_token: null, play_expires_at: null })
+    .eq("id", company.id);
+  return { ...company, plan: "starter" as PlanId, plan_status: "active" as const };
+}
+
 export async function setCompanyPlan(companyId: string, plan: PlanId) {
   const { error } = await getSupabaseAdmin()
     .from("stockr_companies")
@@ -482,6 +515,7 @@ export async function createPasswordReset(email: string) {
     id: uid("pr"),
     user_id: user.id,
     token_hash: tokenHash,
+    token_lookup: tokenLookup(token),
     expires_at: expiresAt,
   });
   if (insert.error) return { token, email: user.email, stored: false as const };
@@ -489,12 +523,23 @@ export async function createPasswordReset(email: string) {
 }
 
 export async function consumePasswordReset(token: string, password: string) {
-  const { data, error } = await getSupabaseAdmin().from("stockr_password_resets").select("*");
-  throwIfError(error, "Look up password reset");
-  const row = (data || []).find((item) => bcrypt.compareSync(token, String(item.token_hash || "")));
-  if (!row || new Date(String(row.expires_at)).getTime() < Date.now()) return { error: "That reset link is invalid or expired." };
+  const supabase = getSupabaseAdmin();
+  const lookup = await supabase.from("stockr_password_resets").select("*").eq("token_lookup", tokenLookup(token)).maybeSingle();
+  throwIfError(lookup.error, "Look up password reset");
+  let row = lookup.data;
+  if (!row) {
+    const { data, error } = await supabase.from("stockr_password_resets").select("*").is("token_lookup", null);
+    throwIfError(error, "Look up password reset");
+    row = (data || []).find((item) => bcrypt.compareSync(token, String(item.token_hash || ""))) || null;
+  }
+  if (!row || new Date(String(row.expires_at)).getTime() < Date.now()) {
+    return { error: "That reset link is invalid or expired." };
+  }
+  if (row.token_hash && !bcrypt.compareSync(token, String(row.token_hash))) {
+    return { error: "That reset link is invalid or expired." };
+  }
   await setUserPassword(String(row.user_id), password);
-  await getSupabaseAdmin().from("stockr_password_resets").delete().eq("id", row.id);
+  await supabase.from("stockr_password_resets").delete().eq("id", row.id);
   return { ok: true as const };
 }
 

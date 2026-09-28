@@ -12,7 +12,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const limited = rateLimit(clientKey(request, "login"), 12, 15 * 60 * 1000);
+  const limited = await rateLimit(clientKey(request, "login"), 12, 15 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json({ error: "Too many sign-in attempts. Try again later." }, { status: 429 });
   }

@@ -29,6 +29,10 @@ type Adapter = {
     password: string,
   ) => { userId: string; companyId: string } | null | Promise<{ userId: string; companyId: string } | null>;
   setCompanyPlan: (companyId: string, plan: PlanId) => void | Promise<void>;
+  setPlayPurchase?: (
+    companyId: string,
+    input: { productId: string; purchaseToken: string; expiresAt?: string | null },
+  ) => void | Promise<void>;
   updateCompanyName: (companyId: string, name: string) => void | Promise<void>;
   seedDemoTenant?: () => void | Promise<void>;
   ensurePlatformOwner?: () => void | Promise<void>;
@@ -123,6 +127,15 @@ export async function verifyPassword(email: string, password: string) {
 
 export async function setCompanyPlan(companyId: string, plan: PlanId) {
   return (await loadAdapter()).setCompanyPlan(companyId, plan);
+}
+
+export async function setPlayPurchase(
+  companyId: string,
+  input: { productId: string; purchaseToken: string; expiresAt?: string | null },
+) {
+  const adapter = await loadAdapter();
+  if (!adapter.setPlayPurchase) return;
+  return adapter.setPlayPurchase(companyId, input);
 }
 
 export async function updateCompanyName(companyId: string, name: string) {

@@ -2,7 +2,7 @@ import { createSign } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getCurrentAccount } from "@/lib/auth";
 import { canChangeBilling } from "@/lib/command-access";
-import { getAccount, setCompanyPlan } from "@/lib/db";
+import { getAccount, setCompanyPlan, setPlayPurchase } from "@/lib/db";
 import { PLAY_PACKAGE, planFromPlayProduct } from "@/lib/play-products";
 import { allowUnverifiedPlay } from "@/lib/production";
 
@@ -69,7 +69,15 @@ async function verifyPlayPurchase(productId: string, token: string, packageName:
     if (!response.ok || !body) continue;
     const paid = body.paymentState === 1 || body.purchaseState === 0;
     const unexpired = !body.expiryTimeMillis || Number(body.expiryTimeMillis) > Date.now();
-    if (paid && unexpired) return { ok: true, unverified: false };
+    if (paid && unexpired) {
+      return {
+        ok: true,
+        unverified: false,
+        expiresAt: body.expiryTimeMillis
+          ? new Date(Number(body.expiryTimeMillis)).toISOString()
+          : null,
+      };
+    }
   }
   return { ok: false, error: "Google Play did not recognize an active paid purchase." };
 }
@@ -106,6 +114,11 @@ export async function POST(request: Request) {
   }
 
   await setCompanyPlan(account.company.id, plan);
+  await setPlayPurchase(account.company.id, {
+    productId,
+    purchaseToken,
+    expiresAt: verified.expiresAt,
+  });
   return NextResponse.json({
     ok: true,
     provider: "play",

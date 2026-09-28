@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentAccount } from "@/lib/auth";
-import {
-  getAccount,
-  getCompanyState,
-  setCompanyState,
-  updateCompanyName,
-} from "@/lib/db";
-import { applyCommand, type StoreCommand } from "@/lib/mutations";
+import { getAccount, updateCompanyName } from "@/lib/db";
+import type { StoreCommand } from "@/lib/mutations";
+import { persistStoreCommand } from "@/lib/persist-command";
 import { commandAccessError } from "@/lib/command-access";
 import { planLimitError } from "@/lib/plans";
 import { createEmptyState, createSeedState } from "@/lib/seed";
@@ -63,18 +59,16 @@ export async function POST(request: Request) {
     }
   }
 
-  const prev = await getCompanyState(account.company.id);
   const seed =
     account.company.id === "co_summit"
       ? createSeedState()
       : createEmptyState(account.company.name);
 
-  const result = applyCommand(prev, command, account.user.email, seed);
+  const result = await persistStoreCommand(account.company.id, command, account.user.email, seed);
   if (result.error) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  await setCompanyState(account.company.id, result.state);
   if (command.type === "updateSettings" && command.patch.company_name) {
     await updateCompanyName(account.company.id, command.patch.company_name);
   }

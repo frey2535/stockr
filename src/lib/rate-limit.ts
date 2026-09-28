@@ -1,6 +1,10 @@
 const buckets = new Map<string, { count: number; resetAt: number }>();
 
-export function rateLimit(key: string, limit: number, windowMs: number) {
+function supabaseReady() {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+export function rateLimitMemory(key: string, limit: number, windowMs: number) {
   const now = Date.now();
   const current = buckets.get(key);
   if (!current || current.resetAt <= now) {
@@ -12,6 +16,26 @@ export function rateLimit(key: string, limit: number, windowMs: number) {
   }
   current.count += 1;
   return { ok: true as const, remaining: limit - current.count };
+}
+
+export async function rateLimit(key: string, limit: number, windowMs: number) {
+  if (supabaseReady()) {
+    try {
+      const { getSupabaseAdmin } = await import("./supabase-admin");
+      const { data, error } = await getSupabaseAdmin().rpc("stockr_rate_hit", {
+        p_key: key,
+        p_limit: limit,
+        p_window_ms: windowMs,
+      });
+      if (!error && data && typeof data === "object") {
+        const row = data as { ok?: boolean; remaining?: number };
+        return { ok: Boolean(row.ok), remaining: Number(row.remaining || 0) };
+      }
+    } catch {
+      // Preview or missing SQL falls back to this isolate.
+    }
+  }
+  return rateLimitMemory(key, limit, windowMs);
 }
 
 export function clientKey(request: Request, extra = "") {

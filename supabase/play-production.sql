@@ -1,5 +1,16 @@
--- Incremental production apply after the first schema.sql.
--- Safe to re-run. Service role still bypasses RLS.
+-- Incremental production apply after supabase/schema.sql.
+-- If this raises that stockr_users is missing, you are on the wrong
+-- Supabase project, or the Stockr schema was never applied. Run
+-- supabase/schema.sql first on the Stockr project (NEXT_PUBLIC_SUPABASE_URL).
+-- Do not run this on NECalcul8r or The Truth.
+
+do $$
+begin
+  if to_regclass('public.stockr_users') is null then
+    raise exception using message =
+      'stockr_users is missing. Open the Stockr Supabase project (the URL in NEXT_PUBLIC_SUPABASE_URL) and run supabase/schema.sql first. This file is only the follow-up.';
+  end if;
+end $$;
 
 create table if not exists stockr_password_resets (
   id text primary key,
@@ -39,7 +50,7 @@ begin
     'stockr_cycle_count_lines'
   ]
   loop
-    if to_regclass(tbl) is null then
+    if to_regclass('public.' || tbl) is null then
       continue;
     end if;
     execute format('alter table %I enable row level security', tbl);

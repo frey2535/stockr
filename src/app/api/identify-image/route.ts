@@ -13,7 +13,7 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   const { account, response } = await requireAccount();
   if (!account) return response;
-  const limited = rateLimit(clientKey(request, `vision:${account.company.id}`), 30, 60 * 60 * 1000);
+  const limited = await rateLimit(clientKey(request, `vision:${account.company.id}`), 30, 60 * 60 * 1000);
   if (!limited.ok) {
     return NextResponse.json({ error: "Photo ID limit reached for this hour. Try again later." }, { status: 429 });
   }
