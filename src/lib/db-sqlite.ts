@@ -11,6 +11,7 @@ import {
   isPlatformOwner,
   seededOwnersToProvision,
 } from "./platform";
+import { demoWorkspaceEnabled } from "./production";
 import type { Account, MemberRole, PlanId, PlatformCompany, StoreState, TeamMember } from "./types";
 import { uid } from "./id";
 
@@ -77,6 +78,13 @@ function openDb() {
     CREATE TABLE IF NOT EXISTS company_state (
       company_id TEXT PRIMARY KEY,
       payload TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
   `);
   return db;
@@ -342,7 +350,56 @@ export function updateCompanyName(companyId: string, name: string) {
   db.prepare("UPDATE companies SET name = ? WHERE id = ?").run(name, companyId);
 }
 
+export function setUserPassword(userId: string, password: string) {
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(bcrypt.hashSync(password, 12), userId);
+}
+
+export async function createPasswordReset(email: string) {
+  const user = getUserByEmail(email);
+  if (!user) return null;
+  const token = uid("rst");
+  const tokenHash = bcrypt.hashSync(token, 8);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  db.prepare("DELETE FROM password_resets WHERE user_id = ?").run(user.id);
+  db.prepare(
+    "INSERT INTO password_resets (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+  ).run(uid("pr"), user.id, tokenHash, expiresAt, new Date().toISOString());
+  return { token, email: user.email, stored: true as const };
+}
+
+export async function consumePasswordReset(token: string, password: string) {
+  const rows = db.prepare("SELECT * FROM password_resets").all() as {
+    id: string;
+    user_id: string;
+    token_hash: string;
+    expires_at: string;
+  }[];
+  const row = rows.find((item) => bcrypt.compareSync(token, item.token_hash));
+  if (!row || new Date(row.expires_at).getTime() < Date.now()) {
+    return { error: "That reset link is invalid or expired." };
+  }
+  setUserPassword(row.user_id, password);
+  db.prepare("DELETE FROM password_resets WHERE id = ?").run(row.id);
+  return { ok: true as const };
+}
+
+export async function deleteCompanyWorkspace(companyId: string, actorUserId: string) {
+  db.prepare("DELETE FROM sessions WHERE company_id = ?").run(companyId);
+  db.prepare("DELETE FROM memberships WHERE company_id = ?").run(companyId);
+  db.prepare("DELETE FROM company_state WHERE company_id = ?").run(companyId);
+  db.prepare("DELETE FROM companies WHERE id = ?").run(companyId);
+  const leftover = db.prepare("SELECT company_id FROM memberships WHERE user_id = ?").get(actorUserId) as
+    | { company_id: string }
+    | undefined;
+  if (!leftover) {
+    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(actorUserId);
+    db.prepare("DELETE FROM password_resets WHERE user_id = ?").run(actorUserId);
+    db.prepare("DELETE FROM users WHERE id = ?").run(actorUserId);
+  }
+}
+
 export function seedDemoTenant() {
+  if (!demoWorkspaceEnabled()) return;
   if (getUserByEmail("demo@stockr.app")) return;
   const userId = "usr_demo";
   const companyId = "co_summit";

@@ -5,7 +5,6 @@ import {
   isPlatformOwner,
   platformOwnerEmail,
   platformOwnerPassword,
-  PLATFORM_OWNER_BOOTSTRAP_PASSWORD,
   seededOwnersToProvision,
 } from "./platform.ts";
 
@@ -25,17 +24,16 @@ test("PLATFORM_OWNER_EMAILS adds extra owners", () => {
   delete process.env.PLATFORM_OWNER_EMAILS;
 });
 
-test("seeded owners include Marcus with a reset password", () => {
-  const marcus = seededOwnersToProvision().find((owner) => owner.email === "marcus.a.frey@gmail.com");
-  assert.ok(marcus);
-  assert.equal(marcus?.resetPassword, true);
-  assert.equal(marcus?.resolvedPassword, "1234N0@h");
+test("owners are not provisioned without PLATFORM_OWNER_PASSWORD", () => {
+  delete process.env.PLATFORM_OWNER_PASSWORD;
+  assert.equal(platformOwnerPassword(), "");
+  assert.equal(seededOwnersToProvision().length, 0);
 });
 
-test("password prefers env over bootstrap", () => {
-  delete process.env.PLATFORM_OWNER_PASSWORD;
-  assert.equal(platformOwnerPassword(), PLATFORM_OWNER_BOOTSTRAP_PASSWORD);
+test("password comes only from the environment", () => {
   process.env.PLATFORM_OWNER_PASSWORD = "  secret-pass  ";
   assert.equal(platformOwnerPassword(), "secret-pass");
+  assert.equal(seededOwnersToProvision().length, 2);
+  assert.equal(seededOwnersToProvision()[0]?.resetPassword, false);
   delete process.env.PLATFORM_OWNER_PASSWORD;
 });

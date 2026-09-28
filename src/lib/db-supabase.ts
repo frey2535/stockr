@@ -463,7 +463,77 @@ export async function updateCompanyName(companyId: string, name: string) {
   throwIfError(error, "Rename company");
 }
 
+export async function setUserPassword(userId: string, password: string) {
+  const { error } = await getSupabaseAdmin()
+    .from("stockr_users")
+    .update({ password_hash: bcrypt.hashSync(password, 12) })
+    .eq("id", userId);
+  throwIfError(error, "Update password");
+}
+
+export async function createPasswordReset(email: string) {
+  const user = await getUserByEmail(email);
+  if (!user) return null;
+  const token = uid("rst");
+  const tokenHash = bcrypt.hashSync(token, 8);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  await getSupabaseAdmin().from("stockr_password_resets").delete().eq("user_id", user.id);
+  const insert = await getSupabaseAdmin().from("stockr_password_resets").insert({
+    id: uid("pr"),
+    user_id: user.id,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
+  if (insert.error) return { token, email: user.email, stored: false as const };
+  return { token, email: user.email, stored: true as const };
+}
+
+export async function consumePasswordReset(token: string, password: string) {
+  const { data, error } = await getSupabaseAdmin().from("stockr_password_resets").select("*");
+  throwIfError(error, "Look up password reset");
+  const row = (data || []).find((item) => bcrypt.compareSync(token, String(item.token_hash || "")));
+  if (!row || new Date(String(row.expires_at)).getTime() < Date.now()) return { error: "That reset link is invalid or expired." };
+  await setUserPassword(String(row.user_id), password);
+  await getSupabaseAdmin().from("stockr_password_resets").delete().eq("id", row.id);
+  return { ok: true as const };
+}
+
+export async function deleteCompanyWorkspace(companyId: string, actorUserId: string) {
+  const supabase = getSupabaseAdmin();
+  const tables = [
+    "stockr_cycle_count_lines",
+    "stockr_cycle_count_sessions",
+    "stockr_material_request_lines",
+    "stockr_material_requests",
+    "stockr_inventory_reservations",
+    "stockr_storage_bins",
+    "stockr_storage_zones",
+    "stockr_purchase_order_lines",
+    "stockr_purchase_orders",
+    "stockr_transactions",
+    "stockr_inventory",
+    "stockr_tools",
+    "stockr_projects",
+    "stockr_access_codes",
+    "stockr_materials",
+    "stockr_locations",
+    "stockr_sessions",
+    "stockr_memberships",
+  ];
+  for (const table of tables) {
+    await supabase.from(table).delete().eq("company_id", companyId);
+  }
+  await supabase.from("stockr_companies").delete().eq("id", companyId);
+  const { data: leftover } = await supabase.from("stockr_memberships").select("company_id").eq("user_id", actorUserId);
+  if (!leftover?.length) {
+    await supabase.from("stockr_sessions").delete().eq("user_id", actorUserId);
+    await supabase.from("stockr_users").delete().eq("id", actorUserId);
+  }
+}
+
 export async function seedDemoTenant() {
+  const { demoWorkspaceEnabled } = await import("./production");
+  if (!demoWorkspaceEnabled()) return;
   if (await getUserByEmail("demo@stockr.app")) return;
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();

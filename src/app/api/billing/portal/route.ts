@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentAccount } from "@/lib/auth";
+import { canChangeBilling } from "@/lib/command-access";
 import { requestOrigin } from "@/lib/request-origin";
 import { getStripe } from "@/lib/stripe";
 
@@ -8,6 +9,9 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const account = await getCurrentAccount();
   if (!account) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canChangeBilling(account.role)) {
+    return NextResponse.json({ error: "Only owners and admins can manage billing." }, { status: 403 });
+  }
   const stripe = getStripe();
   if (!stripe) return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });
 

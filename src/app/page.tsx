@@ -13,6 +13,7 @@ import { MarketingHeader } from "@/components/marketing-header";
 import { Button } from "@/components/ui/button";
 import { getCurrentAccount } from "@/lib/auth";
 import { PLANS } from "@/lib/plans";
+import { publicDemoEnabled } from "@/lib/production";
 
 const FEATURES = [
   {
@@ -78,10 +79,12 @@ export default async function LandingPage() {
               </>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">
-            Demo workspace: <span className="font-mono text-foreground">demo@stockr.app</span> /{" "}
-            <span className="font-mono text-foreground">demo1234</span>
-          </p>
+          {publicDemoEnabled() ? (
+            <p className="text-sm text-muted-foreground">
+              Demo workspace: <span className="font-mono text-foreground">demo@stockr.app</span> /{" "}
+              <span className="font-mono text-foreground">demo1234</span>
+            </p>
+          ) : null}
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-xl shadow-primary/5">
           <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
@@ -102,8 +105,8 @@ export default async function LandingPage() {
             ))}
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            New companies start empty on Starter. The demo account is preloaded so you can click
-            around before you import your own catalog.
+            New companies start empty on Starter. Add warehouses, scan materials, and keep an
+            activity log the office can export.
           </p>
         </div>
       </section>

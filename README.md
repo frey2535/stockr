@@ -2,7 +2,7 @@
 
 Multi-tenant field inventory for warehouses and service fleets. Each company gets its own workspace, team, and plan. Scan barcodes, move material between shops and trucks, receive purchase orders, and export valuation, usage, and shrinkage reports.
 
-Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not reuse the NECalcul8r or The Truth project — those apps have their own databases. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. PWA and web checkout use Stripe when `STRIPE_SECRET_KEY` and price IDs are set; the Android app uses Google Play Billing. Preview without those keys still activates a plan so you can test limits.
+Company data belongs in **Stockr’s own Supabase project** (Postgres). Do not reuse the NECalcul8r or The Truth project — those apps have their own databases. The browser only loads the current page of inventory, activity, or catalog — not the whole company. If Supabase keys are missing, the app falls back to a local SQLite file (`data/stockr.db`) so preview still works. Production must use Supabase. PWA and web checkout use Stripe when `STRIPE_SECRET_KEY` and price IDs are set; the Android app uses Google Play Billing. Production refuses a paid upgrade if those providers are not configured.
 
 ## GitHub
 
@@ -23,13 +23,11 @@ Production hostname is **https://stockr.currentflowconsulting.org**. Point that 
 
 ### Demo company
 
-- Email: `demo@stockr.app`
-- Password: `demo1234`
-- Company: Summit Electric on the Fleet plan, with sample warehouses, trucks, catalog, POs, and activity
+Local preview can seed Summit Electric when `STOCKR_ENABLE_DEMO=1`. The homepage shows those credentials only when `NEXT_PUBLIC_STOCKR_DEMO=1`. Production does not create or advertise a public demo tenant.
 
 ### Platform owner
 
-`currentflowconsultingllc@gmail.com` and `marcus.a.frey@gmail.com` are CurrentFlow platform owners. Those mailboxes are created on boot (they are not leftover Base44 logins). After sign-in they open **Platform** (`/admin`) so you can open any company workspace. Set GitHub / Pages secret `PLATFORM_OWNER_PASSWORD` to replace the CurrentFlow bootstrap password in `src/lib/platform.ts`.
+`currentflowconsultingllc@gmail.com` and `marcus.a.frey@gmail.com` are CurrentFlow platform owners. They are created on boot only when `PLATFORM_OWNER_PASSWORD` is set (GitHub / Pages secret). After sign-in they open **Platform** (`/admin`).
 
 ### New company
 
@@ -43,7 +41,7 @@ Sign up from the marketing page to create an empty Starter workspace (2 location
 | Pro     | $49   | 15        | 2,000     | 15    |
 | Fleet   | $149  | Unlimited | Unlimited | Unlimited |
 
-Upgrade from **Billing**. Web/PWA users pay with Stripe Checkout. The Play Store app uses Google Play Billing (`stockr_pro` / `stockr_fleet`). Without Stripe keys, choosing a paid plan still activates it in preview.
+Upgrade from **Billing**. Web/PWA users pay with Stripe Checkout. The Play Store app uses Google Play Billing (`stockr_pro` / `stockr_fleet`). Local preview can set `STOCKR_ALLOW_MOCK_BILLING=1` to test plan limits without charging.
 
 ## What is included
 

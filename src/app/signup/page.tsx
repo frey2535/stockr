@@ -98,9 +98,10 @@ export default function SignupPage() {
                   autoComplete="new-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  minLength={6}
+                  minLength={10}
                   required
                 />
+                <p className="text-xs text-muted-foreground">At least 10 characters.</p>
               </div>
               {mode === "company" ? (
                 <div className="space-y-2">

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { setSessionCookie } from "@/lib/auth";
 import { createSession, getAccount, verifyPassword } from "@/lib/db";
 import { platformHomePath } from "@/lib/platform";
+import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { isFormRequest, requestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -11,6 +12,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const limited = rateLimit(clientKey(request, "login"), 12, 15 * 60 * 1000);
+  if (!limited.ok) {
+    return NextResponse.json({ error: "Too many sign-in attempts. Try again later." }, { status: 429 });
+  }
   const form = isFormRequest(request);
   let email = "";
   let password = "";

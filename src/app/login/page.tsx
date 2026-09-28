@@ -83,18 +83,25 @@ function LoginForm() {
           <Button className="w-full" disabled={busy}>
             {busy ? "Signing in…" : "Log in"}
           </Button>
+          {process.env.NEXT_PUBLIC_STOCKR_DEMO === "1" ? (
+            <p className="text-center text-sm text-muted-foreground">
+              Try the Summit Electric demo:{" "}
+              <button
+                type="button"
+                className="font-medium text-primary underline"
+                onClick={() => {
+                  setEmail("demo@stockr.app");
+                  setPassword("demo1234");
+                }}
+              >
+                fill demo credentials
+              </button>
+            </p>
+          ) : null}
           <p className="text-center text-sm text-muted-foreground">
-            Try the Summit Electric demo:{" "}
-            <button
-              type="button"
-              className="font-medium text-primary underline"
-              onClick={() => {
-                setEmail("demo@stockr.app");
-                setPassword("demo1234");
-              }}
-            >
-              fill demo credentials
-            </button>
+            <Link href="/forgot-password" className="text-primary underline">
+              Forgot password
+            </Link>
           </p>
           <p className="text-center text-sm text-muted-foreground">
             New company?{" "}
