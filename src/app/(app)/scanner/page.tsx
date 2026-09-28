@@ -482,9 +482,11 @@ export default function ScannerPage() {
     setUnknownCode(complete ? "" : product.barcode || "");
     setOnHandByLocation({});
     if (complete) toast.success(`Identified ${product.name}`);
-    else if (product.name && !isWeakIdentity(product)) {
-      toast.message(`Recognized ${product.name}. Need ${missing.length ? missing.join(", ") : "barcode and manufacturer number"}.`);
-    } else toast.message("Not identified. Need name, barcode, and manufacturer number.");
+    else if (product.name && !isWeakIdentity(product) && product.barcode) {
+      toast.success(`Identified ${product.name}`);
+    } else if (product.name && !isWeakIdentity(product)) {
+      toast.message(`Recognized ${product.name}. Looking up barcode and manufacturer number.`);
+    } else toast.message("Could not recognize this item. Photograph the product itself.");
   };
 
   const identifyPhoto = async (file: File) => {

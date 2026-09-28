@@ -167,6 +167,34 @@ export function parseVisionObjects(payload: unknown): IdentifiedProduct[] {
   return objects;
 }
 
+export function parseVisionText(raw: string): IdentifiedProduct[] {
+  const fromJson = parseVisionObjects(
+    (() => {
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        const start = raw.indexOf("{");
+        const end = raw.lastIndexOf("}");
+        if (start >= 0 && end > start) {
+          try {
+            return JSON.parse(raw.slice(start, end + 1)) as unknown;
+          } catch {
+            return null;
+          }
+        }
+        return null;
+      }
+    })(),
+  );
+  if (fromJson.length) return fromJson;
+  const lines = raw
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-*\d.)\]]+\s*/, "").trim())
+    .filter((line) => line.length >= 3 && line.length <= 80)
+    .filter((line) => !/^(here|json|sure|the image|i see|objects|return)\b/i.test(line));
+  return lines.slice(0, 8).map((name) => ({ name, barcode: "", source: "photo-vision" }));
+}
+
 const STOP_WORDS = new Set(["the", "and", "for", "with", "from", "inch", "in", "of", "a", "an", "to", "by"]);
 
 function normalizeSku(value: string) {
