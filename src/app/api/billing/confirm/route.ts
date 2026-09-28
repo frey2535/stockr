@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentAccount } from "@/lib/auth";
+import { canChangeBilling } from "@/lib/command-access";
 import { getAccount, setCompanyPlan } from "@/lib/db";
 import { getStripe, planFromStripePrice } from "@/lib/stripe";
 import type { PlanId } from "@/lib/types";
@@ -9,6 +10,9 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const account = await getCurrentAccount();
   if (!account) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canChangeBilling(account.role)) {
+    return NextResponse.json({ error: "Only owners and admins can change the plan." }, { status: 403 });
+  }
   const stripe = getStripe();
   if (!stripe) return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });
 

@@ -7,6 +7,7 @@ import {
   updateCompanyName,
 } from "@/lib/db";
 import { applyCommand, type StoreCommand } from "@/lib/mutations";
+import { commandAccessError } from "@/lib/command-access";
 import { planLimitError } from "@/lib/plans";
 import { createEmptyState, createSeedState } from "@/lib/seed";
 import { getWorkspaceCounts, getWorkspaceShell } from "@/lib/workspace-data";
@@ -32,8 +33,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing command." }, { status: 400 });
   }
 
-  if (command.type === "resetDemo" && account.role !== "owner") {
-    return NextResponse.json({ error: "Only the company owner can reset workspace data." }, { status: 403 });
+  const denied = commandAccessError(account.role, command.type);
+  if (denied) {
+    return NextResponse.json({ error: denied }, { status: 403 });
   }
 
   const counts = await getWorkspaceCounts(account.company.id);

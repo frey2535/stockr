@@ -171,7 +171,46 @@ alter table stockr_access_codes enable row level security;
 alter table stockr_projects enable row level security;
 alter table stockr_tools enable row level security;
 
--- No anon/authenticated policies. The Next.js server uses the service role, which bypasses RLS.
+-- Service role (Next.js) bypasses RLS. Deny browser/anon keys even if leaked.
+do $$
+declare
+  tbl text;
+begin
+  foreach tbl in array array[
+    'stockr_users',
+    'stockr_companies',
+    'stockr_memberships',
+    'stockr_sessions',
+    'stockr_locations',
+    'stockr_materials',
+    'stockr_inventory',
+    'stockr_transactions',
+    'stockr_purchase_orders',
+    'stockr_purchase_order_lines',
+    'stockr_access_codes',
+    'stockr_projects',
+    'stockr_tools'
+  ]
+  loop
+    execute format('drop policy if exists stockr_deny_anon on %I', tbl);
+    execute format(
+      'create policy stockr_deny_anon on %I for all to anon, authenticated using (false) with check (false)',
+      tbl
+    );
+  end loop;
+end $$;
+
+create table if not exists stockr_password_resets (
+  id text primary key,
+  user_id text not null references stockr_users (id) on delete cascade,
+  token_hash text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+
+alter table stockr_password_resets enable row level security;
+drop policy if exists stockr_deny_anon on stockr_password_resets;
+create policy stockr_deny_anon on stockr_password_resets for all to anon, authenticated using (false) with check (false);
 
 create or replace function stockr_replace_company_state(p_company_id text, p_state jsonb)
 returns void
@@ -419,3 +458,25 @@ alter table stockr_material_requests enable row level security;
 alter table stockr_material_request_lines enable row level security;
 alter table stockr_cycle_count_sessions enable row level security;
 alter table stockr_cycle_count_lines enable row level security;
+
+do $$
+declare
+  tbl text;
+begin
+  foreach tbl in array array[
+    'stockr_storage_zones',
+    'stockr_storage_bins',
+    'stockr_inventory_reservations',
+    'stockr_material_requests',
+    'stockr_material_request_lines',
+    'stockr_cycle_count_sessions',
+    'stockr_cycle_count_lines'
+  ]
+  loop
+    execute format('drop policy if exists stockr_deny_anon on %I', tbl);
+    execute format(
+      'create policy stockr_deny_anon on %I for all to anon, authenticated using (false) with check (false)',
+      tbl
+    );
+  end loop;
+end $$;

@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { setSessionCookie } from "@/lib/auth";
 import { createCompanyWithOwner, createSession } from "@/lib/db";
+import { clientKey, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const limited = rateLimit(clientKey(request, "signup"), 6, 60 * 60 * 1000);
+  if (!limited.ok) {
+    return NextResponse.json({ error: "Too many signups from this network. Try again later." }, { status: 429 });
+  }
   const body = (await request.json().catch(() => null)) as {
     email?: string;
     name?: string;
@@ -21,8 +26,8 @@ export async function POST(request: Request) {
   if (!email.includes("@")) {
     return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
-  if (password.length < 6) {
-    return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
+  if (password.length < 10) {
+    return NextResponse.json({ error: "Password must be at least 10 characters." }, { status: 400 });
   }
   if (!inviteCode && !companyName) {
     return NextResponse.json({ error: "Company name is required." }, { status: 400 });

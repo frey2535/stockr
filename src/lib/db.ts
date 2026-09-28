@@ -38,6 +38,9 @@ type Adapter = {
     companyId: string,
     role: MemberRole,
   ) => void | Promise<void>;
+  createPasswordReset?: (email: string) => Promise<{ token: string; email: string; stored: boolean } | null>;
+  consumePasswordReset?: (token: string, password: string) => Promise<{ ok?: true; error?: string }>;
+  deleteCompanyWorkspace?: (companyId: string, actorUserId: string) => Promise<void>;
   resolveBuildrSsoIdentity: (
     email: string,
     buildrCompanyId: string,
@@ -142,4 +145,22 @@ export async function ensureCompanyMembership(userId: string, companyId: string,
  */
 export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string) {
   return (await loadAdapter()).resolveBuildrSsoIdentity(email, buildrCompanyId);
+}
+
+export async function createPasswordReset(email: string) {
+  const adapter = await loadAdapter();
+  if (!adapter.createPasswordReset) return null;
+  return adapter.createPasswordReset(email);
+}
+
+export async function consumePasswordReset(token: string, password: string) {
+  const adapter = await loadAdapter();
+  if (!adapter.consumePasswordReset) return { error: "Password reset is not available." };
+  return adapter.consumePasswordReset(token, password);
+}
+
+export async function deleteCompanyWorkspace(companyId: string, actorUserId: string) {
+  const adapter = await loadAdapter();
+  if (!adapter.deleteCompanyWorkspace) throw new Error("Workspace deletion is not available.");
+  return adapter.deleteCompanyWorkspace(companyId, actorUserId);
 }

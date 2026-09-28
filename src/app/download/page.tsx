@@ -31,9 +31,9 @@ export default async function DownloadPage() {
           Sell and run inventory on the phone, without living inside Google Play.
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-          Companies subscribe on this site. The Android app is a wrapper around the same
-          workspace, so a crew can install from Play or sideload the APK and still pay you
-          here — not through a store cut.
+          The Android app from Google Play uses Google Play Billing for Pro and Fleet. The
+          website and PWA use Stripe. Sideload the APK if you need the same workspace without
+          the store.
         </p>
       </section>
 

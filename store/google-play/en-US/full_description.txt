@@ -1,9 +1,13 @@
 Stockr is field inventory for contractor warehouses and service fleets.
 
-Scan barcodes on the job, move material between the shop and trucks, receive purchase orders, and keep an activity log the office can export.
+Scan barcodes or photograph a product on the job, move material between the shop and trucks, receive purchase orders, and keep an activity log the office can export.
 
-Each company gets its own workspace and plan. Starter is free for a small shop. Pro and Fleet add locations, catalog items, and seats. Subscribe on stockr.currentflowconsulting.org — billing is not an in-app Play purchase.
+Each company gets its own workspace and plan. Starter is free for a small shop. Pro and Fleet add locations, catalog items, and seats.
+
+In this Google Play app, Pro and Fleet are purchased with Google Play Billing. The website uses Stripe for the same plans.
 
 Package name: org.currentflowconsulting.stockr
 
-You can also install the same app from the APK on the website if you do not use Google Play.
+Camera is used to read barcodes and, if you choose Photo ID, to identify a product. Photos used for identification are sent to Stockr’s servers and vision providers as described in the privacy policy.
+
+Account deletion: Settings → Your data → Delete workspace, or email stockr@currentflowconsulting.org.

@@ -4,15 +4,10 @@ export const PLATFORM_OWNER_USER_ID = "usr_platform";
 export const PLATFORM_OWNER_COMPANY_NAME = "CurrentFlow Consulting";
 export const PLATFORM_OWNER_NAME = "CurrentFlow Owner";
 
-/** Used only when PLATFORM_OWNER_PASSWORD is not set. Rotate via that env var. */
-export const PLATFORM_OWNER_BOOTSTRAP_PASSWORD = "CurrentFlow-Stockr-2026";
-
 export type SeededPlatformOwner = {
   email: string;
   name: string;
   userId: string;
-  password: string;
-  alwaysResetPassword?: boolean;
 };
 
 export const SEEDED_PLATFORM_OWNERS: SeededPlatformOwner[] = [
@@ -20,14 +15,11 @@ export const SEEDED_PLATFORM_OWNERS: SeededPlatformOwner[] = [
     email: PLATFORM_OWNER_EMAIL,
     name: PLATFORM_OWNER_NAME,
     userId: PLATFORM_OWNER_USER_ID,
-    password: PLATFORM_OWNER_BOOTSTRAP_PASSWORD,
   },
   {
     email: "marcus.a.frey@gmail.com",
     name: "Marcus Frey",
     userId: "usr_marcus",
-    password: "1234N0@h",
-    alwaysResetPassword: true,
   },
 ];
 
@@ -56,22 +48,20 @@ export function isPlatformOwner(email: string | null | undefined) {
 }
 
 export function platformOwnerPassword() {
-  const fromEnv = process.env.PLATFORM_OWNER_PASSWORD?.trim();
-  return fromEnv || PLATFORM_OWNER_BOOTSTRAP_PASSWORD;
+  return process.env.PLATFORM_OWNER_PASSWORD?.trim() || "";
 }
 
 export function seededOwnersToProvision() {
-  const envPassword = process.env.PLATFORM_OWNER_PASSWORD?.trim();
+  const password = platformOwnerPassword();
+  if (!password) return [];
   const primary = platformOwnerEmail();
-  return SEEDED_PLATFORM_OWNERS.map((owner) => {
-    const isPrimary = owner.email.toLowerCase() === primary;
-    return {
-      ...owner,
-      email: owner.email.toLowerCase(),
-      resolvedPassword: isPrimary && envPassword ? envPassword : owner.password,
-      resetPassword: Boolean(owner.alwaysResetPassword || (isPrimary && envPassword)),
-    };
-  });
+  return SEEDED_PLATFORM_OWNERS.map((owner) => ({
+    ...owner,
+    email: owner.email.toLowerCase(),
+    resolvedPassword: password,
+    resetPassword: false,
+    isPrimary: owner.email.toLowerCase() === primary,
+  }));
 }
 
 export function platformHomePath() {

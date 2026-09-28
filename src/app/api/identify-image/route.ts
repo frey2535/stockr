@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { identifyRemoteProduct, searchRemoteProduct } from "@/lib/barcode-lookup";
 import { isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
 import { materialMatchesCode } from "@/lib/inventory";
+import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { requireAccount } from "@/lib/require-account";
 import { canUseVision, completeProductIdentity, detectObjectsFromVision } from "@/lib/vision-identify";
 import { lookupMaterials } from "@/lib/workspace-data";
@@ -12,6 +13,10 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   const { account, response } = await requireAccount();
   if (!account) return response;
+  const limited = rateLimit(clientKey(request, `vision:${account.company.id}`), 30, 60 * 60 * 1000);
+  if (!limited.ok) {
+    return NextResponse.json({ error: "Photo ID limit reached for this hour. Try again later." }, { status: 429 });
+  }
   const body = (await request.json().catch(() => null)) as { image?: string; barcode?: string; barcodes?: string[] } | null;
   const barcodes = Array.from(
     new Set([body?.barcode, ...(Array.isArray(body?.barcodes) ? body.barcodes : [])].map((value) => String(value || "").trim()).filter(Boolean)),

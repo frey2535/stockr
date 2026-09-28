@@ -414,6 +414,79 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle>Legal</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p className="text-muted-foreground">Privacy, terms, and how to export or delete this workspace.</p>
+          <div className="flex flex-wrap gap-3">
+            <a className="text-primary underline" href="/privacy" target="_blank" rel="noreferrer">
+              Privacy policy
+            </a>
+            <a className="text-primary underline" href="/terms" target="_blank" rel="noreferrer">
+              Terms of use
+            </a>
+          </div>
+        </CardContent>
+      </Card>
+
+      {isOwner ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Your data</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Export a JSON copy of this company, or permanently delete the workspace. Deletion
+              cannot be undone.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  const response = await fetch("/api/account/export");
+                  if (!response.ok) {
+                    toast.error("Could not export the workspace.");
+                    return;
+                  }
+                  const blob = await response.blob();
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = `stockr-${account?.company.id || "workspace"}.json`;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                Export workspace
+              </Button>
+              <Button
+                variant="outline"
+                className="border-destructive/30 text-destructive hover:bg-destructive/10"
+                onClick={async () => {
+                  const name = window.prompt(`Type ${account?.company.name} to delete this workspace forever.`);
+                  if (!name) return;
+                  const response = await fetch("/api/account/delete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ confirm: name }),
+                  });
+                  const data = (await response.json().catch(() => null)) as { error?: string } | null;
+                  if (!response.ok) {
+                    toast.error(data?.error || "Could not delete the workspace.");
+                    return;
+                  }
+                  window.location.href = "/";
+                }}
+              >
+                Delete workspace
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
       {isOwner ? (
         <Card>
           <CardHeader>
