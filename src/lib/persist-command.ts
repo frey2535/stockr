@@ -43,6 +43,58 @@ function materialRow(companyId: string, material: Material) {
   };
 }
 
+function missingRpc(error: { message?: string; code?: string } | null) {
+  const message = error?.message || "";
+  return (
+    error?.code === "42883" ||
+    error?.code === "PGRST202" ||
+    /stockr_bump_inventory|stockr_set_inventory|does not exist|schema cache/i.test(message)
+  );
+}
+
+async function bumpRows(companyId: string, materialId: string, locationId: string, delta: number) {
+  const supabase = getSupabaseAdmin();
+  const loaded = await supabase
+    .from("stockr_inventory")
+    .select("id, quantity")
+    .eq("company_id", companyId)
+    .eq("material_id", materialId)
+    .eq("location_id", locationId)
+    .maybeSingle();
+  throwIfError(loaded.error, "Load inventory");
+  const current = loaded.data ? Number(loaded.data.quantity) : 0;
+  const next = current + delta;
+  if (next < 0) return "Not enough quantity on hand.";
+  if (!loaded.data) {
+    if (delta <= 0) return "Not enough quantity on hand.";
+    const insert = await supabase.from("stockr_inventory").insert({
+      id: `inv_${companyId}_${materialId}_${locationId}`,
+      company_id: companyId,
+      material_id: materialId,
+      location_id: locationId,
+      quantity: next,
+    });
+    throwIfError(insert.error, "Create inventory");
+    return "";
+  }
+  if (next === 0) {
+    const del = await supabase
+      .from("stockr_inventory")
+      .delete()
+      .eq("id", loaded.data.id)
+      .eq("company_id", companyId);
+    throwIfError(del.error, "Clear inventory");
+    return "";
+  }
+  const update = await supabase
+    .from("stockr_inventory")
+    .update({ quantity: next })
+    .eq("id", loaded.data.id)
+    .eq("company_id", companyId);
+  throwIfError(update.error, "Update inventory");
+  return "";
+}
+
 async function bump(companyId: string, materialId: string, locationId: string, delta: number) {
   const { error } = await getSupabaseAdmin().rpc("stockr_bump_inventory", {
     p_company_id: companyId,
@@ -50,11 +102,10 @@ async function bump(companyId: string, materialId: string, locationId: string, d
     p_location_id: locationId,
     p_delta: delta,
   });
-  if (error) {
-    if (/not enough/i.test(error.message)) return error.message;
-    throw new Error(`Update inventory: ${error.message}`);
-  }
-  return "";
+  if (!error) return "";
+  if (/not enough/i.test(error.message)) return error.message;
+  if (missingRpc(error)) return bumpRows(companyId, materialId, locationId, delta);
+  throw new Error(`Update inventory: ${error.message}`);
 }
 
 async function setQty(companyId: string, materialId: string, locationId: string, quantity: number) {
@@ -64,7 +115,26 @@ async function setQty(companyId: string, materialId: string, locationId: string,
     p_location_id: locationId,
     p_quantity: quantity,
   });
-  throwIfError(error, "Set inventory");
+  if (!error) return;
+  if (!missingRpc(error)) throwIfError(error, "Set inventory");
+  if (quantity <= 0) {
+    const del = await getSupabaseAdmin()
+      .from("stockr_inventory")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("material_id", materialId)
+      .eq("location_id", locationId);
+    throwIfError(del.error, "Clear inventory");
+    return;
+  }
+  const { error: upsertError } = await getSupabaseAdmin().from("stockr_inventory").upsert({
+    id: `inv_${companyId}_${materialId}_${locationId}`,
+    company_id: companyId,
+    material_id: materialId,
+    location_id: locationId,
+    quantity,
+  });
+  throwIfError(upsertError, "Set inventory");
 }
 
 async function insertTransaction(companyId: string, tx: Transaction) {

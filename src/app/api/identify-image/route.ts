@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { identifyRemoteProduct, searchRemoteProduct } from "@/lib/barcode-lookup";
-import { isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
+import { identityGaps, isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
 import { materialMatchesCode } from "@/lib/inventory";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { requireAccount } from "@/lib/require-account";
@@ -32,11 +32,46 @@ export async function POST(request: Request) {
   );
 
   const first = items[0];
-  const catalogQuery = first?.identified?.barcode || first?.draft.barcode || barcodes[0] || "";
+  const catalogQuery =
+    first?.identified?.barcode ||
+    first?.draft.barcode ||
+    barcodes[0] ||
+    first?.identified?.name ||
+    first?.draft.name ||
+    "";
   const catalog = catalogQuery
     ? await lookupMaterials(account.company.id, { barcode: catalogQuery, q: catalogQuery, limit: 8 })
     : { rows: [], onHandByLocation: {} };
-  const rows = (catalog.rows || []).filter((row) => catalogQuery && materialMatchesCode(row, catalogQuery));
+  const rows = (catalog.rows || []).filter(
+    (row) =>
+      (catalogQuery && materialMatchesCode(row, catalogQuery)) ||
+      (catalogQuery && row.name.toLowerCase().includes(catalogQuery.toLowerCase())),
+  );
+  const catalogHit = rows[0];
+  if (catalogHit && first && identityGaps(first.identified).length > 0) {
+    const prior = first.identified;
+    first.identified = {
+      name: catalogHit.name,
+      barcode: catalogHit.barcode || prior?.barcode || first.draft.barcode || "",
+      mpn: catalogHit.mpn || prior?.mpn || first.draft.mpn || "",
+      manufacturer: catalogHit.manufacturer || prior?.manufacturer,
+      brand: catalogHit.manufacturer || prior?.brand,
+      upc: catalogHit.upc || prior?.upc,
+      image_url: catalogHit.image_url || prior?.image_url,
+      source: "catalog",
+    };
+    first.draft = {
+      name: first.identified.name,
+      barcode: first.identified.barcode,
+      mpn: first.identified.mpn || "",
+      brand: first.identified.brand,
+      manufacturer: first.identified.manufacturer,
+      image_url: first.identified.image_url,
+      source: "catalog",
+    };
+    first.missing = identityGaps(first.identified);
+    items[0] = first;
+  }
   const identifiedCount = items.filter((item) => item.identified && isCompleteIdentity(item.identified)).length;
   const named = items.some((item) => item.identified?.name || item.draft.name);
   const error =

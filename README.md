@@ -75,7 +75,7 @@ On production (`next start` or Vercel), session cookies are marked `Secure` and 
 
 Create a **dedicated Supabase project for Stockr** (CurrentFlow Consulting org is fine; the project must not be NECalcul8r or The Truth).
 
-In that project’s SQL Editor, paste and run **only** [`supabase/schema.sql`](supabase/schema.sql). That file creates `stockr_*` tables. Existing projects that already ran an older schema should also run [`supabase/scale-tenants.sql`](supabase/scale-tenants.sql) so inventory updates stay row-level. It does **not** use `public.profiles`. If you see `type "public.profiles" does not exist` / `actor public.profiles`, you pasted a NECalcul8r fix — stop and run this repo’s schema instead.
+In that project’s SQL Editor, paste and run **only** [`supabase/schema.sql`](supabase/schema.sql). That file creates `stockr_*` tables. Existing projects that already ran an older schema should also run [`supabase/scale-tenants.sql`](supabase/scale-tenants.sql) and [`supabase/production-indexes.sql`](supabase/production-indexes.sql). `/api/ready` reports whether billing and Stockr tables are live. It does **not** use `public.profiles`. If you see `type "public.profiles" does not exist` / `actor public.profiles`, you pasted a NECalcul8r fix — stop and run this repo’s schema instead.
 
 1. **Project Settings → API**: copy this Stockr project’s URL and the **service role** key (server only, never ship it to the browser)
 2. Put them in `.env.local`:

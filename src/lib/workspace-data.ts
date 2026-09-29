@@ -213,9 +213,20 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
   }
 
   const supabase = getSupabaseAdmin();
-  const [inventoryRes, costRes, alertRes, locationsRes, txRes, materialCountRes, projectsRes] = await Promise.all([
-    supabase.from("stockr_inventory").select("material_id, location_id, quantity").eq("company_id", companyId),
-    supabase.from("stockr_materials").select("id, unit_cost, name, unit, supplier").eq("company_id", companyId),
+  const { selectAllForCompany } = await import("./supabase-page");
+  const [inventory, costRows, alertRes, locationsRes, txRes, materialCountRes, projectsRes] = await Promise.all([
+    selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
+      supabase,
+      "stockr_inventory",
+      companyId,
+      "material_id, location_id, quantity",
+    ),
+    selectAllForCompany<{ id: string; unit_cost: number | null; name: string; unit: string; supplier: string }>(
+      supabase,
+      "stockr_materials",
+      companyId,
+      "id, unit_cost, name, unit, supplier",
+    ),
     supabase
       .from("stockr_materials")
       .select("id, name, unit, unit_cost, reorder_point, min_stock_level")
@@ -232,25 +243,23 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
     supabase.from("stockr_projects").select("*").eq("company_id", companyId),
   ]);
 
-  if (inventoryRes.error) throw new Error(inventoryRes.error.message);
-  if (costRes.error) throw new Error(costRes.error.message);
   if (alertRes.error) throw new Error(alertRes.error.message);
   if (locationsRes.error) throw new Error(locationsRes.error.message);
   if (txRes.error) throw new Error(txRes.error.message);
   if (materialCountRes.error) throw new Error(materialCountRes.error.message);
 
-  const inventory = (inventoryRes.data || []).map(mapInventory);
+  const mappedInventory = inventory.map(mapInventory);
   const alertMaterials = (alertRes.data || []).map(mapMaterial);
   const locations = (locationsRes.data || []) as Location[];
   const costById = new Map(
-    (costRes.data || []).map((row) => [String(row.id), row.unit_cost == null ? 0 : Number(row.unit_cost)]),
+    costRows.map((row) => [String(row.id), row.unit_cost == null ? 0 : Number(row.unit_cost)]),
   );
 
-  const totalItems = inventory.reduce((sum, row) => sum + (row.quantity || 0), 0);
-  const value = inventory.reduce((sum, row) => sum + (row.quantity || 0) * (costById.get(row.material_id) || 0), 0);
+  const totalItems = mappedInventory.reduce((sum, row) => sum + (row.quantity || 0), 0);
+  const value = mappedInventory.reduce((sum, row) => sum + (row.quantity || 0) * (costById.get(row.material_id) || 0), 0);
 
   const qtyByMaterial = new Map<string, number>();
-  for (const row of inventory) {
+  for (const row of mappedInventory) {
     qtyByMaterial.set(row.material_id, (qtyByMaterial.get(row.material_id) || 0) + row.quantity);
   }
 
@@ -290,7 +299,7 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
     materialCount: materialCountRes.count || costById.size,
     alerts,
     locations: locations.map((location) => {
-      const rows = inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
+      const rows = mappedInventory.filter((row) => row.location_id === location.id && row.quantity > 0);
       return {
         ...location,
         units: rows.reduce((sum, row) => sum + row.quantity, 0),
@@ -300,9 +309,9 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
     recent,
     recentMaterials,
     restock: listRestockNeeds({
-      materials: (costRes.data || []).map(mapMaterial),
+      materials: costRows.map(mapMaterial),
       locations,
-      inventory,
+      inventory: mappedInventory,
       stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
     }),
   };
@@ -691,20 +700,23 @@ export async function listRestock(companyId: string) {
     return { rows: listRestockNeeds(await getCompanyState(companyId)) };
   }
   const supabase = getSupabaseAdmin();
-  const [materialsRes, locationsRes, inventoryRes, projectsRes] = await Promise.all([
-    supabase.from("stockr_materials").select("id, name, unit, supplier").eq("company_id", companyId),
-    supabase.from("stockr_locations").select("*").eq("company_id", companyId),
-    supabase.from("stockr_inventory").select("material_id, location_id, quantity").eq("company_id", companyId),
+  const { selectAllForCompany } = await import("./supabase-page");
+  const [materials, locations, inventory, projectsRes] = await Promise.all([
+    selectAllForCompany<Material>(supabase, "stockr_materials", companyId, "id, name, unit, supplier"),
+    selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
+    selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
+      supabase,
+      "stockr_inventory",
+      companyId,
+      "material_id, location_id, quantity",
+    ),
     supabase.from("stockr_projects").select("*").eq("company_id", companyId),
   ]);
-  if (materialsRes.error) throw new Error(materialsRes.error.message);
-  if (locationsRes.error) throw new Error(locationsRes.error.message);
-  if (inventoryRes.error) throw new Error(inventoryRes.error.message);
   return {
     rows: listRestockNeeds({
-      materials: (materialsRes.data || []).map(mapMaterial),
-      locations: (locationsRes.data || []) as Location[],
-      inventory: (inventoryRes.data || []).map(mapInventory),
+      materials: materials.map(mapMaterial),
+      locations,
+      inventory: inventory.map(mapInventory),
       stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
     }),
   };
