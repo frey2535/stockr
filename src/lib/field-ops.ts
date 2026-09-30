@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "./db-config";
 import { uid } from "./id";
 import { applyCommand } from "./mutations";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { selectAllForCompany, selectAllMatching } from "./supabase-page";
 import type {
   CycleCountLine,
   CycleCountSession,
@@ -48,40 +49,90 @@ export async function getFieldOps(companyId: string): Promise<FieldOpsPayload> {
   if (!isSupabaseConfigured()) return { ...emptyPayload(), materials };
   const db = getSupabaseAdmin();
 
-  const [zonesR, binsR, reservationsR, requestsR, requestLinesR, sessionsR, countLinesR] =
-    await Promise.all([
-      db.from("stockr_storage_zones").select("*").eq("company_id", companyId).order("sort_order"),
-      db.from("stockr_storage_bins").select("*").eq("company_id", companyId).eq("is_active", true).order("name"),
-      db.from("stockr_inventory_reservations").select("*").eq("company_id", companyId).eq("status", "active").order("created_at", { ascending: false }),
+  try {
+    const [zones, bins, reservations, requestsR, sessionsR] = await Promise.all([
+      selectAllForCompany<StorageZone>(db, "stockr_storage_zones", companyId),
+      selectAllMatching<StorageBin>(
+        (from, to) =>
+          db
+            .from("stockr_storage_bins")
+            .select("*")
+            .eq("company_id", companyId)
+            .eq("is_active", true)
+            .order("name")
+            .range(from, to),
+        "storage bins",
+      ),
+      selectAllMatching<InventoryReservation>(
+        (from, to) =>
+          db
+            .from("stockr_inventory_reservations")
+            .select("*")
+            .eq("company_id", companyId)
+            .eq("status", "active")
+            .order("created_at", { ascending: false })
+            .range(from, to),
+        "reservations",
+      ),
       db.from("stockr_material_requests").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(100),
-      db.from("stockr_material_request_lines").select("*").eq("company_id", companyId),
       db.from("stockr_cycle_count_sessions").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(50),
-      db.from("stockr_cycle_count_lines").select("*").eq("company_id", companyId),
     ]);
 
-  for (const result of [zonesR, binsR, reservationsR, requestsR, requestLinesR, sessionsR, countLinesR]) {
-    if (!result.error) continue;
-    if (isMissingTable(result.error)) return { ...emptyPayload(), materials };
-    throw result.error;
+    for (const result of [requestsR, sessionsR]) {
+      if (!result.error) continue;
+      if (isMissingTable(result.error)) return { ...emptyPayload(), materials };
+      throw result.error;
+    }
+
+    const requests = (requestsR.data || []) as MaterialRequest[];
+    const sessions = (sessionsR.data || []) as CycleCountSession[];
+    const requestIds = requests.map((row) => row.id);
+    const sessionIds = sessions.map((row) => row.id);
+    const [requestLines, countLines] = await Promise.all([
+      requestIds.length
+        ? selectAllMatching<MaterialRequestLine>(
+            (from, to) =>
+              db
+                .from("stockr_material_request_lines")
+                .select("*")
+                .eq("company_id", companyId)
+                .in("request_id", requestIds)
+                .range(from, to),
+            "request lines",
+          )
+        : Promise.resolve([]),
+      sessionIds.length
+        ? selectAllMatching<CycleCountLine>(
+            (from, to) =>
+              db
+                .from("stockr_cycle_count_lines")
+                .select("*")
+                .eq("company_id", companyId)
+                .in("session_id", sessionIds)
+                .range(from, to),
+            "count lines",
+          )
+        : Promise.resolve([]),
+    ]);
+
+    return {
+      zones,
+      bins,
+      reservations,
+      requests: requests.map((request) => ({
+        ...request,
+        lines: requestLines.filter((line) => line.request_id === request.id),
+      })),
+      countSessions: sessions.map((session) => ({
+        ...session,
+        lines: countLines.filter((line) => line.session_id === session.id),
+      })),
+      materials,
+    };
+  } catch (error) {
+    if (isMissingTable(error as { message?: string; code?: string })) return { ...emptyPayload(), materials };
+    throw error;
   }
-
-  const requestLines = (requestLinesR.data || []) as MaterialRequestLine[];
-  const countLines = (countLinesR.data || []) as CycleCountLine[];
-
-  return {
-    zones: (zonesR.data || []) as StorageZone[],
-    bins: (binsR.data || []) as StorageBin[],
-    reservations: (reservationsR.data || []) as InventoryReservation[],
-    requests: ((requestsR.data || []) as MaterialRequest[]).map((request) => ({
-      ...request,
-      lines: requestLines.filter((line) => line.request_id === request.id),
-    })),
-    countSessions: ((sessionsR.data || []) as CycleCountSession[]).map((session) => ({
-      ...session,
-      lines: countLines.filter((line) => line.session_id === session.id),
-    })),
-    materials,
-  };
 }
 
 export async function createZone(companyId: string, input: { locationId: string; name: string; code?: string }) {

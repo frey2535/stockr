@@ -1,32 +1,27 @@
 import { NextResponse } from "next/server";
 import { setSessionCookie } from "@/lib/auth";
-import { createSession, ensureCompanyMembership, getPlatformCompany } from "@/lib/db";
-import { requirePlatformOwner } from "@/lib/require-account";
+import { createSession } from "@/lib/db";
+import { requireAccount } from "@/lib/require-account";
 import { canSwitchWorkspace } from "@/lib/tenants";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const { account, response } = await requirePlatformOwner();
+  const { account, response } = await requireAccount();
   if (!account || response) return response;
 
   const body = (await request.json().catch(() => null)) as { companyId?: string } | null;
   const companyId = body?.companyId?.trim() || "";
-  const company = await getPlatformCompany(companyId);
   if (
-    !company ||
     !canSwitchWorkspace({
       companyId,
       workspaces: account.workspaces || [],
-      platformOwner: true,
-      adminOverride: true,
     })
   ) {
-    return NextResponse.json({ error: "Company not found." }, { status: 404 });
+    return NextResponse.json({ error: "You do not have access to that company." }, { status: 403 });
   }
 
-  await ensureCompanyMembership(account.user.id, company.id, "admin");
-  const session = await createSession(account.user.id, company.id);
+  const session = await createSession(account.user.id, companyId);
   await setSessionCookie(session.id, session.expiresAt);
   return NextResponse.json({ ok: true, next: "/dashboard" });
 }

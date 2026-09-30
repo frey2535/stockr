@@ -128,6 +128,9 @@ export default function SignupPage() {
                     className="font-mono uppercase"
                     required
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Already on Stockr? Use your existing password to join this company too.
+                  </p>
                 </div>
               )}
               <Button className="w-full" disabled={busy}>

@@ -3,6 +3,7 @@ import { applyCommand, type StoreCommand } from "./mutations";
 import { isSupabaseConfigured } from "./db-config";
 import { encodeStateForPersist } from "./persist-state";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { selectAllForCompany } from "./supabase-page";
 import { uid } from "./id";
 import { needsProject } from "./tx";
 import type { AccessCode, InventoryAction, Material, Project, PurchaseOrder, Tool, Transaction } from "./types";
@@ -452,11 +453,10 @@ async function persistOnSupabase(
   }
 
   if (command.type === "upsertTool" || command.type === "deleteTool") {
-    const tools = await supabase.from("stockr_tools").select("*").eq("company_id", companyId);
-    throwIfError(tools.error, "Load tools");
+    const tools = await selectAllForCompany<Tool>(supabase, "stockr_tools", companyId);
     const prev = {
       ...createEmptyState("tmp"),
-      tools: (tools.data || []) as Tool[],
+      tools,
     };
     const result = applyCommand(prev, command, actor);
     if (result.error) return fail(result.error);
@@ -489,11 +489,10 @@ async function persistOnSupabase(
     command.type === "upsertProject" ||
     command.type === "replaceProjects"
   ) {
-    const projects = await supabase.from("stockr_projects").select("*").eq("company_id", companyId);
-    throwIfError(projects.error, "Load jobs");
+    const projects = await selectAllForCompany<Project>(supabase, "stockr_projects", companyId);
     const prev = {
       ...createEmptyState("tmp"),
-      projects: (projects.data || []) as Project[],
+      projects,
     };
     const { decodeOpsFromPersist } = await import("./ops-state");
     const decoded = decodeOpsFromPersist(prev);
@@ -567,9 +566,8 @@ async function persistOnSupabase(
   }
 
   if (command.type === "createAccessCode" || command.type === "toggleAccessCode") {
-    const codes = await supabase.from("stockr_access_codes").select("*").eq("company_id", companyId);
-    throwIfError(codes.error, "Load invite codes");
-    const prev = { ...createEmptyState("tmp"), accessCodes: (codes.data || []) as AccessCode[] };
+    const codes = await selectAllForCompany<AccessCode>(supabase, "stockr_access_codes", companyId);
+    const prev = { ...createEmptyState("tmp"), accessCodes: codes };
     const result = applyCommand(prev, command, actor);
     if (result.error) return fail(result.error);
     const saved =

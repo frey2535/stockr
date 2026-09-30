@@ -1,11 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export function OpenCompanyButton({ companyId }: { companyId: string }) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   const open = async () => {
@@ -21,8 +19,7 @@ export function OpenCompanyButton({ companyId }: { companyId: string }) {
       window.alert(data?.error || "Could not open that company.");
       return;
     }
-    router.push(data?.next || "/dashboard");
-    router.refresh();
+    window.location.assign(data?.next || "/dashboard");
   };
 
   return (

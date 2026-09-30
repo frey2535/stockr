@@ -104,9 +104,9 @@ function LoginForm() {
             </Link>
           </p>
           <p className="text-center text-sm text-muted-foreground">
-            New company?{" "}
+            New company or joining another shop?{" "}
             <Link href="/signup" className="font-medium text-primary underline">
-              Start on Starter
+              Create a workspace or enter an invite
             </Link>
           </p>
         </form>
