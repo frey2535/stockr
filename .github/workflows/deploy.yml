@@ -64,6 +64,9 @@ jobs:
             echo "Add GitHub secrets NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY from the Stockr Supabase project."
             exit 1
           fi
+          if [ -z "${STRIPE_SECRET_KEY:-}" ] && [ -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "Warning: add Stripe secrets or GOOGLE_PLAY_SERVICE_ACCOUNT_JSON so production can take paid upgrades."
+          fi
           put_secret() {
             local name="$1"
             local value="$2"
