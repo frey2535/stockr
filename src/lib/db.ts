@@ -1,5 +1,5 @@
 import { isSupabaseConfigured } from "./db-config";
-import type { Account, MemberRole, PlanId, PlatformCompany, StoreState } from "./types";
+import type { Account, CompanyList, MemberRole, PlanId, PlatformCompany, StoreState } from "./types";
 
 export { dataBackend, isSupabaseConfigured } from "./db-config";
 
@@ -36,7 +36,8 @@ type Adapter = {
   updateCompanyName: (companyId: string, name: string) => void | Promise<void>;
   seedDemoTenant?: () => void | Promise<void>;
   ensurePlatformOwner?: () => void | Promise<void>;
-  listCompanies: () => PlatformCompany[] | Promise<PlatformCompany[]>;
+  listCompanies: (opts?: { q?: string; limit?: number; offset?: number }) => CompanyList | Promise<CompanyList>;
+  getPlatformCompany?: (id: string) => PlatformCompany | null | Promise<PlatformCompany | null>;
   ensureCompanyMembership: (
     userId: string,
     companyId: string,
@@ -45,6 +46,10 @@ type Adapter = {
   createPasswordReset?: (email: string) => Promise<{ token: string; email: string; stored: boolean } | null>;
   consumePasswordReset?: (token: string, password: string) => Promise<{ ok?: true; error?: string }>;
   deleteCompanyWorkspace?: (companyId: string, actorUserId: string) => Promise<void>;
+  joinCompanyByInvite?: (
+    userId: string,
+    inviteCode: string,
+  ) => { companyId: string } | { error: string } | Promise<{ companyId: string } | { error: string }>;
   resolveBuildrSsoIdentity: (
     email: string,
     buildrCompanyId: string,
@@ -142,12 +147,27 @@ export async function updateCompanyName(companyId: string, name: string) {
   return (await loadAdapter()).updateCompanyName(companyId, name);
 }
 
-export async function listCompanies() {
-  return (await loadAdapter()).listCompanies();
+export async function listCompanies(opts?: { q?: string; limit?: number; offset?: number }) {
+  return (await loadAdapter()).listCompanies(opts);
+}
+
+export async function getPlatformCompany(id: string) {
+  const adapter = await loadAdapter();
+  if (!adapter.getPlatformCompany) {
+    const listed = await adapter.listCompanies({ q: "", limit: 100, offset: 0 });
+    return listed.rows.find((row) => row.id === id) || null;
+  }
+  return adapter.getPlatformCompany(id);
 }
 
 export async function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {
   return (await loadAdapter()).ensureCompanyMembership(userId, companyId, role);
+}
+
+export async function joinCompanyByInvite(userId: string, inviteCode: string) {
+  const adapter = await loadAdapter();
+  if (!adapter.joinCompanyByInvite) return { error: "Invite join is not available." };
+  return adapter.joinCompanyByInvite(userId, inviteCode);
 }
 
 

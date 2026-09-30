@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, ImagePlus, Link2, RefreshCw, Settings, Shield, Trash2, Users } from "lucide-react";
+import { Building2, Copy, ImagePlus, Link2, RefreshCw, Settings, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,8 @@ export default function SettingsPage() {
   const [label, setLabel] = useState("");
   const [codeType, setCodeType] = useState<AccessCodeType>("trial");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
+  const [joining, setJoining] = useState(false);
 
   const patchDraft = (patch: Partial<CompanySettings>) => {
     setOverrides((prev) => ({ ...prev, ...patch }));
@@ -102,6 +104,83 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
+            <Building2 className="size-5 text-primary" />
+            Companies
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            One login can belong to many shops. Switch in the sidebar or open another invite here.
+          </p>
+          <div className="space-y-2">
+            {(account?.workspaces || []).map((workspace) => (
+              <div key={workspace.id} className="flex items-center justify-between rounded-xl bg-muted/30 p-3">
+                <div>
+                  <p className="text-sm font-medium">{workspace.name}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{workspace.role}</p>
+                </div>
+                {workspace.id === account?.company.id ? (
+                  <Badge>Current</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const response = await fetch("/api/workspace/switch", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ companyId: workspace.id }),
+                      });
+                      const data = (await response.json().catch(() => null)) as { error?: string; next?: string } | null;
+                      if (!response.ok) {
+                        toast.error(data?.error || "Could not switch companies.");
+                        return;
+                      }
+                      window.location.assign(data?.next || "/dashboard");
+                    }}
+                  >
+                    Open
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setJoining(true);
+              const response = await fetch("/api/workspace/join", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ inviteCode: joinCode }),
+              });
+              const data = (await response.json().catch(() => null)) as { error?: string; next?: string } | null;
+              setJoining(false);
+              if (!response.ok) {
+                toast.error(data?.error || "Could not join that company.");
+                return;
+              }
+              window.location.assign(data?.next || "/dashboard");
+            }}
+          >
+            <Input
+              value={joinCode}
+              onChange={(event) => setJoinCode(event.target.value)}
+              placeholder="Invite code"
+              className="font-mono uppercase"
+              required
+            />
+            <Button type="submit" disabled={joining}>
+              {joining ? "Joining…" : "Join company"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
             <Users className="size-5 text-primary" />
             Team
           </CardTitle>
@@ -110,6 +189,9 @@ export default function SettingsPage() {
           <p className="text-sm text-muted-foreground">
             {account?.company.name} · {plan?.name} plan · {account?.members.length || 0}
             {plan?.seats != null ? ` / ${plan.seats}` : ""} seats
+            {(account?.workspaces.length || 0) > 1
+              ? ` · you belong to ${account?.workspaces.length} companies`
+              : ""}
           </p>
           <div className="space-y-2">
             {(account?.members || []).map((member) => (

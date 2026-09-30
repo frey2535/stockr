@@ -1,6 +1,7 @@
 import { isSupabaseConfigured } from "./db-config";
 import { getCompanyState } from "./db";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { selectAllForCompany, selectAllMatching } from "./supabase-page";
 import { identifyRemoteProduct } from "./barcode-lookup";
 import { barcodeVariants } from "./barcode";
 import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from "./inventory";
@@ -108,13 +109,13 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
   }
 
   const supabase = getSupabaseAdmin();
-  const [companyRes, locationsRes, projectsRes, codesRes, toolsRes, materials, inventory, transactions, purchaseOrders] =
+  const [companyRes, locations, projects, codes, tools, materials, inventory, transactions, purchaseOrders] =
     await Promise.all([
       supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
-      supabase.from("stockr_locations").select("*").eq("company_id", companyId),
-      supabase.from("stockr_projects").select("*").eq("company_id", companyId),
-      supabase.from("stockr_access_codes").select("*").eq("company_id", companyId).order("created_at", { ascending: false }),
-      supabase.from("stockr_tools").select("*").eq("company_id", companyId),
+      selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
+      selectAllForCompany<Project>(supabase, "stockr_projects", companyId),
+      selectAllForCompany<AccessCode>(supabase, "stockr_access_codes", companyId),
+      selectAllForCompany<Tool>(supabase, "stockr_tools", companyId),
       supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
       supabase.from("stockr_inventory").select("id", { count: "exact", head: true }).eq("company_id", companyId),
       supabase.from("stockr_transactions").select("id", { count: "exact", head: true }).eq("company_id", companyId),
@@ -151,25 +152,25 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
     buildr_company_id: company.buildr_company_id,
   };
 
-  const rawProjects = (projectsRes.data || []) as Project[];
-  const tableTools = toolsRes.error ? [] : ((toolsRes.data || []) as Tool[]);
-  const tools = tableTools.length ? tableTools : toolsFromProjects(rawProjects);
+  const rawProjects = projects;
+  const tableTools = tools;
+  const resolvedTools = tableTools.length ? tableTools : toolsFromProjects(rawProjects);
   const stockRules = stockRulesFromProjects(rawProjects);
 
   return {
     settings,
-    locations: (locationsRes.data || []) as Location[],
+    locations,
     projects: visibleProjects(rawProjects),
-    accessCodes: (codesRes.data || []) as AccessCode[],
-    tools,
+    accessCodes: codes,
+    tools: resolvedTools,
     stockRules,
     counts: {
-      locations: (locationsRes.data || []).length,
+      locations: locations.length,
       materials: materials.count || 0,
       inventoryRows: inventory.count || 0,
       transactions: transactions.count || 0,
       purchaseOrders: purchaseOrders.count || 0,
-      tools: tools.length,
+      tools: resolvedTools.length,
     },
   };
 }
@@ -556,12 +557,17 @@ export async function listCatalog(
   const rows = (data || []).map(mapMaterial);
 
   const [cats, subs, inv] = await Promise.all([
-    supabase.from("stockr_materials").select("category").eq("company_id", companyId),
-    supabase
-      .from("stockr_materials")
-      .select("sub_category")
-      .eq("company_id", companyId)
-      .not("sub_category", "is", null),
+    selectAllForCompany<{ category: string | null }>(supabase, "stockr_materials", companyId, "category"),
+    selectAllMatching<{ sub_category: string | null }>(
+      (from, to) =>
+        supabase
+          .from("stockr_materials")
+          .select("sub_category")
+          .eq("company_id", companyId)
+          .not("sub_category", "is", null)
+          .range(from, to),
+      "subcategories",
+    ),
     rows.length
       ? supabase
           .from("stockr_inventory")
@@ -582,12 +588,8 @@ export async function listCatalog(
   return {
     rows,
     total: count || 0,
-    categories: Array.from(new Set((cats.data || []).map((row) => row.category).filter(Boolean))) as string[],
-    subcategories: Array.from(
-      new Set(
-        (subs.data || []).map((item) => item.sub_category).filter(Boolean),
-      ),
-    ) as string[],
+    categories: Array.from(new Set(cats.map((row) => row.category).filter(Boolean))) as string[],
+    subcategories: Array.from(new Set(subs.map((item) => item.sub_category).filter(Boolean))) as string[],
     onHand: onHandMap,
   };
 }
@@ -782,21 +784,36 @@ export async function getReports(companyId: string, opts: { from?: string; to?: 
     if (!isSupabaseConfigured()) return getCompanyState(companyId);
     const supabase = getSupabaseAdmin();
     const [locations, materials, inventory, transactions] = await Promise.all([
-      supabase.from("stockr_locations").select("*").eq("company_id", companyId),
-      supabase.from("stockr_materials").select("id, name, unit_cost").eq("company_id", companyId),
-      supabase.from("stockr_inventory").select("material_id, location_id, quantity").eq("company_id", companyId),
-      supabase
-        .from("stockr_transactions")
-        .select("*")
-        .eq("company_id", companyId)
-        .gte("created_at", opts.from ? `${opts.from}T00:00:00` : "1970-01-01")
-        .lte("created_at", opts.to ? `${opts.to}T23:59:59` : "2999-12-31"),
+      selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
+      selectAllForCompany<{ id: string; name: string; unit_cost: number | null }>(
+        supabase,
+        "stockr_materials",
+        companyId,
+        "id, name, unit_cost",
+      ),
+      selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
+        supabase,
+        "stockr_inventory",
+        companyId,
+        "material_id, location_id, quantity",
+      ),
+      selectAllMatching<Transaction>(
+        (from, to) =>
+          supabase
+            .from("stockr_transactions")
+            .select("*")
+            .eq("company_id", companyId)
+            .gte("created_at", opts.from ? `${opts.from}T00:00:00` : "1970-01-01")
+            .lte("created_at", opts.to ? `${opts.to}T23:59:59` : "2999-12-31")
+            .range(from, to),
+        "report transactions",
+      ),
     ]);
     return {
-      locations: (locations.data || []) as Location[],
-      materials: (materials.data || []).map(mapMaterial),
-      inventory: (inventory.data || []).map(mapInventory),
-      transactions: (transactions.data || []).map(mapTransaction),
+      locations,
+      materials: materials.map(mapMaterial),
+      inventory: inventory.map(mapInventory),
+      transactions: transactions.map((row) => mapTransaction(row as unknown as Record<string, unknown>)),
     };
   };
 

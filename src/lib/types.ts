@@ -241,11 +241,19 @@ export type TeamMember = {
 
 export type DataBackend = "supabase" | "sqlite";
 
+export type AccountWorkspace = {
+  id: string;
+  name: string;
+  slug: string;
+  role: MemberRole;
+};
+
 export type Account = {
   user: AccountUser;
   company: AccountCompany;
   role: MemberRole;
   members: TeamMember[];
+  workspaces: AccountWorkspace[];
   dataBackend: DataBackend;
   platformOwner: boolean;
 };
@@ -257,6 +265,11 @@ export type PlatformCompany = {
   plan: PlanId;
   planStatus: AccountCompany["planStatus"];
   memberCount: number;
+};
+
+export type CompanyList = {
+  rows: PlatformCompany[];
+  total: number;
 };
 
 

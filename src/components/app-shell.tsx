@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
 import { prefetchTab } from "@/lib/tab-prefetch";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 
 const NAV = [
   { href: "/dashboard", label: "Ops", icon: LayoutDashboard },
@@ -121,13 +122,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="space-y-2 border-t border-sidebar-border px-3 py-3">
           {account ? (
-            <div className="px-3 py-1">
-              <p className="truncate text-xs font-medium text-foreground">{account.company.name}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{account.user.email}</p>
+            <div>
+              <WorkspaceSwitcher account={account} />
               {plan ? (
                 <Link
                   href="/billing"
-                  className="mt-2 inline-flex rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold tracking-wide text-brand-foreground uppercase"
+                  className="mt-2 ml-3 inline-flex rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold tracking-wide text-brand-foreground uppercase"
                 >
                   {plan.name}
                 </Link>
@@ -191,6 +191,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
               More
             </p>
+            {account ? <WorkspaceSwitcher account={account} /> : null}
             <div className="grid grid-cols-2 gap-2">
               {moreNav.map((item) => {
                 const Icon = item.icon;

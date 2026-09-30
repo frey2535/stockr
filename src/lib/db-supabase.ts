@@ -4,7 +4,7 @@ import { encodeStateForPersist } from "./persist-state";
 import { toolsFromProjects } from "./tools-state";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
-import { selectAllForCompany } from "./supabase-page";
+import { selectAllForCompany, selectAllMatching } from "./supabase-page";
 import { tokenLookup } from "./token-lookup";
 import { uid } from "./id";
 import {
@@ -13,9 +13,12 @@ import {
   isPlatformOwner,
   seededOwnersToProvision,
 } from "./platform";
+import { companyListQuery, inviteJoinError, pickLoginCompany } from "./tenants";
 import type {
   AccessCode,
   Account,
+  AccountWorkspace,
+  CompanyList,
   InventoryItem,
   Location,
   Material,
@@ -208,14 +211,60 @@ export async function getCompany(id: string) {
 }
 
 export async function listMembers(companyId: string): Promise<TeamMember[]> {
-  const { data, error } = await getSupabaseAdmin()
+  const rows = await selectAllMatching<{
+    role: MemberRole;
+    stockr_users: { id: string; email: string; name: string } | { id: string; email: string; name: string }[] | null;
+  }>(
+    (from, to) =>
+      getSupabaseAdmin()
+        .from("stockr_memberships")
+        .select("role, stockr_users ( id, email, name )")
+        .eq("company_id", companyId)
+        .range(from, to),
+    "members",
+  );
+  return rows.flatMap((row) => {
+    const user = Array.isArray(row.stockr_users) ? row.stockr_users[0] : row.stockr_users;
+    if (!user) return [];
+    return [{ id: user.id, email: user.email, name: user.name, role: row.role }];
+  });
+}
+
+async function membershipCount(companyId: string) {
+  const { count, error } = await getSupabaseAdmin()
     .from("stockr_memberships")
-    .select("role, stockr_users ( id, email, name )")
+    .select("id", { count: "exact", head: true })
     .eq("company_id", companyId);
-  throwIfError(error, "List members");
-  return (data || []).map((row) => {
-    const user = row.stockr_users as unknown as { id: string; email: string; name: string };
-    return { id: user.id, email: user.email, name: user.name, role: row.role as MemberRole };
+  throwIfError(error, "Count members");
+  return count || 0;
+}
+
+export async function listUserCompanies(userId: string): Promise<AccountWorkspace[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: memberships, error } = await supabase
+    .from("stockr_memberships")
+    .select("role, company_id")
+    .eq("user_id", userId);
+  throwIfError(error, "List workspaces");
+  const ids = (memberships || []).map((row) => row.company_id as string);
+  if (ids.length === 0) return [];
+  const { data: companies, error: companyError } = await supabase
+    .from("stockr_companies")
+    .select("id, name, slug")
+    .in("id", ids);
+  throwIfError(companyError, "List workspace companies");
+  const byId = new Map((companies || []).map((row) => [row.id as string, row]));
+  return (memberships || []).flatMap((row) => {
+    const company = byId.get(row.company_id as string);
+    if (!company) return [];
+    return [
+      {
+        id: company.id as string,
+        name: company.name as string,
+        slug: company.slug as string,
+        role: row.role as MemberRole,
+      },
+    ];
   });
 }
 
@@ -249,6 +298,7 @@ export async function getAccount(
     },
     role: membershipRes.data.role as MemberRole,
     members: options?.members === false ? [] : await listMembers(companyId),
+    workspaces: await listUserCompanies(userId),
     dataBackend: "supabase",
     platformOwner: isPlatformOwner(user.email),
   };
@@ -284,6 +334,50 @@ export async function deleteSession(id: string) {
   throwIfError(error, "Delete session");
 }
 
+async function resolveInviteCompany(inviteCode: string) {
+  const { data: invite, error } = await getSupabaseAdmin()
+    .from("stockr_access_codes")
+    .select("company_id, expires_at, is_active")
+    .ilike("code", inviteCode.trim())
+    .eq("is_active", true)
+    .maybeSingle();
+  throwIfError(error, "Look up invite");
+  if (!invite || (invite.expires_at && new Date(invite.expires_at) <= new Date())) {
+    return { error: "Invite code is invalid or expired." };
+  }
+  const company = await getCompany(invite.company_id);
+  if (!company) return { error: "Invite code is invalid or expired." };
+  return { company };
+}
+
+export async function joinCompanyByInvite(userId: string, inviteCode: string) {
+  const supabase = getSupabaseAdmin();
+  const resolved = await resolveInviteCompany(inviteCode);
+  if ("error" in resolved) return resolved;
+  const company = resolved.company;
+  const alreadyMember = Boolean(
+    (
+      await supabase
+        .from("stockr_memberships")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("company_id", company.id)
+        .maybeSingle()
+    ).data,
+  );
+  const seatError = alreadyMember ? null : planLimitError(company.plan, {}, "seat", await membershipCount(company.id));
+  if (seatError) return { error: seatError };
+  if (!alreadyMember) {
+    const memberInsert = await supabase.from("stockr_memberships").insert({
+      user_id: userId,
+      company_id: company.id,
+      role: "member",
+    });
+    throwIfError(memberInsert.error, "Join company");
+  }
+  return { companyId: company.id };
+}
+
 export async function createCompanyWithOwner(input: {
   email: string;
   name: string;
@@ -293,26 +387,27 @@ export async function createCompanyWithOwner(input: {
 }) {
   const supabase = getSupabaseAdmin();
   const email = input.email.trim().toLowerCase();
-  if (await getUserByEmail(email)) return { error: "An account with that email already exists." };
+  const existing = await getUserByEmail(email);
+  if (existing && !input.inviteCode) return { error: "An account with that email already exists." };
 
   if (input.inviteCode) {
-    const { data: invite, error } = await supabase
-      .from("stockr_access_codes")
-      .select("company_id, expires_at, is_active")
-      .ilike("code", input.inviteCode.trim())
-      .eq("is_active", true)
-      .maybeSingle();
-    throwIfError(error, "Look up invite");
-    if (!invite) return { error: "Invite code is invalid or expired." };
-    if (invite.expires_at && new Date(invite.expires_at) <= new Date()) {
-      return { error: "Invite code is invalid or expired." };
+    if (existing) {
+      const joinError = inviteJoinError({
+        existingUser: true,
+        passwordMatches: bcrypt.compareSync(input.password, existing.password_hash),
+        alreadyMember: false,
+        seatError: null,
+      });
+      if (joinError) return { error: joinError };
+      const joined = await joinCompanyByInvite(existing.id, input.inviteCode);
+      if (!("companyId" in joined)) return joined;
+      return { userId: existing.id, companyId: joined.companyId };
     }
-    const company = await getCompany(invite.company_id);
-    if (!company) return { error: "Invite code is invalid or expired." };
-    const members = await listMembers(company.id);
-    const seatError = planLimitError(company.plan, {}, "seat", members.length);
-    if (seatError) return { error: seatError };
 
+    const resolved = await resolveInviteCompany(input.inviteCode);
+    if ("error" in resolved) return resolved;
+    const seatError = planLimitError(resolved.company.plan, {}, "seat", await membershipCount(resolved.company.id));
+    if (seatError) return { error: seatError };
     const userId = uid("usr");
     const userInsert = await supabase.from("stockr_users").insert({
       id: userId,
@@ -321,13 +416,9 @@ export async function createCompanyWithOwner(input: {
       password_hash: bcrypt.hashSync(input.password, 10),
     });
     throwIfError(userInsert.error, "Create user");
-    const memberInsert = await supabase.from("stockr_memberships").insert({
-      user_id: userId,
-      company_id: company.id,
-      role: "member",
-    });
-    throwIfError(memberInsert.error, "Join company");
-    return { userId, companyId: company.id };
+    const joined = await joinCompanyByInvite(userId, input.inviteCode);
+    if (!("companyId" in joined)) return joined;
+    return { userId, companyId: joined.companyId };
   }
 
   const userId = uid("usr");
@@ -361,40 +452,80 @@ export async function createCompanyWithOwner(input: {
 export async function verifyPassword(email: string, password: string) {
   const user = await getUserByEmail(email);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) return null;
-  const { data, error } = await getSupabaseAdmin()
-    .from("stockr_memberships")
-    .select("company_id")
-    .eq("user_id", user.id);
+  const supabase = getSupabaseAdmin();
+  const [{ data, error }, last] = await Promise.all([
+    supabase.from("stockr_memberships").select("company_id").eq("user_id", user.id),
+    supabase
+      .from("stockr_sessions")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .order("expires_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   throwIfError(error, "Look up membership");
+  if (last.error) {
+    console.error("Stockr could not read the last workspace session.", last.error.message);
+  }
   const companyIds = (data || []).map((row) => row.company_id as string);
   if (companyIds.length === 0) return null;
-  const preferred = isPlatformOwner(user.email) ? PLATFORM_OWNER_COMPANY_ID : "";
-  const companyId = companyIds.includes(preferred) ? preferred : companyIds[0];
-  return { userId: user.id, companyId };
+  return {
+    userId: user.id,
+    companyId: pickLoginCompany({
+      companyIds,
+      lastCompanyId: last.data?.company_id as string | undefined,
+      preferredCompanyId: isPlatformOwner(user.email) ? PLATFORM_OWNER_COMPANY_ID : "",
+    }),
+  };
 }
 
-export async function listCompanies(): Promise<PlatformCompany[]> {
+function mapPlatformCompany(
+  company: { id: string; name: string; slug: string; plan: PlanId; plan_status: PlatformCompany["planStatus"] },
+  memberCount: number,
+): PlatformCompany {
+  return {
+    id: company.id,
+    name: company.name,
+    slug: company.slug,
+    plan: company.plan,
+    planStatus: company.plan_status,
+    memberCount,
+  };
+}
+
+export async function getPlatformCompany(id: string): Promise<PlatformCompany | null> {
+  const company = await getCompany(id);
+  if (!company) return null;
+  return mapPlatformCompany(company, await membershipCount(company.id));
+}
+
+export async function listCompanies(opts?: { q?: string; limit?: number; offset?: number }): Promise<CompanyList> {
+  const { q, limit, offset } = companyListQuery(opts || {});
   const supabase = getSupabaseAdmin();
-  const [{ data: companies, error: companyError }, { data: memberships, error: memberError }] =
-    await Promise.all([
-      supabase.from("stockr_companies").select("id, name, slug, plan, plan_status").order("name"),
-      supabase.from("stockr_memberships").select("company_id"),
-    ]);
-  throwIfError(companyError, "List companies");
-  throwIfError(memberError, "Count members");
-  const counts = new Map<string, number>();
-  for (const row of memberships || []) {
-    const id = row.company_id as string;
-    counts.set(id, (counts.get(id) || 0) + 1);
-  }
-  return (companies || []).map((company) => ({
-    id: company.id as string,
-    name: company.name as string,
-    slug: company.slug as string,
-    plan: company.plan as PlanId,
-    planStatus: company.plan_status as PlatformCompany["planStatus"],
-    memberCount: counts.get(company.id as string) || 0,
-  }));
+  let query = supabase
+    .from("stockr_companies")
+    .select("id, name, slug, plan, plan_status", { count: "exact" })
+    .order("name");
+  if (q) query = query.or(`name.ilike.%${q}%,slug.ilike.%${q}%`);
+  const { data, error, count } = await query.range(offset, offset + limit - 1);
+  throwIfError(error, "List companies");
+  const companies = data || [];
+  const counts = await Promise.all(companies.map((company) => membershipCount(company.id as string)));
+  return {
+    rows: companies.map((company, index) =>
+      mapPlatformCompany(
+        {
+          id: company.id as string,
+          name: company.name as string,
+          slug: company.slug as string,
+          plan: company.plan as PlanId,
+          plan_status: company.plan_status as PlatformCompany["planStatus"],
+        },
+        counts[index],
+      ),
+    ),
+    total: count || 0,
+  };
 }
 
 export async function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {

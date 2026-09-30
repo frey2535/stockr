@@ -12,7 +12,17 @@ import {
   seededOwnersToProvision,
 } from "./platform";
 import { demoWorkspaceEnabled } from "./production";
-import type { Account, MemberRole, PlanId, PlatformCompany, StoreState, TeamMember } from "./types";
+import { companyListQuery, inviteJoinError, pickLoginCompany } from "./tenants";
+import type {
+  Account,
+  AccountWorkspace,
+  CompanyList,
+  MemberRole,
+  PlanId,
+  PlatformCompany,
+  StoreState,
+  TeamMember,
+} from "./types";
 import { uid } from "./id";
 
 const DATA_DIR = join(process.cwd(), "data");
@@ -166,6 +176,7 @@ export function getAccount(
     },
     role: membership.role,
     members: options?.members === false ? [] : listMembers(companyId),
+    workspaces: listUserCompanies(userId),
     dataBackend: "sqlite",
     platformOwner: isPlatformOwner(user.email),
   });
@@ -197,6 +208,56 @@ export function deleteSession(id: string) {
   db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
 }
 
+export function listUserCompanies(userId: string): AccountWorkspace[] {
+  const rows = db
+    .prepare(
+      `SELECT c.id, c.name, c.slug, m.role
+       FROM memberships m JOIN companies c ON c.id = m.company_id
+       WHERE m.user_id = ?
+       ORDER BY c.name`,
+    )
+    .all(userId) as { id: string; name: string; slug: string; role: MemberRole }[];
+  return plain(rows);
+}
+
+function resolveInviteCompany(inviteCode: string) {
+  const companies = db.prepare("SELECT id FROM companies").all() as { id: string }[];
+  for (const company of companies) {
+    const state = getCompanyState(company.id);
+    const invite = state.accessCodes.find(
+      (code) =>
+        code.is_active &&
+        code.code.toLowerCase() === inviteCode.trim().toLowerCase() &&
+        (!code.expires_at || new Date(code.expires_at) > new Date()),
+    );
+    if (!invite) continue;
+    const companyRow = getCompany(company.id);
+    if (companyRow) return { company: companyRow };
+  }
+  return { error: "Invite code is invalid or expired." };
+}
+
+export function joinCompanyByInvite(userId: string, inviteCode: string) {
+  const resolved = resolveInviteCompany(inviteCode);
+  if ("error" in resolved) return resolved;
+  const company = resolved.company;
+  const alreadyMember = Boolean(
+    db.prepare("SELECT role FROM memberships WHERE user_id = ? AND company_id = ?").get(userId, company.id),
+  );
+  const seatError = alreadyMember
+    ? null
+    : planLimitError(company.plan, {}, "seat", listMembers(company.id).length);
+  if (seatError) return { error: seatError };
+  if (!alreadyMember) {
+    db.prepare("INSERT INTO memberships (user_id, company_id, role) VALUES (?, ?, ?)").run(
+      userId,
+      company.id,
+      "member",
+    );
+  }
+  return { companyId: company.id };
+}
+
 export function createCompanyWithOwner(input: {
   email: string;
   name: string;
@@ -205,40 +266,33 @@ export function createCompanyWithOwner(input: {
   inviteCode?: string;
 }) {
   const email = input.email.trim().toLowerCase();
-  if (getUserByEmail(email)) return { error: "An account with that email already exists." };
+  const existing = getUserByEmail(email);
+  if (existing && !input.inviteCode) return { error: "An account with that email already exists." };
 
   if (input.inviteCode) {
-    const companies = db.prepare("SELECT id FROM companies").all() as { id: string }[];
-    for (const company of companies) {
-      const state = getCompanyState(company.id);
-      const invite = state.accessCodes.find(
-        (code) =>
-          code.is_active &&
-          code.code.toLowerCase() === input.inviteCode!.trim().toLowerCase() &&
-          (!code.expires_at || new Date(code.expires_at) > new Date()),
-      );
-      if (!invite) continue;
-      const companyRow = getCompany(company.id);
-      if (!companyRow) continue;
-      const seatError = planLimitError(
-        companyRow.plan,
-        {},
-        "seat",
-        listMembers(company.id).length,
-      );
-      if (seatError) return { error: seatError };
-      const userId = uid("usr");
-      db.prepare(
-        "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
-      ).run(userId, email, input.name.trim() || email.split("@")[0], bcrypt.hashSync(input.password, 10), new Date().toISOString());
-      db.prepare("INSERT INTO memberships (user_id, company_id, role) VALUES (?, ?, ?)").run(
-        userId,
-        company.id,
-        "member",
-      );
-      return { userId, companyId: company.id };
+    if (existing) {
+      const joinError = inviteJoinError({
+        existingUser: true,
+        passwordMatches: bcrypt.compareSync(input.password, existing.password_hash),
+        alreadyMember: false,
+        seatError: null,
+      });
+      if (joinError) return { error: joinError };
+      const joined = joinCompanyByInvite(existing.id, input.inviteCode);
+      if (!("companyId" in joined)) return joined;
+      return { userId: existing.id, companyId: joined.companyId };
     }
-    return { error: "Invite code is invalid or expired." };
+    const resolved = resolveInviteCompany(input.inviteCode);
+    if ("error" in resolved) return resolved;
+    const seatError = planLimitError(resolved.company.plan, {}, "seat", listMembers(resolved.company.id).length);
+    if (seatError) return { error: seatError };
+    const userId = uid("usr");
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(userId, email, input.name.trim() || email.split("@")[0], bcrypt.hashSync(input.password, 10), new Date().toISOString());
+    const joined = joinCompanyByInvite(userId, input.inviteCode);
+    if (!("companyId" in joined)) return joined;
+    return { userId, companyId: joined.companyId };
   }
 
   const userId = uid("usr");
@@ -272,35 +326,60 @@ export function verifyPassword(email: string, password: string) {
     .prepare("SELECT company_id FROM memberships WHERE user_id = ?")
     .all(user.id) as { company_id: string }[];
   if (memberships.length === 0) return null;
-  const companyIds = memberships.map((row) => row.company_id);
-  const preferred = isPlatformOwner(user.email) ? PLATFORM_OWNER_COMPANY_ID : "";
-  const companyId = companyIds.includes(preferred) ? preferred : companyIds[0];
-  return { userId: user.id, companyId };
+  const last = db
+    .prepare("SELECT company_id FROM sessions WHERE user_id = ? ORDER BY expires_at DESC LIMIT 1")
+    .get(user.id) as { company_id: string } | undefined;
+  return {
+    userId: user.id,
+    companyId: pickLoginCompany({
+      companyIds: memberships.map((row) => row.company_id),
+      lastCompanyId: last?.company_id,
+      preferredCompanyId: isPlatformOwner(user.email) ? PLATFORM_OWNER_COMPANY_ID : "",
+    }),
+  };
 }
 
-export function listCompanies(): PlatformCompany[] {
-  const companies = db
-    .prepare("SELECT id, name, slug, plan, plan_status FROM companies ORDER BY name")
-    .all() as {
-    id: string;
-    name: string;
-    slug: string;
-    plan: PlanId;
-    plan_status: PlatformCompany["planStatus"];
-  }[];
-  return companies.map((company) => {
-    const count = db
-      .prepare("SELECT COUNT(*) AS n FROM memberships WHERE company_id = ?")
-      .get(company.id) as { n: number };
-    return {
-      id: company.id,
-      name: company.name,
-      slug: company.slug,
-      plan: company.plan,
-      planStatus: company.plan_status,
-      memberCount: count.n,
-    };
-  });
+function mapPlatformCompany(company: CompanyRow): PlatformCompany {
+  const count = db
+    .prepare("SELECT COUNT(*) AS n FROM memberships WHERE company_id = ?")
+    .get(company.id) as { n: number };
+  return {
+    id: company.id,
+    name: company.name,
+    slug: company.slug,
+    plan: company.plan,
+    planStatus: company.plan_status,
+    memberCount: count.n,
+  };
+}
+
+export function getPlatformCompany(id: string): PlatformCompany | null {
+  const company = getCompany(id);
+  return company ? mapPlatformCompany(company) : null;
+}
+
+export function listCompanies(opts?: { q?: string; limit?: number; offset?: number }): CompanyList {
+  const { q, limit, offset } = companyListQuery(opts || {});
+  const like = `%${q}%`;
+  const companies = (
+    q
+      ? db
+          .prepare(
+            "SELECT id, name, slug, plan, plan_status, created_at FROM companies WHERE name LIKE ? OR slug LIKE ? ORDER BY name LIMIT ? OFFSET ?",
+          )
+          .all(like, like, limit, offset)
+      : db
+          .prepare("SELECT id, name, slug, plan, plan_status, created_at FROM companies ORDER BY name LIMIT ? OFFSET ?")
+          .all(limit, offset)
+  ) as CompanyRow[];
+  const total = (
+    q
+      ? (db.prepare("SELECT COUNT(*) AS n FROM companies WHERE name LIKE ? OR slug LIKE ?").get(like, like) as {
+          n: number;
+        })
+      : (db.prepare("SELECT COUNT(*) AS n FROM companies").get() as { n: number })
+  ).n;
+  return { rows: companies.map(mapPlatformCompany), total };
 }
 
 export function ensureCompanyMembership(userId: string, companyId: string, role: MemberRole) {
