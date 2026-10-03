@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildProductSearchQuery,
   collapseVisionObjects,
+  fillIdentityFromCatalog,
   identityGaps,
   isCompleteIdentity,
   isGenericName,
@@ -207,6 +208,27 @@ test("fills barcode and MPN from product knowledge when catalogs miss", async ()
   );
   assert.equal(found.identified?.mpn, "QO120");
   assert.equal(found.identified?.barcode, "785901001201");
+});
+
+test("company catalog fills missing manufacturer and MPN", () => {
+  const filled = fillIdentityFromCatalog(
+    {
+      identified: null,
+      draft: { name: "12/2 NM-B Romex", barcode: "032886902245", mpn: "", source: "photo" },
+      missing: ["mpn"],
+    },
+    [
+      {
+        name: "12/2 NM-B Romex",
+        barcode: "032886902245",
+        mpn: "288290",
+        manufacturer: "Southwire",
+      },
+    ],
+  );
+  assert.equal(filled.identified?.mpn, "288290");
+  assert.equal(filled.identified?.manufacturer, "Southwire");
+  assert.equal(filled.missing.length, 0);
 });
 
 test("label-read name, barcode, and MPN count as identified", async () => {

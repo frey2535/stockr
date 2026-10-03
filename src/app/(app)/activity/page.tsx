@@ -122,6 +122,7 @@ export default function ActivityPage() {
                 <TableHead>From</TableHead>
                 <TableHead>To</TableHead>
                 <TableHead>Project</TableHead>
+                <TableHead>Notes</TableHead>
                 <TableHead>User</TableHead>
               </TableRow>
             </TableHeader>
@@ -148,7 +149,10 @@ export default function ActivityPage() {
                     <TableCell>
                       {locations.find((row) => row.id === tx.to_location_id)?.name || "—"}
                     </TableCell>
-                    <TableCell>{tx.project || tx.notes || "—"}</TableCell>
+                    <TableCell>{tx.project || "—"}</TableCell>
+                    <TableCell className="max-w-[220px] truncate text-xs text-muted-foreground">
+                      {tx.notes || "—"}
+                    </TableCell>
                     <TableCell>{actorLabel(tx.created_by)}</TableCell>
                   </TableRow>
                 );

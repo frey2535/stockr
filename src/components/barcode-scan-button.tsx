@@ -3,10 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-
-type Detector = {
-  detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]>;
-};
+import { readCodesFromVideo } from "@/lib/live-barcode";
 
 export function BarcodeScanButton({
   onCode,
@@ -32,17 +29,7 @@ export function BarcodeScanButton({
     let cancelled = false;
     const start = async () => {
       setError("");
-      if (!("BarcodeDetector" in window)) {
-        setError("This browser cannot scan from the camera. Type the barcode instead.");
-        return;
-      }
       try {
-        const Detector = (
-          window as unknown as { BarcodeDetector: new (opts: { formats: string[] }) => Detector }
-        ).BarcodeDetector;
-        const detector = new Detector({
-          formats: ["code_128", "ean_13", "ean_8", "upc_a", "upc_e", "code_39", "qr_code"],
-        });
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "environment" },
         });
@@ -56,13 +43,15 @@ export function BarcodeScanButton({
           await videoRef.current.play();
         }
         scanningRef.current = true;
+        let frames = 0;
         const tick = async () => {
           if (!scanningRef.current || !videoRef.current) return;
+          frames += 1;
           try {
-            const codes = await detector.detect(videoRef.current);
-            if (codes[0]?.rawValue) {
+            const codes = await readCodesFromVideo(videoRef.current, frames % 4 === 0);
+            if (codes[0]) {
               scanningRef.current = false;
-              onCode(codes[0].rawValue);
+              onCode(codes[0]);
               setOpen(false);
               return;
             }

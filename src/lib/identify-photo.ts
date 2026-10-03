@@ -509,3 +509,42 @@ export async function resolvePhotoIdentity(
   }
   return { identified: null, draft: toDraft(merged), missing };
 }
+
+export function fillIdentityFromCatalog(
+  item: PhotoIdentityResult,
+  materials: Array<{
+    name: string;
+    barcode?: string;
+    upc?: string;
+    mpn?: string;
+    manufacturer?: string;
+    category?: string;
+    description?: string;
+    image_url?: string;
+  }>,
+): PhotoIdentityResult {
+  const code = item.identified?.barcode || item.draft.barcode;
+  const mpn = item.identified?.mpn || item.draft.mpn;
+  const name = item.identified?.name || item.draft.name;
+  const hit = materials.find((row) => {
+    const codes = [row.barcode, row.upc, row.mpn].filter(Boolean) as string[];
+    if (code && codes.some((value) => codesOverlap(value, code))) return true;
+    if (mpn && row.mpn && normalizeSku(row.mpn) === normalizeSku(mpn)) return true;
+    if (name && normalizeSku(row.name) === normalizeSku(name)) return true;
+    return false;
+  });
+  if (!hit) return item;
+  const identified = mergeIdentities(item.identified, {
+    name: hit.name,
+    barcode: hit.barcode || hit.upc || code,
+    upc: hit.upc || hit.barcode || code,
+    mpn: hit.mpn || mpn,
+    manufacturer: hit.manufacturer,
+    brand: hit.manufacturer,
+    category: hit.category,
+    description: hit.description,
+    image_url: hit.image_url,
+    source: "catalog",
+  });
+  return { identified, draft: toDraft(identified), missing: identityGaps(identified) };
+}

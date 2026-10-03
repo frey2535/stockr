@@ -96,7 +96,7 @@ export function VoiceAssistant({
       onClick={() => (listening ? stop() : start())}
     >
       {listening ? <Square className="mr-2 size-4" /> : <Mic className="mr-2 size-4" />}
-      {listening ? listeningLabel : "Voice: transfer, use, find, return"}
+      {listening ? listeningLabel : "Voice: add, transfer, use, receive"}
     </Button>
   );
 }
