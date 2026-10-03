@@ -407,21 +407,22 @@ export function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string)
   const memberships = db
     .prepare("SELECT company_id, role FROM memberships WHERE user_id = ?")
     .all(user.id) as { company_id: string; role: MemberRole }[];
-  const picked = pickBuildrSsoCompany(
-    memberships.map((row) => {
-      const settings = getCompanyState(row.company_id).settings;
-      return {
-        companyId: row.company_id,
-        role: row.role,
-        buildrLinked: settings.buildr_linked === true,
-        buildrCompanyId: settings.buildr_company_id,
-      };
-    }),
-    normalizedBuildrCompanyId,
-  );
+  const last = db
+    .prepare("SELECT company_id FROM sessions WHERE user_id = ? ORDER BY expires_at DESC LIMIT 1")
+    .get(user.id) as { company_id: string } | undefined;
+  const candidates = memberships.map((row) => {
+    const settings = getCompanyState(row.company_id).settings;
+    return {
+      companyId: row.company_id,
+      role: row.role,
+      buildrLinked: settings.buildr_linked === true,
+      buildrCompanyId: settings.buildr_company_id,
+    };
+  });
+  const picked = pickBuildrSsoCompany(candidates, normalizedBuildrCompanyId, last?.company_id || "");
   if (!picked) return null;
 
-  if (shouldPersistBuildrLink(picked, normalizedBuildrCompanyId)) {
+  if (shouldPersistBuildrLink(picked, normalizedBuildrCompanyId, candidates)) {
     const state = getCompanyState(picked.companyId);
     if (
       state.settings.buildr_linked !== true ||

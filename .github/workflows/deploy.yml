@@ -48,6 +48,7 @@ jobs:
           PLATFORM_OWNER_PASSWORD: ${{ secrets.PLATFORM_OWNER_PASSWORD }}
           BUILDR_API_URL: ${{ secrets.BUILDR_API_URL }}
           BUILDR_API_KEY: ${{ secrets.BUILDR_API_KEY }}
+          FAMILY_APP_SSO_SECRET: ${{ secrets.FAMILY_APP_SSO_SECRET }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           STRIPE_PRICE_PRO: ${{ secrets.STRIPE_PRICE_PRO }}
@@ -81,6 +82,11 @@ jobs:
           printf '%s' "${BUILDR_API_URL:-https://buildrpm.com}" | npx wrangler pages secret put BUILDR_API_URL --project-name=stockr
           if [ -n "${BUILDR_API_KEY:-}" ]; then
             put_secret BUILDR_API_KEY "$BUILDR_API_KEY"
+          fi
+          if [ -n "${FAMILY_APP_SSO_SECRET:-}" ]; then
+            put_secret FAMILY_APP_SSO_SECRET "$FAMILY_APP_SSO_SECRET"
+          else
+            echo "Warning: add GitHub secret FAMILY_APP_SSO_SECRET so Buildr can open Stockr already signed in."
           fi
           if [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
             put_secret CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"

@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
+import type { NextResponse } from "next/server";
 import { deleteSession, getAccount, getSession } from "./db";
 import { SITE_HOST, isCanonicalHost } from "./site";
 import type { Account } from "./types";
@@ -27,6 +28,14 @@ export async function setSessionCookie(sessionId: string, expiresAt: string) {
     ...(await sessionCookieBase()),
     expires: new Date(expiresAt),
   });
+}
+
+export async function applySessionCookie(response: NextResponse, sessionId: string, expiresAt: string) {
+  response.cookies.set(SESSION_COOKIE, sessionId, {
+    ...(await sessionCookieBase()),
+    expires: new Date(expiresAt),
+  });
+  return response;
 }
 
 export async function clearSessionCookie() {
