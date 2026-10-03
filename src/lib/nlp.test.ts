@@ -42,3 +42,9 @@ test("use from a van on a job keeps the item name clean", () => {
   assert.match(used.fromLocationName.toLowerCase(), /truck 12/);
   assert.match(used.projectName.toLowerCase(), /riverside/);
 });
+
+test("field verbs and wake words still execute", () => {
+  assert.equal(parseInventoryEnglish("hey stockr grab 4 breakers from truck 12 on Riverside").action, "use");
+  assert.equal(parseInventoryEnglish("load 12 romex on Main Warehouse").action, "add");
+  assert.equal(parseInventoryEnglish("restock 20 emt to shop").action, "receive");
+});

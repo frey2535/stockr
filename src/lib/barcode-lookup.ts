@@ -1,4 +1,4 @@
-import { barcodeVariants, digitsOnly, isGtin } from "./barcode";
+import { digitsOnly, lookupBarcodeCandidates } from "./barcode";
 import { matchKnownByCode } from "./known-products";
 import { preferScannedIdentity } from "./scan-identity";
 import type { IdentifiedProduct } from "./types";
@@ -250,17 +250,19 @@ export async function identifyRemoteProduct(code: string): Promise<IdentifiedPro
   const hit = cached(trimmed);
   if (hit !== undefined) return hit;
 
-  const variants = barcodeVariants(trimmed);
-  const gtin = variants.find((value) => isGtin(value)) || variants.find((value) => digitsOnly(value).length >= 8) || trimmed;
-  const lookups = [
+  const candidates = lookupBarcodeCandidates(trimmed);
+  const primary = candidates[0] || trimmed;
+  const lookups = candidates.flatMap((gtin) => [
     lookupOpenFacts(gtin, "world.openproductsfacts.org", "open-products-facts"),
-    lookupOpenFacts(gtin, "world.openfoodfacts.org", "open-food-facts"),
-    lookupOpenFacts(gtin, "world.openbeautyfacts.org", "open-beauty-facts"),
-    lookupGoUpc(gtin),
     lookupUpcItemDb(gtin),
-  ];
+    lookupGoUpc(gtin),
+  ]);
+  lookups.push(
+    lookupOpenFacts(primary, "world.openfoodfacts.org", "open-food-facts"),
+    lookupOpenFacts(primary, "world.openbeautyfacts.org", "open-beauty-facts"),
+  );
   const results = await Promise.all(lookups);
-  const known = matchKnownByCode(trimmed);
+  const known = candidates.map(matchKnownByCode).find(Boolean) || matchKnownByCode(trimmed);
   const found = pickBestListing([...results, known]) || known || null;
   const identified = preferScannedIdentity(trimmed, "", found, known);
   remember(trimmed, identified.name || identified.mpn ? identified : found);

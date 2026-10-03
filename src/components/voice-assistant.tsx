@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+type SpeechResult = ArrayLike<{ transcript: string }> & { isFinal?: boolean };
+
 type SpeechRec = {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onresult: ((event: { results: ArrayLike<SpeechResult> }) => void) | null;
   onerror: (() => void) | null;
   onend: (() => void) | null;
   start: () => void;
@@ -32,9 +34,17 @@ function speak(text: string) {
   window.speechSynthesis.speak(utterance);
 }
 
+function spokenTranscript(results: ArrayLike<SpeechResult>) {
+  return Array.from(results)
+    .map((row) => row[0]?.transcript || "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function VoiceAssistant({
   onTranscript,
-  listeningLabel = "Listening…",
+  listeningLabel = "Listening… tap when done",
 }: {
   onTranscript: (text: string) => void | Promise<void>;
   listeningLabel?: string;
@@ -42,16 +52,27 @@ export function VoiceAssistant({
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
   const recRef = useRef<SpeechRec | null>(null);
+  const spokenRef = useRef("");
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     queueMicrotask(() => setSupported(Boolean(speechEngine())));
     return () => recRef.current?.stop();
   }, []);
 
+  const submit = (text: string) => {
+    const spoken = text.trim();
+    if (!spoken || submittedRef.current) return;
+    submittedRef.current = true;
+    speak("Working.");
+    void onTranscript(spoken);
+  };
+
   const stop = () => {
     recRef.current?.stop();
     recRef.current = null;
     setListening(false);
+    submit(spokenRef.current);
   };
 
   const start = () => {
@@ -60,21 +81,25 @@ export function VoiceAssistant({
       setSupported(false);
       return;
     }
+    spokenRef.current = "";
+    submittedRef.current = false;
     rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.continuous = false;
+    rec.interimResults = true;
+    rec.continuous = true;
     rec.onresult = (event) => {
-      const text = Array.from(event.results)
-        .map((row) => row[0]?.transcript || "")
-        .join(" ")
-        .trim();
-      if (text) {
-        speak("Working.");
-        void onTranscript(text);
-      }
+      const text = spokenTranscript(event.results);
+      if (text) spokenRef.current = text;
     };
-    rec.onerror = () => stop();
-    rec.onend = () => setListening(false);
+    rec.onerror = () => {
+      recRef.current = null;
+      setListening(false);
+      submit(spokenRef.current);
+    };
+    rec.onend = () => {
+      recRef.current = null;
+      setListening(false);
+      submit(spokenRef.current);
+    };
     recRef.current = rec;
     rec.start();
     setListening(true);
@@ -83,7 +108,7 @@ export function VoiceAssistant({
   if (!supported) {
     return (
       <p className="text-xs text-muted-foreground">
-        Voice control needs Chrome or the Stockr Android app on this device.
+        Voice control needs Chrome or the Stockr Android app on this device. You can still type the command below.
       </p>
     );
   }

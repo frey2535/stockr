@@ -52,8 +52,9 @@ async function detectZxing(canvas: HTMLCanvasElement) {
 
 export async function readCodesFromVideo(video: HTMLVideoElement, allowZxing = true) {
   const native = await detectNative(video);
-  if (native.length) return native;
-  if (!allowZxing) return [];
+  if (native.length) return { codes: native, source: "native" as const };
+  if (!allowZxing) return { codes: [] as string[], source: "none" as const };
   const canvas = videoFrame(video);
-  return canvas ? detectZxing(canvas) : [];
+  const codes = canvas ? await detectZxing(canvas) : [];
+  return { codes, source: codes.length ? ("zxing" as const) : ("none" as const) };
 }
