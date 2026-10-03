@@ -7,6 +7,7 @@ import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllMatching } from "./supabase-page";
 import { tokenLookup } from "./token-lookup";
 import { uid } from "./id";
+import { pickBuildrSsoCompany, shouldPersistBuildrLink } from "./buildr-sso-identity";
 import {
   PLATFORM_OWNER_COMPANY_ID,
   PLATFORM_OWNER_COMPANY_NAME,
@@ -552,38 +553,66 @@ export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: s
   if (!normalizedEmail || !normalizedBuildrCompanyId) return null;
 
   const supabase = getSupabaseAdmin();
-  const [{ data: user, error: userError }, { data: company, error: companyError }] =
-    await Promise.all([
-      supabase
-        .from("stockr_users")
-        .select("id, email")
-        .eq("email", normalizedEmail)
-        .maybeSingle(),
-      supabase
-        .from("stockr_companies")
-        .select("id, buildr_linked, buildr_company_id")
-        .eq("buildr_linked", true)
-        .eq("buildr_company_id", normalizedBuildrCompanyId)
-        .maybeSingle(),
-    ]);
-
-  throwIfError(userError, "Resolve Buildr SSO user");
-  throwIfError(companyError, "Resolve Buildr SSO company");
-  if (!user || !company) return null;
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("stockr_memberships")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("company_id", company.id)
+  const { data: user, error: userError } = await supabase
+    .from("stockr_users")
+    .select("id, email")
+    .eq("email", normalizedEmail)
     .maybeSingle();
-  throwIfError(membershipError, "Resolve Buildr SSO membership");
-  if (!membership) return null;
+  throwIfError(userError, "Resolve Buildr SSO user");
+  if (!user) return null;
+
+  const { data: memberships, error: membershipError } = await supabase
+    .from("stockr_memberships")
+    .select("role, company_id")
+    .eq("user_id", user.id);
+  throwIfError(membershipError, "Resolve Buildr SSO memberships");
+  if (!memberships?.length) return null;
+
+  const companyIds = memberships.map((row) => row.company_id as string);
+  const { data: companies, error: companyError } = await supabase
+    .from("stockr_companies")
+    .select("id, buildr_linked, buildr_company_id")
+    .in("id", companyIds);
+  throwIfError(companyError, "Resolve Buildr SSO companies");
+
+  const companyById = new Map(
+    (companies || []).map((row) => [row.id as string, row]),
+  );
+  const picked = pickBuildrSsoCompany(
+    memberships.map((row) => {
+      const company = companyById.get(row.company_id as string);
+      return {
+        companyId: row.company_id as string,
+        role: row.role as string,
+        buildrLinked: company?.buildr_linked === true,
+        buildrCompanyId: (company?.buildr_company_id as string | null) || "",
+      };
+    }),
+    normalizedBuildrCompanyId,
+  );
+  if (!picked) return null;
+
+  if (shouldPersistBuildrLink(picked, normalizedBuildrCompanyId)) {
+    const current = companyById.get(picked.companyId);
+    if (
+      current?.buildr_linked !== true ||
+      String(current?.buildr_company_id || "").trim() !== normalizedBuildrCompanyId
+    ) {
+      const { error: linkError } = await supabase
+        .from("stockr_companies")
+        .update({
+          buildr_linked: true,
+          buildr_company_id: normalizedBuildrCompanyId,
+        })
+        .eq("id", picked.companyId);
+      throwIfError(linkError, "Persist Buildr SSO company link");
+    }
+  }
 
   return {
     userId: user.id as string,
-    companyId: company.id as string,
-    role: membership.role as MemberRole,
+    companyId: picked.companyId,
+    role: picked.role as MemberRole,
   };
 }
 
