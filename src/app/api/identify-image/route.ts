@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { identifyRemoteProduct, searchRemoteProduct } from "@/lib/barcode-lookup";
-import { fillIdentityFromCatalog, identityGaps, isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
+import { fillIdentityFromCatalog, isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
 import { materialMatchesCode } from "@/lib/inventory";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { requireAccount } from "@/lib/require-account";
