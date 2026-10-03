@@ -23,11 +23,14 @@ function isAdminRole(role: string) {
 export function pickBuildrSsoCompany(
   candidates: BuildrSsoCandidate[],
   buildrCompanyId: string,
+  lastCompanyId = "",
 ): BuildrSsoCandidate | null {
   const target = String(buildrCompanyId || "").trim();
   if (!target || candidates.length === 0) return null;
 
-  const alreadyLinked = candidates.filter((row) => sameCompanyId(row.buildrCompanyId, target));
+  const alreadyLinked = candidates.filter(
+    (row) => sameCompanyId(row.buildrCompanyId, target) || sameCompanyId(row.companyId, target),
+  );
   if (alreadyLinked.length === 1) return alreadyLinked[0];
   if (alreadyLinked.length > 1) {
     return alreadyLinked.find((row) => row.buildrLinked) || alreadyLinked[0];
@@ -38,10 +41,44 @@ export function pickBuildrSsoCompany(
   const admins = candidates.filter((row) => isAdminRole(row.role));
   if (admins.length === 1) return admins[0];
 
+  const last = String(lastCompanyId || "").trim();
+  if (last) return candidates.find((row) => sameCompanyId(row.companyId, last)) || null;
+
   return null;
 }
 
-export function shouldPersistBuildrLink(company: BuildrSsoCandidate, buildrCompanyId: string) {
+export function buildrSsoLoginMessage(reason: string) {
+  switch (String(reason || "").trim()) {
+    case "sso_not_configured":
+      return "Stockr is not configured to accept Buildr sign-in.";
+    case "expired":
+    case "invalid_issued_at":
+      return "That Buildr sign-in link expired. Open Stockr from Buildr again.";
+    case "stockr_account_not_linked":
+      return "No Stockr account matches that Buildr user. Sign in once with email, then open Stockr from Buildr again.";
+    case "company_mismatch":
+      return "That Buildr company does not match this Stockr workspace.";
+    case "invalid_token":
+    case "invalid_signature":
+    case "invalid_claims":
+    case "unsupported_token":
+    case "wrong_audience":
+    case "missing_identity":
+      return "Could not verify that Buildr sign-in link. Open Stockr from Buildr again.";
+    default:
+      return "Could not sign you in from Buildr. Open Stockr from Buildr again, or sign in with email.";
+  }
+}
+
+export function shouldPersistBuildrLink(
+  company: BuildrSsoCandidate,
+  buildrCompanyId: string,
+  candidates: BuildrSsoCandidate[] = [company],
+) {
   const existing = String(company.buildrCompanyId || "").trim();
-  return !existing || existing === String(buildrCompanyId || "").trim();
+  const target = String(buildrCompanyId || "").trim();
+  if (existing && existing !== target) return false;
+  if (existing === target) return true;
+  if (sameCompanyId(company.companyId, target)) return true;
+  return candidates.length === 1;
 }

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   ArrowRight,
   BarChart3,
@@ -8,10 +7,13 @@ import {
   Truck,
   Warehouse,
 } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { MarketingFooter } from "@/components/marketing-footer";
 import { MarketingHeader } from "@/components/marketing-header";
 import { Button } from "@/components/ui/button";
 import { getCurrentAccount } from "@/lib/auth";
+import { familySsoSearch, familySsoTokenFromSearch } from "@/lib/buildr-sso";
 import { PLANS } from "@/lib/plans";
 import { publicDemoEnabled } from "@/lib/production";
 
@@ -38,7 +40,20 @@ const FEATURES = [
   },
 ];
 
-export default async function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries((searchParams ? await searchParams : {}) || {})) {
+    const text = Array.isArray(value) ? value[0] : value;
+    if (text) params.set(key, text);
+  }
+  if (familySsoTokenFromSearch(params)) {
+    redirect(`/api/auth/buildr-sso?${familySsoSearch(params).toString()}`);
+  }
+
   const account = await getCurrentAccount();
 
   return (

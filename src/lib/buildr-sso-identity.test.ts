@@ -44,4 +44,31 @@ describe("pickBuildrSsoCompany", () => {
     );
     assert.equal(picked, null);
   });
+
+  it("matches a Stockr workspace whose id is the Buildr company id", () => {
+    const picked = pickBuildrSsoCompany(
+      [
+        { companyId: "co_other", role: "admin" },
+        { companyId: "co_smithcomech", role: "member" },
+      ],
+      "co_smithcomech",
+    );
+    assert.equal(picked?.companyId, "co_smithcomech");
+  });
+
+  it("falls back to the last used workspace when several admins exist", () => {
+    const picked = pickBuildrSsoCompany(
+      [
+        { companyId: "a", role: "admin" },
+        { companyId: "b", role: "admin" },
+      ],
+      "co_smithcomech",
+      "b",
+    );
+    assert.equal(picked?.companyId, "b");
+    assert.equal(shouldPersistBuildrLink(picked!, "co_smithcomech", [
+      { companyId: "a", role: "admin" },
+      { companyId: "b", role: "admin" },
+    ]), false);
+  });
 });

@@ -45,6 +45,12 @@ const SIGN_IN_PAGES = new Set(["/login", "/signin", "/sign-in", "/sign_in"]);
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  const ssoToken = request.nextUrl.searchParams.get("sso_token") || request.nextUrl.searchParams.get("token") || request.nextUrl.searchParams.get("sso");
+  if (ssoToken && pathname !== "/api/auth/buildr-sso") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/api/auth/buildr-sso";
+    return NextResponse.redirect(url);
+  }
 
   if (request.method === "POST" && SIGN_IN_PAGES.has(pathname)) {
     return NextResponse.rewrite(new URL("/api/auth/login", request.url));
@@ -78,6 +84,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/dashboard/:path*",
     "/scanner/:path*",
     "/inventory/:path*",

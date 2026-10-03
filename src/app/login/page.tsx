@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { buildrSsoLoginMessage } from "@/lib/buildr-sso-identity";
+
+function initialLoginError(params: URLSearchParams) {
+  const error = params.get("error");
+  if (!error) return "";
+  if (error === "buildr_sso") return buildrSsoLoginMessage(params.get("reason") || "");
+  return "Email or password is incorrect.";
+}
 
 function LoginForm() {
   const router = useRouter();
@@ -16,9 +24,7 @@ function LoginForm() {
   const next = params.get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(
-    params.get("error") ? "Email or password is incorrect." : "",
-  );
+  const [error, setError] = useState(initialLoginError(params));
   const [busy, setBusy] = useState(false);
 
   const submit = async (event: React.FormEvent) => {

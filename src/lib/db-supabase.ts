@@ -569,30 +569,41 @@ export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: s
   if (!memberships?.length) return null;
 
   const companyIds = memberships.map((row) => row.company_id as string);
-  const { data: companies, error: companyError } = await supabase
-    .from("stockr_companies")
-    .select("id, buildr_linked, buildr_company_id")
-    .in("id", companyIds);
+  const [{ data: companies, error: companyError }, last] = await Promise.all([
+    supabase.from("stockr_companies").select("id, buildr_linked, buildr_company_id").in("id", companyIds),
+    supabase
+      .from("stockr_sessions")
+      .select("company_id")
+      .eq("user_id", user.id)
+      .order("expires_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   throwIfError(companyError, "Resolve Buildr SSO companies");
+  if (last.error) {
+    console.error("Stockr could not read the last workspace session for Buildr SSO.", last.error.message);
+  }
 
   const companyById = new Map(
     (companies || []).map((row) => [row.id as string, row]),
   );
+  const candidates = memberships.map((row) => {
+    const company = companyById.get(row.company_id as string);
+    return {
+      companyId: row.company_id as string,
+      role: row.role as string,
+      buildrLinked: company?.buildr_linked === true,
+      buildrCompanyId: (company?.buildr_company_id as string | null) || "",
+    };
+  });
   const picked = pickBuildrSsoCompany(
-    memberships.map((row) => {
-      const company = companyById.get(row.company_id as string);
-      return {
-        companyId: row.company_id as string,
-        role: row.role as string,
-        buildrLinked: company?.buildr_linked === true,
-        buildrCompanyId: (company?.buildr_company_id as string | null) || "",
-      };
-    }),
+    candidates,
     normalizedBuildrCompanyId,
+    (last.data?.company_id as string | undefined) || "",
   );
   if (!picked) return null;
 
-  if (shouldPersistBuildrLink(picked, normalizedBuildrCompanyId)) {
+  if (shouldPersistBuildrLink(picked, normalizedBuildrCompanyId, candidates)) {
     const current = companyById.get(picked.companyId);
     if (
       current?.buildr_linked !== true ||

@@ -11,6 +11,16 @@ const nextConfig: NextConfig = {
     "0.0.0.0",
     "stockr.currentflowconsulting.org",
   ],
+  async redirects() {
+    return [
+      {
+        source: "/",
+        has: [{ type: "query", key: "sso_token", value: "(?<sso_token>.+)" }],
+        destination: "/api/auth/buildr-sso?sso_token=:sso_token",
+        permanent: false,
+      },
+    ];
+  },
   async rewrites() {
     return [
       { source: "/signin", destination: "/login" },
