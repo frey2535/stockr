@@ -139,9 +139,9 @@ export default function ScannerPage() {
       }
       setSelected(null);
       setOnHandByLocation({});
-      const product = data?.identified
+      const product: IdentifiedProduct = data?.identified
         ? { ...data.identified, barcode: data.identified.barcode || trimmed }
-        : { name: "", barcode: trimmed, source: "scan" as const };
+        : { name: "", barcode: trimmed, source: "scan" };
       setDraftName(product.name && !/^scanned item\b/i.test(product.name) ? product.name : "");
       setDraftBarcode(product.barcode || trimmed);
       setDraftMpn(product.mpn || "");

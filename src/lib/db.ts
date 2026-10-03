@@ -85,11 +85,11 @@ function loadAdapter() {
               error,
             );
           }
-          return mod;
+          return mod as Adapter;
         })
-      : import("./db-sqlite");
+      : import("./db-sqlite").then((mod) => mod as Adapter);
   }
-  return adapterPromise;
+  return adapterPromise as Promise<Adapter>;
 }
 
 export async function getCompanyState(companyId: string) {
