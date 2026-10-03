@@ -598,9 +598,26 @@ async function withRemoteIdentity(
   barcode: string,
   result: { rows: Material[]; onHandByLocation?: Record<string, number> },
 ): Promise<{ rows: Material[]; onHandByLocation?: Record<string, number>; identified?: IdentifiedProduct | null }> {
-  if (result.rows.length) return result;
+  if (result.rows.length) {
+    const material = result.rows[0];
+    return {
+      ...result,
+      identified: {
+        name: material.name,
+        barcode: material.barcode || barcode,
+        upc: material.upc || barcode,
+        mpn: material.mpn || "",
+        manufacturer: material.manufacturer,
+        brand: material.manufacturer,
+        category: material.category,
+        description: material.description,
+        image_url: material.image_url,
+        source: "catalog",
+      },
+    };
+  }
   const identified = await identifyRemoteProduct(barcode);
-  return identified ? { ...result, identified } : { ...result, identified: null };
+  return { ...result, identified: identified || { name: "", barcode, upc: barcode, source: "scan" } };
 }
 
 export async function lookupMaterials(companyId: string, opts: { barcode?: string; q?: string; limit?: number }) {

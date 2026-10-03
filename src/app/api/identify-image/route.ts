@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { identifyRemoteProduct, searchRemoteProduct } from "@/lib/barcode-lookup";
-import { identityGaps, isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
+import { fillIdentityFromCatalog, identityGaps, isCompleteIdentity, resolvePhotoIdentities } from "@/lib/identify-photo";
 import { materialMatchesCode } from "@/lib/inventory";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { requireAccount } from "@/lib/require-account";
@@ -31,47 +31,37 @@ export async function POST(request: Request) {
     completeProductIdentity,
   );
 
-  const first = items[0];
-  const catalogQuery =
-    first?.identified?.barcode ||
-    first?.draft.barcode ||
-    barcodes[0] ||
-    first?.identified?.name ||
-    first?.draft.name ||
-    "";
-  const catalog = catalogQuery
-    ? await lookupMaterials(account.company.id, { barcode: catalogQuery, q: catalogQuery, limit: 8 })
-    : { rows: [], onHandByLocation: {} };
-  const rows = (catalog.rows || []).filter(
-    (row) =>
-      (catalogQuery && materialMatchesCode(row, catalogQuery)) ||
-      (catalogQuery && row.name.toLowerCase().includes(catalogQuery.toLowerCase())),
-  );
-  const catalogHit = rows[0];
-  if (catalogHit && first && identityGaps(first.identified).length > 0) {
-    const prior = first.identified;
-    first.identified = {
-      name: catalogHit.name,
-      barcode: catalogHit.barcode || prior?.barcode || first.draft.barcode || "",
-      mpn: catalogHit.mpn || prior?.mpn || first.draft.mpn || "",
-      manufacturer: catalogHit.manufacturer || prior?.manufacturer,
-      brand: catalogHit.manufacturer || prior?.brand,
-      upc: catalogHit.upc || prior?.upc,
-      image_url: catalogHit.image_url || prior?.image_url,
-      source: "catalog",
-    };
-    first.draft = {
-      name: first.identified.name,
-      barcode: first.identified.barcode,
-      mpn: first.identified.mpn || "",
-      brand: first.identified.brand,
-      manufacturer: first.identified.manufacturer,
-      image_url: first.identified.image_url,
-      source: "catalog",
-    };
-    first.missing = identityGaps(first.identified);
-    items[0] = first;
+  const catalogRows: Awaited<ReturnType<typeof lookupMaterials>>["rows"] = [];
+  let onHandByLocation: Record<string, number> = {};
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const catalogQuery =
+      item.identified?.barcode ||
+      item.draft.barcode ||
+      (index === 0 ? barcodes[0] : "") ||
+      item.identified?.name ||
+      item.draft.name ||
+      "";
+    if (!catalogQuery) continue;
+    const catalog = await lookupMaterials(account.company.id, {
+      barcode: item.identified?.barcode || item.draft.barcode || (index === 0 ? barcodes[0] : "") || "",
+      q: catalogQuery,
+      limit: 8,
+    });
+    const rows = (catalog.rows || []).filter(
+      (row) =>
+        materialMatchesCode(row, catalogQuery) ||
+        row.name.toLowerCase().includes(catalogQuery.toLowerCase()) ||
+        (row.mpn && catalogQuery.toLowerCase().includes(row.mpn.toLowerCase())),
+    );
+    items[index] = fillIdentityFromCatalog(item, rows.length ? rows : catalog.rows || []);
+    catalogRows.push(...rows);
+    if (!Object.keys(onHandByLocation).length) onHandByLocation = catalog.onHandByLocation || {};
   }
+  const first = items[0];
+  const rows = catalogRows.filter(
+    (row, index, all) => all.findIndex((other) => other.id === row.id) === index,
+  );
   const identifiedCount = items.filter((item) => item.identified && isCompleteIdentity(item.identified)).length;
   const named = items.some((item) => item.identified?.name || item.draft.name);
   const error =
@@ -88,7 +78,7 @@ export async function POST(request: Request) {
     missing: first?.missing || ["name", "barcode", "mpn"],
     count: items.length,
     rows,
-    onHandByLocation: catalog.onHandByLocation || {},
+    onHandByLocation,
     error,
   });
 }

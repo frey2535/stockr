@@ -1,4 +1,5 @@
-import type { IdentifiedProduct } from "./types";
+import { barcodeVariants, digitsOnly } from "./barcode.ts";
+import type { IdentifiedProduct } from "./types.ts";
 
 type KnownProduct = {
   match: RegExp;
@@ -81,4 +82,21 @@ export function matchKnownProduct(hint: string): IdentifiedProduct | null {
     if (row.match.test(text)) return { ...row.product };
   }
   return null;
+}
+
+export function matchKnownByCode(code: string): IdentifiedProduct | null {
+  const raw = String(code || "").trim();
+  if (!raw) return null;
+  const variants = new Set(
+    [raw, digitsOnly(raw), ...barcodeVariants(raw)]
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  for (const row of KNOWN) {
+    const codes = [row.product.barcode, row.product.upc, row.product.mpn].filter(Boolean) as string[];
+    if (codes.some((value) => variants.has(value) || variants.has(digitsOnly(value)))) {
+      return { ...row.product };
+    }
+  }
+  return matchKnownProduct(raw);
 }

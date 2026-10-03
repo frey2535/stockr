@@ -1,4 +1,6 @@
 import { barcodeVariants, digitsOnly, isGtin } from "./barcode";
+import { matchKnownByCode } from "./known-products";
+import { preferScannedIdentity } from "./scan-identity";
 import type { IdentifiedProduct } from "./types";
 
 export type { IdentifiedProduct };
@@ -258,7 +260,9 @@ export async function identifyRemoteProduct(code: string): Promise<IdentifiedPro
     lookupUpcItemDb(gtin),
   ];
   const results = await Promise.all(lookups);
-  const found = results.find(Boolean) || null;
-  remember(trimmed, found);
-  return found;
+  const known = matchKnownByCode(trimmed);
+  const found = pickBestListing([...results, known]) || known || null;
+  const identified = preferScannedIdentity(trimmed, "", found, known);
+  remember(trimmed, identified.name || identified.mpn ? identified : found);
+  return identified.name || identified.mpn || identified.barcode ? identified : found;
 }

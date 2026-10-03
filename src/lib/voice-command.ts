@@ -1,12 +1,32 @@
-import { matchLocation, matchMaterial, parseInventoryEnglish, type ParsedAction } from "./nlp";
-import { needsFrom, needsProject, needsTo } from "./tx";
-import type { InventoryAction, Location, Material, Project, TxType } from "./types";
+import { matchLocation, matchMaterial, parseInventoryEnglish, type ParsedAction } from "./nlp.ts";
+import { needsFrom, needsProject, needsTo } from "./tx.ts";
+import type { InventoryAction, Location, Material, Project, TxType } from "./types.ts";
 
 export type VoiceResult =
-  | { ok: false; error: string; spoken: string; parsed: ParsedAction }
+  | { ok: false; error: string; spoken: string; parsed: ParsedAction; create?: boolean }
   | { ok: true; kind: "find"; material: Material; spoken: string; parsed: ParsedAction }
   | { ok: true; kind: "action"; action: InventoryAction; spoken: string; parsed: ParsedAction }
   | { ok: true; kind: "delete"; material: Material; spoken: string; parsed: ParsedAction };
+
+function pickLocation(name: string, locations: Location[]) {
+  return matchLocation(name, locations) || (locations.length === 1 ? locations[0] : null);
+}
+
+function pickProject(name: string, projects: Project[]) {
+  if (!name.trim()) return "";
+  const exact = projects.find((row) => row.name.toLowerCase() === name.toLowerCase());
+  if (exact) return exact.name;
+  const folded = name.toLowerCase();
+  const partial = projects.find(
+    (row) => row.name.toLowerCase().includes(folded) || folded.includes(row.name.toLowerCase()),
+  );
+  return partial?.name || name;
+}
+
+export function voiceSearchQuery(transcript: string) {
+  const parsed = parseInventoryEnglish(transcript);
+  return parsed.itemQuery.trim() || transcript.trim();
+}
 
 export function planVoiceCommand(
   transcript: string,
@@ -16,11 +36,9 @@ export function planVoiceCommand(
 ): VoiceResult {
   const parsed = parseInventoryEnglish(transcript);
   const { match } = matchMaterial(parsed.itemQuery, materials);
-  const from = matchLocation(parsed.fromLocationName, locations);
-  const to = matchLocation(parsed.toLocationName, locations);
-  const project =
-    projects.find((row) => row.name.toLowerCase() === parsed.projectName.toLowerCase())?.name ||
-    parsed.projectName;
+  const from = pickLocation(parsed.fromLocationName, locations);
+  const to = pickLocation(parsed.toLocationName, locations);
+  const project = pickProject(parsed.projectName, projects);
 
   if (!parsed.action) {
     return { ok: false, error: "I did not hear an inventory action.", spoken: "Say use, transfer, add, return, or find.", parsed };
@@ -28,8 +46,11 @@ export function planVoiceCommand(
   if (!match) {
     return {
       ok: false,
-      error: parsed.itemQuery ? `No catalog match for “${parsed.itemQuery}”.` : "Name the material.",
-      spoken: "I could not match that material.",
+      create: Boolean(parsed.itemQuery),
+      error: parsed.itemQuery
+        ? `No catalog match for “${parsed.itemQuery}”. Add it to the catalog and inventory.`
+        : "Name the material.",
+      spoken: parsed.itemQuery ? "That item is not in the catalog yet. Add it on screen." : "I could not match that material.",
       parsed,
     };
   }

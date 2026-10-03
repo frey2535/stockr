@@ -51,9 +51,9 @@ export function parseInventoryEnglish(input: string): ParsedAction {
   } else if (/^(add|added|adding|put|stock)\b/i.test(n)) {
     r.action = "add";
     n = n.replace(/^(add|added|adding|put|stock)\s*/i, "");
-  } else if (/^(transfer|move|moved|send|sent)\b/i.test(n)) {
+  } else if (/^(transfer|move|moved|send|sent|take|took|bring|brought)\b/i.test(n)) {
     r.action = "transfer";
-    n = n.replace(/^(transfer|move|moved|send|sent)\s*/i, "");
+    n = n.replace(/^(transfer|move|moved|send|sent|take|took|bring|brought)\s*/i, "");
   } else if (/^(shrink|shrinkage|lost|missing|write\s*off)\b/i.test(n)) {
     r.action = "shrink";
     n = n.replace(/^(shrink|shrinkage|lost|missing|write\s*off)\s*/i, "");
@@ -83,6 +83,14 @@ export function parseInventoryEnglish(input: string): ParsedAction {
   }
 
   const place = "([a-z0-9\\s#'._-]+?)";
+  if (r.action === "use" || r.action === "return") {
+    const project = n.match(/\b(?:on|for)\s+(?:project\s+|job\s+)?([a-z0-9\s#'._-]+?)(?:\s+from\s+|\s+to\s+|$)/i);
+    if (project) {
+      r.projectName = project[1].trim();
+      n = n.replace(project[0], " ").trim();
+    }
+  }
+
   const to = n.match(new RegExp(`\\bto\\s+${place}(?:\\s+from\\s+|\\s+for\\s+|\\s+on\\s+|$)`, "i"));
   if (to) {
     r.toLocationName = to[1].trim();
@@ -95,10 +103,15 @@ export function parseInventoryEnglish(input: string): ParsedAction {
     n = n.replace(from[0], " ").trim();
   }
 
-  const project = n.match(/\b(?:on|for)\s+(?:project\s+|job\s+)?([a-z0-9\s#'._-]+?)(?:\s+from\s+|\s+to\s+|$)/i);
-  if (project && (r.action === "use" || r.action === "return")) {
-    r.projectName = project[1].trim();
-    n = n.replace(project[0], " ").trim();
+  if (
+    !r.toLocationName &&
+    (r.action === "add" || r.action === "receive" || r.action === "count" || r.action === "adjust")
+  ) {
+    const dest = n.match(new RegExp(`\\b(?:to|on|onto|in|into)\\s+${place}$`, "i"));
+    if (dest) {
+      r.toLocationName = dest[1].trim();
+      n = n.replace(dest[0], " ").trim();
+    }
   }
 
   r.itemQuery = n.replace(/\b(boxes?|units?|of)\b/gi, " ").replace(/\s+/g, " ").trim();
@@ -135,10 +148,15 @@ export function matchLocation<T extends { name: string; assigned_to?: string }>(
   return score > 0.3 ? best : null;
 }
 
-export function matchMaterial<T extends { name: string; aliases?: string[]; barcode?: string; mpn?: string }>(
-  query: string,
-  materials: T[],
-) {
+export function matchMaterial<T extends {
+  name: string;
+  aliases?: string[];
+  barcode?: string;
+  mpn?: string;
+  upc?: string;
+  manufacturer?: string;
+  supplier_number?: string;
+}>(query: string, materials: T[]) {
   if (!query) return { match: null as T | null, score: 0 };
   let best: T | null = null;
   let score = 0;
@@ -148,7 +166,10 @@ export function matchMaterial<T extends { name: string; aliases?: string[]; barc
       for (const a of m.aliases) s = Math.max(s, scoreMatch(query, a) * 1.1);
     }
     if (m.barcode) s = Math.max(s, scoreMatch(query, m.barcode));
+    if (m.upc) s = Math.max(s, scoreMatch(query, m.upc));
     if (m.mpn) s = Math.max(s, scoreMatch(query, m.mpn));
+    if (m.manufacturer) s = Math.max(s, scoreMatch(query, `${m.manufacturer} ${m.name}`));
+    if (m.supplier_number) s = Math.max(s, scoreMatch(query, m.supplier_number));
     if (s > score) {
       score = s;
       best = m;

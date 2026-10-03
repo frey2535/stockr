@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchKnownProduct } from "./known-products.ts";
+import { matchKnownByCode, matchKnownProduct } from "./known-products.ts";
 import { parseVisionText } from "./identify-photo.ts";
 
 test("matches a Square D breaker from a visual name with no barcode", () => {
@@ -24,4 +24,10 @@ test("does not treat a generic word as a catalog SKU", () => {
   assert.equal(matchKnownProduct("emt"), null);
   assert.equal(matchKnownProduct("thhn"), null);
   assert.equal(matchKnownProduct("square box"), null);
+});
+
+test("identifies a known SKU from its barcode", () => {
+  const found = matchKnownByCode("785901001201");
+  assert.equal(found?.mpn, "QO120");
+  assert.equal(found?.manufacturer, "Square D");
 });

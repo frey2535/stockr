@@ -24,3 +24,21 @@ test("parses shrink and find", () => {
   assert.equal(parseInventoryEnglish("shrink 2 emt from truck 12").action, "shrink");
   assert.equal(parseInventoryEnglish("where is 3/4 locknut").action, "find");
 });
+
+test("parses add onto a location and take as transfer", () => {
+  const added = parseInventoryEnglish("put 25 screws on truck 12");
+  assert.equal(added.action, "add");
+  assert.equal(added.quantity, 25);
+  assert.match(added.itemQuery, /screws/i);
+  assert.match(added.toLocationName.toLowerCase(), /truck 12/);
+  assert.equal(parseInventoryEnglish("take 4 romex from shop to truck 7").action, "transfer");
+});
+
+test("use from a van on a job keeps the item name clean", () => {
+  const used = parseInventoryEnglish("use 10 romex from truck 12 on Riverside");
+  assert.equal(used.action, "use");
+  assert.equal(used.quantity, 10);
+  assert.equal(used.itemQuery.toLowerCase(), "romex");
+  assert.match(used.fromLocationName.toLowerCase(), /truck 12/);
+  assert.match(used.projectName.toLowerCase(), /riverside/);
+});

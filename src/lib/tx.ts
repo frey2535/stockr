@@ -1,4 +1,4 @@
-import type { TxType } from "./types";
+import type { TxType } from "./types.ts";
 
 export const TX_TYPES: TxType[] = [
   "use",
