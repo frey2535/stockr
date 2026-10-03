@@ -30,4 +30,6 @@ test("identifies a known SKU from its barcode", () => {
   const found = matchKnownByCode("785901001201");
   assert.equal(found?.mpn, "QO120");
   assert.equal(found?.manufacturer, "Square D");
+  assert.equal(matchKnownByCode("078912345678")?.mpn, "QO120");
+  assert.equal(matchKnownByCode("012345678901")?.mpn, "EMT-075-10");
 });

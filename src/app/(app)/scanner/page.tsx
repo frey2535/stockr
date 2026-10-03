@@ -234,15 +234,15 @@ export default function ScannerPage() {
           if (!scanningRef.current || !videoRef.current) return;
           frames += 1;
           try {
-            const codes = await readCodesFromVideo(videoRef.current, frames % 4 === 0);
-            const value = codes[0]?.trim();
+            const read = await readCodesFromVideo(videoRef.current, frames % 2 === 0);
+            const value = read.codes[0]?.trim();
             if (value) {
               if (value === lastCodeRef.current) hitsRef.current += 1;
               else {
                 lastCodeRef.current = value;
                 hitsRef.current = 1;
               }
-              if (hitsRef.current >= 2) {
+              if (read.source === "native" || hitsRef.current >= 2) {
                 scanningRef.current = false;
                 setMode("manual");
                 void lookup(value);

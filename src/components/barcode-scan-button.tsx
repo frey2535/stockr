@@ -48,10 +48,10 @@ export function BarcodeScanButton({
           if (!scanningRef.current || !videoRef.current) return;
           frames += 1;
           try {
-            const codes = await readCodesFromVideo(videoRef.current, frames % 4 === 0);
-            if (codes[0]) {
+            const read = await readCodesFromVideo(videoRef.current, frames % 2 === 0);
+            if (read.codes[0]) {
               scanningRef.current = false;
-              onCode(codes[0]);
+              onCode(read.codes[0]);
               setOpen(false);
               return;
             }

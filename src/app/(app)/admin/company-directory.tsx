@@ -17,9 +17,15 @@ export function CompanyDirectory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const loadPage = (nextSubmitted: string, nextOffset: number) => {
+    setLoading(true);
+    setError("");
+    setSubmitted(nextSubmitted);
+    setOffset(nextOffset);
+  };
+
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     const params = new URLSearchParams({
       q: submitted,
       limit: String(COMPANY_PAGE_SIZE),
@@ -61,8 +67,7 @@ export function CompanyDirectory() {
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          setOffset(0);
-          setSubmitted(q.trim());
+          loadPage(q.trim(), 0);
         }}
       >
         <Input
@@ -111,7 +116,7 @@ export function CompanyDirectory() {
               size="sm"
               variant="outline"
               disabled={offset === 0}
-              onClick={() => setOffset(Math.max(offset - COMPANY_PAGE_SIZE, 0))}
+              onClick={() => loadPage(submitted, Math.max(offset - COMPANY_PAGE_SIZE, 0))}
             >
               Previous
             </Button>
@@ -120,7 +125,7 @@ export function CompanyDirectory() {
               size="sm"
               variant="outline"
               disabled={offset + COMPANY_PAGE_SIZE >= total}
-              onClick={() => setOffset(offset + COMPANY_PAGE_SIZE)}
+              onClick={() => loadPage(submitted, offset + COMPANY_PAGE_SIZE)}
             >
               Next
             </Button>

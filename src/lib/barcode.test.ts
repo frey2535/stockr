@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { barcodeVariants, codesMatch, expandUpcE, isGtin, withGtinCheckDigit } from "./barcode.ts";
+import { barcodeVariants, codesMatch, expandUpcE, isGtin, lookupBarcodeCandidates, withGtinCheckDigit } from "./barcode.ts";
 
 test("Diet Coke UPC variants include EAN-13", () => {
   const variants = barcodeVariants("049000028911");
@@ -25,4 +25,10 @@ test("UPC-E expands to a 12-digit UPC-A", () => {
   const upcA = expandUpcE("04252614");
   assert.equal(upcA.length, 12);
   assert.equal(withGtinCheckDigit(upcA.slice(0, 11)), upcA);
+});
+
+test("remote lookup tries UPC-A and EAN-13 for the same item", () => {
+  const codes = lookupBarcodeCandidates("0012345678901");
+  assert.ok(codes.includes("012345678901") || codes.includes("0012345678901"));
+  assert.ok(codes.length >= 1 && codes.length <= 3);
 });

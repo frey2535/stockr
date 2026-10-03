@@ -29,7 +29,7 @@ export function parseInventoryEnglish(input: string): ParsedAction {
     };
   }
 
-  let n = e;
+  let n = e.replace(/^(hey\s+)?stockr[,.]?\s+/i, "").replace(/^(please|can you|okay|ok)\s+/i, "");
   const r: ParsedAction = {
     action: null,
     quantity: null,
@@ -39,21 +39,21 @@ export function parseInventoryEnglish(input: string): ParsedAction {
     projectName: "",
   };
 
-  if (/^(receive|received|receiving)\b/i.test(n)) {
+  if (/^(receive|received|receiving|restock|restocked)\b/i.test(n)) {
     r.action = "receive";
-    n = n.replace(/^(receive|received|receiving)\s*/i, "");
+    n = n.replace(/^(receive|received|receiving|restock|restocked)\s*/i, "");
   } else if (/^(return|returned|returning)\b/i.test(n)) {
     r.action = "return";
     n = n.replace(/^(return|returned|returning)\s*/i, "");
   } else if (/^(count|counted|cycle)\b/i.test(n)) {
     r.action = "count";
     n = n.replace(/^(count|counted|cycle(?:\s+count)?)\s*/i, "");
-  } else if (/^(add|added|adding|put|stock)\b/i.test(n)) {
+  } else if (/^(add|added|adding|put|stock|load|loaded)\b/i.test(n)) {
     r.action = "add";
-    n = n.replace(/^(add|added|adding|put|stock)\s*/i, "");
-  } else if (/^(transfer|move|moved|send|sent|take|took|bring|brought)\b/i.test(n)) {
+    n = n.replace(/^(add|added|adding|put|stock|load|loaded)\s*/i, "");
+  } else if (/^(transfer|move|moved|send|sent|take|took|bring|brought|unload|unloaded)\b/i.test(n)) {
     r.action = "transfer";
-    n = n.replace(/^(transfer|move|moved|send|sent|take|took|bring|brought)\s*/i, "");
+    n = n.replace(/^(transfer|move|moved|send|sent|take|took|bring|brought|unload|unloaded)\s*/i, "");
   } else if (/^(shrink|shrinkage|lost|missing|write\s*off)\b/i.test(n)) {
     r.action = "shrink";
     n = n.replace(/^(shrink|shrinkage|lost|missing|write\s*off)\s*/i, "");
@@ -64,11 +64,11 @@ export function parseInventoryEnglish(input: string): ParsedAction {
     r.action = "delete";
     n = n.replace(/^(delete|remove|void)\s*/i, "");
   } else if (
-    /^(use|used|using|consume|consumed|pull|pulled|install|installed)\b/i.test(n)
+    /^(use|used|using|consume|consumed|pull|pulled|install|installed|grab|grabbed|charge|charged|issue|issued|pick)\b/i.test(n)
   ) {
     r.action = "use";
     n = n.replace(
-      /^(use|used|using|consume|consumed|pull|pulled|install|installed)\s*/i,
+      /^(use|used|using|consume|consumed|pull|pulled|install|installed|grab|grabbed|charge|charged|issue|issued|pick)\s*/i,
       "",
     );
   } else if (/^(find|lookup|look up|search|where(?:'s| is)|locate)\b/i.test(n)) {

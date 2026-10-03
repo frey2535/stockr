@@ -85,3 +85,15 @@ export function codesMatch(left: string | undefined, right: string | undefined) 
   const rightSet = new Set(barcodeVariants(right));
   return barcodeVariants(left).some((value) => rightSet.has(value));
 }
+
+export function lookupBarcodeCandidates(code: string) {
+  const trimmed = code.trim();
+  if (!trimmed) return [];
+  const variants = barcodeVariants(trimmed);
+  const preferred =
+    variants.find((value) => isGtin(value) && digitsOnly(value).length === 12) ||
+    variants.find((value) => isGtin(value)) ||
+    variants.find((value) => digitsOnly(value).length >= 8) ||
+    trimmed;
+  return Array.from(new Set([preferred, trimmed, ...variants.filter((value) => isGtin(value))])).slice(0, 3);
+}
