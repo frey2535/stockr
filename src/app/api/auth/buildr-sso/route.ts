@@ -86,8 +86,8 @@ export async function GET(request: Request) {
 
   const identity = await resolveBuildrSsoIdentity(claims.email!, claims.company_id!);
   if (!identity) {
-    // Do not create a Stockr user or workspace here. The customer must already
-    // own/provision Stockr independently, preserving standalone operation.
+    // Do not create a Stockr user or workspace here. Sign-in only happens when
+    // this email already belongs to a Stockr company that can be linked.
     return errorRedirect(request, "stockr_account_not_linked");
   }
 

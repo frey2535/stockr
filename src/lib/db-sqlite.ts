@@ -14,6 +14,7 @@ import {
 import { demoWorkspaceEnabled } from "./production";
 import type { Account, MemberRole, PlanId, PlatformCompany, StoreState, TeamMember } from "./types";
 import { uid } from "./id";
+import { pickBuildrSsoCompany, shouldPersistBuildrLink } from "./buildr-sso-identity";
 
 const DATA_DIR = join(process.cwd(), "data");
 const DB_PATH = join(DATA_DIR, "stockr.db");
@@ -324,22 +325,41 @@ export function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string)
   const user = getUserByEmail(normalizedEmail);
   if (!user) return null;
 
-  const companies = db.prepare("SELECT id FROM companies").all() as { id: string }[];
-  const company = companies.find((row) => {
-    const state = getCompanyState(row.id);
-    return (
-      state.settings.buildr_linked === true &&
-      String(state.settings.buildr_company_id || "").trim() === normalizedBuildrCompanyId
-    );
-  });
-  if (!company) return null;
+  const memberships = db
+    .prepare("SELECT company_id, role FROM memberships WHERE user_id = ?")
+    .all(user.id) as { company_id: string; role: MemberRole }[];
+  const picked = pickBuildrSsoCompany(
+    memberships.map((row) => {
+      const settings = getCompanyState(row.company_id).settings;
+      return {
+        companyId: row.company_id,
+        role: row.role,
+        buildrLinked: settings.buildr_linked === true,
+        buildrCompanyId: settings.buildr_company_id,
+      };
+    }),
+    normalizedBuildrCompanyId,
+  );
+  if (!picked) return null;
 
-  const membership = db
-    .prepare("SELECT role FROM memberships WHERE user_id = ? AND company_id = ?")
-    .get(user.id, company.id) as { role: MemberRole } | undefined;
-  if (!membership) return null;
+  if (shouldPersistBuildrLink(picked, normalizedBuildrCompanyId)) {
+    const state = getCompanyState(picked.companyId);
+    if (
+      state.settings.buildr_linked !== true ||
+      String(state.settings.buildr_company_id || "").trim() !== normalizedBuildrCompanyId
+    ) {
+      setCompanyState(picked.companyId, {
+        ...state,
+        settings: {
+          ...state.settings,
+          buildr_linked: true,
+          buildr_company_id: normalizedBuildrCompanyId,
+        },
+      });
+    }
+  }
 
-  return { userId: user.id, companyId: company.id, role: membership.role };
+  return { userId: user.id, companyId: picked.companyId, role: picked.role as MemberRole };
 }
 
 export function setCompanyPlan(companyId: string, plan: PlanId) {
