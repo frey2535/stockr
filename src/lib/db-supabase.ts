@@ -682,6 +682,117 @@ export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: s
   };
 }
 
+
+export type BuildrSsoBootstrapInput = {
+  email: string;
+  name?: string;
+  buildrCompanyId: string;
+  companyName?: string;
+  passwordHash?: string;
+  role?: string;
+};
+
+function mapBuildrRole(role: string | undefined): MemberRole {
+  const value = String(role || "").trim().toLowerCase();
+  if (value === "owner") return "owner";
+  if (value === "admin") return "admin";
+  return "member";
+}
+
+/**
+ * Auto-provision or link a Stockr workspace for a verified Buildr SSO user.
+ * Uses the Buildr company ID as the Stockr company id when creating, and syncs
+ * the Buildr password hash so the same login works in Stockr.
+ */
+export async function ensureBuildrSsoIdentity(input: BuildrSsoBootstrapInput) {
+  const email = String(input.email || "").trim().toLowerCase();
+  const buildrCompanyId = String(input.buildrCompanyId || "").trim();
+  if (!email || !buildrCompanyId) return null;
+
+  const existing = await resolveBuildrSsoIdentity(email, buildrCompanyId);
+  const supabase = getSupabaseAdmin();
+  const passwordHash = String(input.passwordHash || "").trim();
+  const displayName = String(input.name || "").trim() || email.split("@")[0];
+  const memberRole = mapBuildrRole(input.role);
+
+  if (existing) {
+    if (passwordHash) {
+      const { error } = await supabase
+        .from("stockr_users")
+        .update({ password_hash: passwordHash, name: displayName })
+        .eq("id", existing.userId);
+      throwIfError(error, "Sync Buildr password into Stockr");
+    }
+    return existing;
+  }
+
+  let companyId = "";
+  const byLink = await supabase
+    .from("stockr_companies")
+    .select("id")
+    .eq("buildr_company_id", buildrCompanyId)
+    .maybeSingle();
+  throwIfError(byLink.error, "Look up Buildr-linked Stockr company");
+  if (byLink.data?.id) {
+    companyId = String(byLink.data.id);
+  } else {
+    const byId = await supabase
+      .from("stockr_companies")
+      .select("id")
+      .eq("id", buildrCompanyId)
+      .maybeSingle();
+    throwIfError(byId.error, "Look up Stockr company by Buildr id");
+    if (byId.data?.id) {
+      companyId = String(byId.data.id);
+    }
+  }
+
+  if (!companyId) {
+    companyId = buildrCompanyId;
+    const companyName = String(input.companyName || "").trim() || "Buildr company";
+    const companyInsert = await supabase.from("stockr_companies").insert({
+      id: companyId,
+      name: companyName,
+      slug: slugify(companyName),
+      plan: "starter",
+      plan_status: "active",
+      buildr_linked: true,
+      buildr_company_id: buildrCompanyId,
+    });
+    throwIfError(companyInsert.error, "Create Stockr company from Buildr SSO");
+    await setCompanyState(companyId, createEmptyState(companyName));
+  } else {
+    const { error: linkError } = await supabase
+      .from("stockr_companies")
+      .update({ buildr_linked: true, buildr_company_id: buildrCompanyId })
+      .eq("id", companyId);
+    throwIfError(linkError, "Link Stockr company to Buildr");
+  }
+
+  let user = await getUserByEmail(email);
+  if (!user) {
+    if (!passwordHash) return null;
+    const userId = uid("usr");
+    const userInsert = await supabase.from("stockr_users").insert({
+      id: userId,
+      email,
+      name: displayName,
+      password_hash: passwordHash,
+    });
+    throwIfError(userInsert.error, "Create Stockr user from Buildr SSO");
+    user = { id: userId, email, name: displayName, password_hash: passwordHash, created_at: "" };
+  } else if (passwordHash) {
+    const { error } = await supabase
+      .from("stockr_users")
+      .update({ password_hash: passwordHash, name: displayName })
+      .eq("id", user.id);
+    throwIfError(error, "Sync Buildr password into Stockr");
+  }
+
+  await ensureCompanyMembership(user.id, companyId, memberRole);
+  return { userId: user.id, companyId, role: memberRole };
+}
+
 export async function setPlayPurchase(
   companyId: string,
   input: { productId: string; purchaseToken: string; expiresAt?: string | null },

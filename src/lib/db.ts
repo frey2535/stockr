@@ -57,6 +57,17 @@ type Adapter = {
     | { userId: string; companyId: string; role: MemberRole }
     | null
     | Promise<{ userId: string; companyId: string; role: MemberRole } | null>;
+  ensureBuildrSsoIdentity?: (input: {
+    email: string;
+    name?: string;
+    buildrCompanyId: string;
+    companyName?: string;
+    passwordHash?: string;
+    role?: string;
+  }) =>
+    | { userId: string; companyId: string; role: MemberRole }
+    | null
+    | Promise<{ userId: string; companyId: string; role: MemberRole } | null>;
 };
 
 let adapterPromise: Promise<Adapter> | null = null;
@@ -178,6 +189,21 @@ export async function joinCompanyByInvite(userId: string, inviteCode: string) {
  */
 export async function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string) {
   return (await loadAdapter()).resolveBuildrSsoIdentity(email, buildrCompanyId);
+}
+
+export async function ensureBuildrSsoIdentity(input: {
+  email: string;
+  name?: string;
+  buildrCompanyId: string;
+  companyName?: string;
+  passwordHash?: string;
+  role?: string;
+}) {
+  const adapter = await loadAdapter();
+  if (adapter.ensureBuildrSsoIdentity) {
+    return adapter.ensureBuildrSsoIdentity(input);
+  }
+  return adapter.resolveBuildrSsoIdentity(input.email, input.buildrCompanyId);
 }
 
 export async function createPasswordReset(email: string) {

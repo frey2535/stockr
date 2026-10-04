@@ -93,7 +93,7 @@ describe("verifyFamilySsoToken", () => {
 
 describe("buildrSsoLoginMessage", () => {
   it("does not call a failed Buildr launch a password error", () => {
-    assert.match(buildrSsoLoginMessage("stockr_account_not_linked"), /No Stockr account/);
+    assert.match(buildrSsoLoginMessage("stockr_account_not_linked"), /could not open Stockr/);
     assert.match(buildrSsoLoginMessage("expired"), /expired/);
     assert.match(buildrSsoLoginMessage(""), /Buildr/);
   });
