@@ -139,12 +139,14 @@ export default function ScannerPage() {
       }
       setSelected(null);
       setOnHandByLocation({});
-      const product = data?.identified
+      const product: IdentifiedProduct = data?.identified
         ? { ...data.identified, barcode: data.identified.barcode || trimmed }
-        : { name: "", barcode: trimmed, source: "scan" as const };
-      setDraftName(product.name && !/^scanned item\b/i.test(product.name) ? product.name : "");
+        : { name: "", barcode: trimmed, source: "scan" };
+      const identifiedName = product.name;
+      const identifiedMpn = product.mpn || "";
+      setDraftName(identifiedName && !/^scanned item\b/i.test(identifiedName) ? identifiedName : "");
       setDraftBarcode(product.barcode || trimmed);
-      setDraftMpn(product.mpn || "");
+      setDraftMpn(identifiedMpn);
       setDraftManufacturer(product.manufacturer || product.brand || "");
       if (isCompleteIdentity(product)) {
         setIdentified(product);
@@ -153,11 +155,11 @@ export default function ScannerPage() {
         toast.success(`Identified ${product.name}. Add it to the catalog and inventory.`);
         return;
       }
-      setIdentified(product.name ? product : null);
+      setIdentified(identifiedName ? product : null);
       setIdentityMissing(["name", "barcode", "mpn"].filter((field) => {
-        if (field === "name") return !product.name || /^scanned item\b/i.test(product.name);
+        if (field === "name") return !identifiedName || /^scanned item\b/i.test(identifiedName);
         if (field === "barcode") return !trimmed;
-        return !product.mpn;
+        return !identifiedMpn;
       }));
       setUnknownCode(trimmed);
     } finally {

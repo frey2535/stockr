@@ -61,7 +61,7 @@ type Adapter = {
 
 let adapterPromise: Promise<Adapter> | null = null;
 
-function loadAdapter() {
+function loadAdapter(): Promise<Adapter> {
   if (!adapterPromise) {
     if (
       (process.env.VERCEL ||
@@ -85,9 +85,9 @@ function loadAdapter() {
               error,
             );
           }
-          return mod;
+          return mod as Adapter;
         })
-      : import("./db-sqlite");
+      : import("./db-sqlite").then((mod) => mod as Adapter);
   }
   return adapterPromise;
 }

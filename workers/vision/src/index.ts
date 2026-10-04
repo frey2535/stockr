@@ -197,7 +197,7 @@ async function complete(env: Env, names: string) {
   }
 }
 
-export default {
+const worker = {
   async fetch(request: Request, env: Env) {
     if (request.method === "GET") {
       return Response.json({ ok: true, service: "stockr-vision" });
@@ -229,3 +229,5 @@ export default {
     return Response.json({ objects: best, caption: named || undefined });
   },
 };
+
+export default worker;

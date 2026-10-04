@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Building2, Copy, ImagePlus, Link2, RefreshCw, Settings, Shield, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import { useStore } from "@/lib/store";
 import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { workspace, account, updateSettings, resetDemo, createAccessCode, toggleAccessCode, syncBuildr } = useStore();
   const { settings, accessCodes } = workspace;
   const [overrides, setOverrides] = useState<Partial<CompanySettings>>({});
@@ -559,7 +561,8 @@ export default function SettingsPage() {
                     toast.error(data?.error || "Could not delete the workspace.");
                     return;
                   }
-                  window.location.href = "/";
+                  router.push("/");
+                  router.refresh();
                 }}
               >
                 Delete workspace

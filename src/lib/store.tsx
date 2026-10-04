@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 import type {
   AccessCode,
@@ -109,6 +110,7 @@ export function StoreProvider({
   initialWorkspace: WorkspaceShell;
   initialAccount: Account;
 }) {
+  const router = useRouter();
   const [workspace, setWorkspace] = useState<WorkspaceShell>(initialWorkspace);
   const [account, setAccount] = useState<Account | null>(initialAccount);
 
@@ -136,7 +138,7 @@ export function StoreProvider({
         created?: Material | AccessCode | Tool;
       } | null;
       if (response.status === 401) {
-        window.location.href = "/login";
+        router.push("/login");
         return { ok: false, error: "Sign in required." };
       }
       if (data?.workspace) setWorkspace(data.workspace);
@@ -149,7 +151,7 @@ export function StoreProvider({
     } catch {
       return { ok: false, error: "offline" };
     }
-  }, []);
+  }, [router]);
 
   const api = useMemo<StoreApi>(
     () => ({
@@ -265,10 +267,11 @@ export function StoreProvider({
       toggleAccessCode: (id) => send({ type: "toggleAccessCode", id }),
       logout: async () => {
         await fetch("/api/auth/logout", { method: "POST" });
-        window.location.href = "/";
+        router.push("/");
+        router.refresh();
       },
     }),
-    [account, refreshWorkspace, send, workspace],
+    [account, refreshWorkspace, router, send, workspace],
   );
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>;

@@ -82,7 +82,9 @@ export function inferCatalogNumber(product: Partial<IdentifiedProduct> | null | 
   return catalog?.[1] || "";
 }
 
-export function isCompleteIdentity(product: IdentifiedProduct | null | undefined): product is IdentifiedProduct {
+export function isCompleteIdentity(
+  product: IdentifiedProduct | null | undefined,
+): product is IdentifiedProduct & { name: string; barcode: string; mpn: string } {
   return identityGaps(product).length === 0;
 }
 

@@ -3,7 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const PAGE = 1000;
 
 export async function selectAllMatching<T>(
-  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message: string } | null }>,
+  fetchPage: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   label = "rows",
 ): Promise<T[]> {
   const rows: T[] = [];
@@ -25,7 +28,7 @@ export async function selectAllForCompany<T>(
 ): Promise<T[]> {
   return selectAllMatching<T>(
     (from, to) =>
-      supabase.from(table).select(columns).eq("company_id", companyId).range(from, to) as Promise<{
+      supabase.from(table).select(columns).eq("company_id", companyId).range(from, to) as unknown as PromiseLike<{
         data: T[] | null;
         error: { message: string } | null;
       }>,
