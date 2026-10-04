@@ -14,6 +14,15 @@ function normalize(value?: string | null) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function matchEvidence(product: IdentifiedProduct, offer: SupplierOffer): SupplierSourceMatch["evidence"] {
+  const mpn = Boolean(normalize(product.mpn) && normalize(product.mpn) === normalize(offer.mpn));
+  const upc = Boolean(normalize(product.upc || product.barcode) && normalize(product.upc || product.barcode) === normalize(offer.upc));
+  if (mpn && upc) return "mpn_and_upc";
+  if (mpn) return "mpn";
+  if (upc) return "upc";
+  return "none";
+}
+
 function asSupplier(row: Record<string, unknown>): SupplierProfile {
   return {
     id: String(row.id),
@@ -446,6 +455,7 @@ export async function sourceProduct(
       note: offer?.price != null
         ? undefined
         : "No verified supplier price was found. Stockr will not estimate or invent a price.",
+      evidence: offer ? matchEvidence(product, offer) : "none",
     });
   }
 
