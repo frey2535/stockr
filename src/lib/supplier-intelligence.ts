@@ -305,7 +305,7 @@ function offerPrice(offers: unknown) {
   for (const row of rows) {
     const raw = row.price ?? row.lowPrice;
     const price = raw == null ? null : Number(String(raw).replace(/[^0-9.-]/g, ""));
-    if (price != null && Number.isFinite(price) && price >= 0) {
+    if (price != null && Number.isFinite(price) && price > 0) {
       return {
         price,
         currency: String(row.priceCurrency || "USD"),
@@ -412,9 +412,17 @@ export async function sourceProduct(
 
   const preferred: SupplierSourceMatch[] = [];
   for (const supplier of suppliers) {
+    const preferredManufacturer = normalize(rule?.preferred_manufacturer);
     const candidates = [...stored, ...history]
       .filter((offer) => offer.supplier_id === supplier.id && exactIdentityMatch(product, offer))
-      .sort((a, b) => new Date(b.observed_at).getTime() - new Date(a.observed_at).getTime());
+      .sort((a, b) => {
+        if (preferredManufacturer) {
+          const aPreferred = normalize(a.manufacturer) === preferredManufacturer;
+          const bPreferred = normalize(b.manufacturer) === preferredManufacturer;
+          if (aPreferred !== bPreferred) return aPreferred ? -1 : 1;
+        }
+        return new Date(b.observed_at).getTime() - new Date(a.observed_at).getTime();
+      });
     let offer = candidates[0] || null;
     if (!offer && options?.supplierWebSearch !== false) {
       offer = await discoverSupplierOffer(supplier, product);
