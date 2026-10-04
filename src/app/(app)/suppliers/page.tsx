@@ -9,8 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
-import type { SupplierProfile } from "@/lib/types";
+import type { SupplierProfile, SourcingRule } from "@/lib/types";
 
 const emptyForm = {
   name: "",
@@ -27,16 +28,19 @@ export default function SuppliersPage() {
   const { workspace, updateSettings } = useStore();
   const [rows, setRows] = useState<SupplierProfile[]>([]);
   const [form, setForm] = useState(emptyForm);
+  const [rules, setRules] = useState<SourcingRule[]>([]);
+  const [ruleForm, setRuleForm] = useState({ category: "", preferred_supplier_id: "", preferred_manufacturer: "", allow_substitutes: true });
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     const response = await fetch("/api/suppliers");
-    const data = await response.json().catch(() => null) as { rows?: SupplierProfile[]; error?: string } | null;
+    const data = await response.json().catch(() => null) as { rows?: SupplierProfile[]; rules?: SourcingRule[]; error?: string } | null;
     if (!response.ok) {
       toast.error(data?.error || "Could not load suppliers.");
       return;
     }
     setRows(data?.rows || []);
+    setRules(data?.rules || []);
   };
 
   useEffect(() => { void load(); }, []);
@@ -171,6 +175,92 @@ export default function SuppliersPage() {
           <Button onClick={addSupplier} disabled={busy}>
             <Plus className="mr-2 size-4" />{busy ? "Adding…" : "Add supplier"}
           </Button>
+        </CardContent>
+      </Card>
+
+
+      <Card>
+        <CardHeader><CardTitle>Category sourcing rules</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Rules are trade-agnostic. Use any category your company needs: Valves, Fasteners, Lumber, Filters, Safety, Roofing, Electrical, Plumbing, HVAC, or your own category.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Category *</Label>
+              <Input value={ruleForm.category} onChange={(e) => setRuleForm({ ...ruleForm, category: e.target.value })} placeholder="e.g. Fasteners" />
+            </div>
+            <div className="space-y-2">
+              <Label>Preferred supplier</Label>
+              <Select value={ruleForm.preferred_supplier_id || "none"} onValueChange={(value) => setRuleForm({ ...ruleForm, preferred_supplier_id: value === "none" ? "" : value })}>
+                <SelectTrigger><SelectValue placeholder="No specific supplier" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No specific supplier</SelectItem>
+                  {rows.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Preferred manufacturer</Label>
+              <Input value={ruleForm.preferred_manufacturer} onChange={(e) => setRuleForm({ ...ruleForm, preferred_manufacturer: e.target.value })} placeholder="Optional manufacturer preference" />
+            </div>
+            <label className="flex items-center gap-2 pt-7 text-sm">
+              <Switch checked={ruleForm.allow_substitutes} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, allow_substitutes: checked })} />
+              Allow substitute suggestions
+            </label>
+          </div>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              if (!ruleForm.category.trim()) return toast.error("Category is required.");
+              const response = await fetch("/api/suppliers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "saveRule", rule: ruleForm }),
+              });
+              const data = await response.json().catch(() => null) as { rules?: SourcingRule[]; error?: string } | null;
+              if (!response.ok) return toast.error(data?.error || "Could not save sourcing rule.");
+              setRules(data?.rules || []);
+              setRuleForm({ category: "", preferred_supplier_id: "", preferred_manufacturer: "", allow_substitutes: true });
+              toast.success("Sourcing rule saved");
+            }}
+          >
+            Add sourcing rule
+          </Button>
+          <div className="space-y-2">
+            {rules.map((rule) => {
+              const supplier = rows.find((row) => row.id === rule.preferred_supplier_id);
+              return (
+                <div key={rule.id} className="flex items-center justify-between gap-3 rounded-xl border p-3">
+                  <div>
+                    <p className="font-medium">{rule.category}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {(supplier ? "Supplier: " + supplier.name : "Any approved supplier")}
+                      {rule.preferred_manufacturer ? " · Manufacturer: " + rule.preferred_manufacturer : ""}
+                      {" · " + (rule.allow_substitutes ? "Substitutes allowed" : "Exact preference only")}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={async () => {
+                      const response = await fetch("/api/suppliers", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "deleteRule", ruleId: rule.id }),
+                      });
+                      const data = await response.json().catch(() => null) as { rules?: SourcingRule[]; error?: string } | null;
+                      if (!response.ok) return toast.error(data?.error || "Could not remove rule.");
+                      setRules(data?.rules || []);
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
 
