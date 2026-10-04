@@ -5,7 +5,8 @@ import { materialMatchesCode } from "@/lib/inventory";
 import { clientKey, rateLimit } from "@/lib/rate-limit";
 import { requireAccount } from "@/lib/require-account";
 import { canUseVision, completeProductIdentity, detectObjectsFromVision } from "@/lib/vision-identify";
-import { lookupMaterials } from "@/lib/workspace-data";
+import { getWorkspaceShell, lookupMaterials } from "@/lib/workspace-data";
+import { sourceProduct } from "@/lib/supplier-intelligence";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -34,19 +35,73 @@ export async function POST(request: Request) {
     console.error("detectObjectsFromVision", error);
     vision = { objects: [], error: "Photo recognition failed. Try a closer photo of one item." };
   }
+  const settings = (await getWorkspaceShell(account.company.id)).settings;
+  const supplierSources = [] as Awaited<ReturnType<typeof sourceProduct>>[];
+  const supplierFirstObjects = [] as typeof vision.objects;
+  for (const object of vision.objects) {
+    let companyFirst = object;
+    try {
+      const catalogKey = object.barcode || object.upc || object.mpn || object.name || "";
+      if (catalogKey) {
+        const catalog = await lookupMaterials(account.company.id, {
+          barcode: object.barcode || object.upc || "",
+          q: catalogKey,
+          limit: 8,
+        });
+        const exactCatalog = (catalog.rows || []).find((row) =>
+          (object.barcode && materialMatchesCode(row, object.barcode)) ||
+          (object.upc && materialMatchesCode(row, object.upc)) ||
+          (object.mpn && row.mpn?.trim().toLowerCase() === object.mpn.trim().toLowerCase()),
+        );
+        if (exactCatalog) {
+          companyFirst = {
+            ...object,
+            name: exactCatalog.name,
+            manufacturer: exactCatalog.manufacturer || object.manufacturer,
+            brand: exactCatalog.manufacturer || object.brand,
+            category: exactCatalog.category || object.category,
+            description: exactCatalog.description || object.description,
+            barcode: exactCatalog.barcode || exactCatalog.upc || object.barcode,
+            upc: exactCatalog.upc || object.upc,
+            mpn: exactCatalog.mpn || object.mpn,
+            image_url: exactCatalog.image_url || object.image_url,
+            source: "catalog",
+          };
+        }
+      }
+
+      const sourced = await sourceProduct(account.company.id, companyFirst, {
+        supplierWebSearch: settings.supplier_web_search,
+        broadWebSearch: settings.allow_broad_web_search,
+      });
+      supplierSources.push(sourced);
+      const supplierIdentity = sourced.preferred.find((row) => row.exactMatch && row.product)?.product;
+      supplierFirstObjects.push(supplierIdentity ? { ...companyFirst, ...supplierIdentity, source: supplierIdentity.source } : companyFirst);
+    } catch (error) {
+      console.error("company/supplier-first identification", error);
+      supplierSources.push({ preferred: [], purchaseHistory: [], broaderWebUsed: false, searchOrder: [] });
+      supplierFirstObjects.push(companyFirst);
+    }
+  }
+
   let items: Awaited<ReturnType<typeof resolvePhotoIdentities>> = [];
   try {
     items = await resolvePhotoIdentities(
-      vision.objects,
+      supplierFirstObjects,
       barcodes,
-      identifyRemoteProduct,
-      searchRemoteProduct,
+      settings.allow_broad_web_search ? identifyRemoteProduct : async () => null,
+      settings.allow_broad_web_search ? searchRemoteProduct : async () => null,
       completeProductIdentity,
     );
   } catch (error) {
     console.error("resolvePhotoIdentities", error);
     items = barcodes.length
-      ? await resolvePhotoIdentities([], barcodes, identifyRemoteProduct, searchRemoteProduct).catch(() => [])
+      ? await resolvePhotoIdentities(
+          [],
+          barcodes,
+          settings.allow_broad_web_search ? identifyRemoteProduct : async () => null,
+          settings.allow_broad_web_search ? searchRemoteProduct : async () => null,
+        ).catch(() => [])
       : [];
   }
 
@@ -81,6 +136,23 @@ export async function POST(request: Request) {
       console.error("identify-image catalog", error);
     }
   }
+  const finalSources = [] as Awaited<ReturnType<typeof sourceProduct>>[];
+  for (let index = 0; index < items.length; index += 1) {
+    const product = items[index]?.identified || ({ ...items[index]?.draft, barcode: items[index]?.draft.barcode || "", source: items[index]?.draft.source || "photo" } as Parameters<typeof sourceProduct>[1]);
+    if (!product?.name && !product?.mpn && !product?.barcode) {
+      finalSources.push(supplierSources[index] || { preferred: [], purchaseHistory: [], broaderWebUsed: false, searchOrder: [] });
+      continue;
+    }
+    try {
+      finalSources.push(await sourceProduct(account.company.id, product, {
+        supplierWebSearch: settings.supplier_web_search,
+        broadWebSearch: settings.allow_broad_web_search,
+      }));
+    } catch {
+      finalSources.push(supplierSources[index] || { preferred: [], purchaseHistory: [], broaderWebUsed: false, searchOrder: [] });
+    }
+  }
+
   const first = items[0];
   const rows = catalogRows.filter(
     (row, index, all) => all.findIndex((other) => other.id === row.id) === index,
@@ -102,6 +174,12 @@ export async function POST(request: Request) {
     count: items.length,
     rows,
     onHandByLocation,
+    supplierSources: finalSources,
+    sourcePolicy: {
+      supplierWebSearch: settings.supplier_web_search,
+      broadWebSearch: settings.allow_broad_web_search,
+      priceRule: "verified-source-only",
+    },
     error,
   });
 }

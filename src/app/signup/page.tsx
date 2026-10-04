@@ -110,7 +110,7 @@ export default function SignupPage() {
                     id="company"
                     value={companyName}
                     onChange={(event) => setCompanyName(event.target.value)}
-                    placeholder="e.g. Harbor Electric"
+                    placeholder="e.g. Harbor Contracting"
                     required
                   />
                   <p className="text-xs text-muted-foreground">

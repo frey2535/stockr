@@ -36,7 +36,7 @@ import { isCompleteIdentity, isWeakIdentity, type IdentityField, type PhotoIdent
 import { readCodesFromVideo } from "@/lib/live-barcode";
 import { prepareCameraPhoto } from "@/lib/photo-barcode";
 import { planVoiceCommand, voiceSearchQuery } from "@/lib/voice-command";
-import type { IdentifiedProduct, InventoryAction, Material, TxType } from "@/lib/types";
+import type { IdentifiedProduct, InventoryAction, Material, ProductSourceResult, TxType } from "@/lib/types";
 
 function asIdentityFields(values?: string[]): IdentityField[] {
   const allowed: IdentityField[] = ["name", "barcode", "mpn"];
@@ -79,6 +79,7 @@ export default function ScannerPage() {
   const [selected, setSelected] = useState<Material | null>(null);
   const [unknownCode, setUnknownCode] = useState("");
   const [identified, setIdentified] = useState<IdentifiedProduct | null>(null);
+  const [productSources, setProductSources] = useState<ProductSourceResult | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoPreview, setPhotoPreview] = useState("");
@@ -120,6 +121,7 @@ export default function ScannerPage() {
     if (!trimmed) return;
     setLookingUp(true);
     setIdentified(null);
+    setProductSources(null);
     setUnknownCode("");
     try {
       const response = await fetch(`/api/materials?barcode=${encodeURIComponent(trimmed)}&q=${encodeURIComponent(trimmed)}`);
@@ -572,8 +574,10 @@ export default function ScannerPage() {
         rows?: Material[];
         onHandByLocation?: Record<string, number>;
         error?: string;
+        supplierSources?: ProductSourceResult[];
       } | null;
       if (data?.error) toast.message(data.error);
+      setProductSources(data?.supplierSources?.[0] || null);
       const fallback: PhotoIdentityResult = {
         identified: data?.identified || null,
         draft: {
@@ -894,6 +898,42 @@ export default function ScannerPage() {
             ) : null}
             {identified.description && identityMissing.length === 0 ? (
               <p className="text-sm text-muted-foreground">{identified.description}</p>
+            ) : null}
+            {productSources?.preferred?.length ? (
+              <div className="space-y-2 rounded-xl border p-3">
+                <div>
+                  <p className="text-sm font-semibold">Preferred suppliers</p>
+                  <p className="text-xs text-muted-foreground">Exact verified prices only. Stockr never estimates supplier pricing.</p>
+                </div>
+                {productSources.preferred.map((match) => (
+                  <div key={match.supplier.id} className="flex items-start justify-between gap-3 rounded-lg bg-muted/30 p-3">
+                    <div>
+                      <p className="text-sm font-medium">{match.supplier.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {match.exactMatch ? `Exact match · ${match.evidence === "mpn_and_upc" ? "MPN + UPC" : match.evidence === "mpn" ? "MPN" : match.evidence === "upc" ? "UPC" : "verified identity"}` : "No exact supplier match"}
+                        {match.offer?.supplier_sku ? " · SKU " + match.offer.supplier_sku : ""}
+                      </p>
+                      {match.offer?.product_url ? (
+                        <a className="text-xs text-primary underline" href={match.offer.product_url} target="_blank" rel="noreferrer">
+                          View supplier source
+                        </a>
+                      ) : null}
+                    </div>
+                    <div className="text-right">
+                      {match.priceStatus === "verified" && match.offer?.price != null ? (
+                        <>
+                          <p className="font-semibold">
+                            {new Intl.NumberFormat("en-US", { style: "currency", currency: match.offer.currency || "USD" }).format(match.offer.price)}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">{match.offer.source_type.replace(/_/g, " ")} · {new Date(match.offer.observed_at).toLocaleDateString()}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm font-medium text-muted-foreground">Price unavailable</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1 sm:col-span-2">

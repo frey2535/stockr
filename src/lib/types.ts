@@ -20,6 +20,8 @@ export type Settings = {
   accent_color: string;
   buildr_linked: boolean;
   buildr_company_id: string;
+  supplier_web_search: boolean;
+  allow_broad_web_search: boolean;
 };
 
 export type Location = {
@@ -64,6 +66,7 @@ export type IdentifiedProduct = {
   search_queries?: string[];
   quantity?: number;
   box?: { x: number; y: number; w: number; h: number };
+  confidence?: number;
 };
 
 export type StockRule = {
@@ -121,7 +124,7 @@ export type POLine = {
   material_id: string;
   expected_quantity: number;
   received_quantity: number;
-  unit_cost?: number;
+  unit_cost?: number | null;
 };
 
 export type PurchaseOrder = {
@@ -381,4 +384,79 @@ export type FieldOpsPayload = {
   requests: Array<MaterialRequest & { lines: MaterialRequestLine[] }>;
   countSessions: Array<CycleCountSession & { lines: CycleCountLine[] }>;
   materials: Array<{ id: string; name: string }>;
+};
+
+
+export type SupplierProfile = {
+  id: string;
+  company_id: string;
+  name: string;
+  website_url: string;
+  domain: string;
+  priority: number;
+  enabled: boolean;
+  approved: boolean;
+  branch_name?: string | null;
+  account_reference?: string | null;
+  allow_substitutes: boolean;
+  web_search_enabled: boolean;
+  created_at: string;
+};
+
+export type SupplierPriceSource =
+  | "supplier_page"
+  | "supplier_api"
+  | "edi"
+  | "cxml"
+  | "price_file"
+  | "purchase_history"
+  | "manual_verified";
+
+export type SupplierOffer = {
+  id: string;
+  company_id: string;
+  supplier_id: string;
+  material_id?: string | null;
+  product_name: string;
+  manufacturer?: string | null;
+  mpn?: string | null;
+  upc?: string | null;
+  supplier_sku?: string | null;
+  price?: number | null;
+  currency: string;
+  unit?: string | null;
+  product_url?: string | null;
+  source_type: SupplierPriceSource;
+  source_reference?: string | null;
+  observed_at: string;
+  expires_at?: string | null;
+  exact_match: boolean;
+};
+
+export type SupplierSourceMatch = {
+  supplier: SupplierProfile;
+  offer: SupplierOffer | null;
+  product: IdentifiedProduct | null;
+  exactMatch: boolean;
+  priceStatus: "verified" | "unavailable";
+  note?: string;
+  evidence: "mpn_and_upc" | "mpn" | "upc" | "none";
+};
+
+export type ProductSourceResult = {
+  preferred: SupplierSourceMatch[];
+  purchaseHistory: SupplierOffer[];
+  broaderWebUsed: boolean;
+  searchOrder: string[];
+};
+
+
+export type SourcingRule = {
+  id: string;
+  company_id: string;
+  category: string;
+  preferred_supplier_id?: string | null;
+  preferred_manufacturer?: string | null;
+  allow_substitutes: boolean;
+  created_at: string;
 };
