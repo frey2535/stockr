@@ -144,16 +144,10 @@ export default function LocationsPage() {
         title="Locations"
         description="Warehouses and trucks that hold stock. Min policy lives on each SKU at a location."
         actions={
-          <>
-            {settings.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-            ) : null}
-            <Button onClick={startCreate}>
-              <Plus className="mr-2 size-4" />
-              Add Location
-            </Button>
-          </>
+          <Button onClick={startCreate}>
+            <Plus className="mr-2 size-4" />
+            Add Location
+          </Button>
         }
       />
 
