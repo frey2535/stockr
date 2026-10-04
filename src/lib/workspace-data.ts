@@ -113,6 +113,8 @@ export function emptyWorkspaceShell(companyName = "New company"): WorkspaceShell
       accent_color: "#f97316",
       buildr_linked: false,
       buildr_company_id: "",
+      supplier_web_search: true,
+      allow_broad_web_search: true,
     },
     locations: [],
     projects: [],
@@ -164,6 +166,8 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
       accent_color: company.accent_color || "#f97316",
       buildr_linked: Boolean(company.buildr_linked),
       buildr_company_id: company.buildr_company_id || "",
+      supplier_web_search: company.supplier_web_search !== false,
+      allow_broad_web_search: company.allow_broad_web_search !== false,
     };
 
     const rawProjects = projects;
