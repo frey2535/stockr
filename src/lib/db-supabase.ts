@@ -52,6 +52,8 @@ type CompanyRow = {
   accent_color: string;
   buildr_linked: boolean;
   buildr_company_id: string;
+  supplier_web_search?: boolean;
+  allow_broad_web_search?: boolean;
   play_product_id?: string | null;
   play_purchase_token?: string | null;
   play_expires_at?: string | null;
@@ -130,6 +132,8 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
       accent_color: company.accent_color,
       buildr_linked: company.buildr_linked,
       buildr_company_id: company.buildr_company_id,
+      supplier_web_search: company.supplier_web_search !== false,
+      allow_broad_web_search: company.allow_broad_web_search !== false,
     },
     locations,
     materials: materials.map((row) => ({
