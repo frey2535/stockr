@@ -440,6 +440,7 @@ export type SupplierSourceMatch = {
   exactMatch: boolean;
   priceStatus: "verified" | "unavailable";
   note?: string;
+  evidence: "mpn_and_upc" | "mpn" | "upc" | "none";
 };
 
 export type ProductSourceResult = {
