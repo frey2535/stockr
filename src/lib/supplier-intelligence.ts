@@ -10,6 +10,10 @@ import type {
   SourcingRule,
 } from "./types";
 
+function normalize(value?: string | null) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function asSupplier(row: Record<string, unknown>): SupplierProfile {
   return {
     id: String(row.id),
