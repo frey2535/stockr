@@ -173,7 +173,9 @@ function actionTx(action: InventoryAction, actor: string): Transaction {
 async function persistAction(companyId: string, action: InventoryAction, actor: string): Promise<PersistResult> {
   const qty = Number(action.quantity);
   if (!action.materialId) return fail("Select a material.");
-  if (!qty || qty <= 0) return fail("Quantity must be greater than zero.");
+  if (!Number.isFinite(qty) || qty < 0 || (qty === 0 && action.type !== "adjust" && action.type !== "count")) {
+    return fail(action.type === "adjust" || action.type === "count" ? "Quantity cannot be negative." : "Quantity must be greater than zero.");
+  }
   if (needsProject(action.type) && !String(action.project || "").trim()) {
     return fail("Job / project is required.");
   }
