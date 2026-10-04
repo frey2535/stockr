@@ -73,12 +73,6 @@ export default function SettingsPage() {
         title="Settings"
         description="Company branding, team, and invite codes"
         icon={<Settings className="size-8 text-primary" />}
-        actions={
-          draft.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={draft.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-          ) : null
-        }
       />
 
       <Card>
