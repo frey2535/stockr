@@ -23,7 +23,6 @@ Run the latest `supabase/schema.sql` in the Stockr Supabase project before deplo
 ## Still required before unrestricted rollout
 
 - Automated live-database tenant-isolation suite against a staging Supabase project.
-- Atomic purchase-order receiving (PO line update + inventory + activity in one database transaction).
 - Tested backup/restore drill.
 - Offline local inventory mirror and conflict-safe synchronization.
 - Soft-delete/archive policy for destructive catalog/location administration.
