@@ -642,3 +642,259 @@ create index if not exists stockr_memberships_user_idx
   on stockr_memberships (user_id);
 create index if not exists stockr_purchase_orders_company_created_idx
   on stockr_purchase_orders (company_id, created_at desc);
+
+
+-- Production hardening: perform each inventory mutation and its audit record atomically.
+create or replace function stockr_apply_inventory_action(
+  p_company_id text,
+  p_tx_id text,
+  p_type text,
+  p_material_id text,
+  p_quantity numeric,
+  p_from_location_id text,
+  p_to_location_id text,
+  p_project text,
+  p_notes text,
+  p_created_by text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  affected integer;
+begin
+  if p_company_id is null or p_material_id is null or p_quantity is null or p_quantity < 0 then
+    raise exception 'Invalid inventory action.';
+  end if;
+  if p_quantity = 0 and p_type not in ('adjust', 'count') then
+    raise exception 'Quantity must be greater than zero.';
+  end if;
+
+  if not exists (
+    select 1 from stockr_materials
+    where id = p_material_id and company_id = p_company_id
+  ) then
+    raise exception 'Material does not belong to this company.';
+  end if;
+
+  if p_from_location_id is not null and not exists (
+    select 1 from stockr_locations
+    where id = p_from_location_id and company_id = p_company_id
+  ) then
+    raise exception 'Source location does not belong to this company.';
+  end if;
+
+  if p_to_location_id is not null and not exists (
+    select 1 from stockr_locations
+    where id = p_to_location_id and company_id = p_company_id
+  ) then
+    raise exception 'Destination location does not belong to this company.';
+  end if;
+
+  if p_type in ('add', 'receive', 'return') then
+    if p_to_location_id is null then raise exception 'Destination location required.'; end if;
+    insert into stockr_inventory (id, company_id, material_id, location_id, quantity)
+    values (
+      'inv_' || p_company_id || '_' || p_material_id || '_' || p_to_location_id,
+      p_company_id, p_material_id, p_to_location_id, p_quantity
+    )
+    on conflict (company_id, material_id, location_id) do update
+      set quantity = stockr_inventory.quantity + excluded.quantity;
+
+  elsif p_type in ('use', 'shrink') then
+    if p_from_location_id is null then raise exception 'Source location required.'; end if;
+    update stockr_inventory
+      set quantity = quantity - p_quantity
+      where company_id = p_company_id
+        and material_id = p_material_id
+        and location_id = p_from_location_id
+        and quantity >= p_quantity;
+    get diagnostics affected = row_count;
+    if affected <> 1 then raise exception 'Not enough quantity on hand.'; end if;
+    delete from stockr_inventory
+      where company_id = p_company_id
+        and material_id = p_material_id
+        and location_id = p_from_location_id
+        and quantity = 0;
+
+  elsif p_type = 'transfer' then
+    if p_from_location_id is null or p_to_location_id is null then
+      raise exception 'Both source and destination required.';
+    end if;
+    if p_from_location_id = p_to_location_id then raise exception 'Pick two different locations.'; end if;
+
+    update stockr_inventory
+      set quantity = quantity - p_quantity
+      where company_id = p_company_id
+        and material_id = p_material_id
+        and location_id = p_from_location_id
+        and quantity >= p_quantity;
+    get diagnostics affected = row_count;
+    if affected <> 1 then raise exception 'Not enough quantity on hand.'; end if;
+
+    insert into stockr_inventory (id, company_id, material_id, location_id, quantity)
+    values (
+      'inv_' || p_company_id || '_' || p_material_id || '_' || p_to_location_id,
+      p_company_id, p_material_id, p_to_location_id, p_quantity
+    )
+    on conflict (company_id, material_id, location_id) do update
+      set quantity = stockr_inventory.quantity + excluded.quantity;
+
+    delete from stockr_inventory
+      where company_id = p_company_id
+        and material_id = p_material_id
+        and location_id = p_from_location_id
+        and quantity = 0;
+
+  elsif p_type in ('adjust', 'count') then
+    if coalesce(p_to_location_id, p_from_location_id) is null then
+      raise exception 'Location required.';
+    end if;
+    if p_quantity = 0 then
+      delete from stockr_inventory
+        where company_id = p_company_id
+          and material_id = p_material_id
+          and location_id = coalesce(p_to_location_id, p_from_location_id);
+    else
+      insert into stockr_inventory (id, company_id, material_id, location_id, quantity)
+      values (
+        'inv_' || p_company_id || '_' || p_material_id || '_' || coalesce(p_to_location_id, p_from_location_id),
+        p_company_id, p_material_id, coalesce(p_to_location_id, p_from_location_id), p_quantity
+      )
+      on conflict (company_id, material_id, location_id) do update
+        set quantity = excluded.quantity;
+    end if;
+  else
+    raise exception 'Unknown inventory action.';
+  end if;
+
+  insert into stockr_transactions (
+    id, company_id, type, material_id, quantity,
+    from_location_id, to_location_id, project, notes, created_at, created_by
+  ) values (
+    p_tx_id, p_company_id, p_type, p_material_id, p_quantity,
+    p_from_location_id, p_to_location_id, nullif(p_project, ''), coalesce(p_notes, ''),
+    clock_timestamp(), p_created_by
+  );
+end;
+$$;
+
+revoke all on function stockr_apply_inventory_action(
+  text, text, text, text, numeric, text, text, text, text, text
+) from public;
+grant execute on function stockr_apply_inventory_action(
+  text, text, text, text, numeric, text, text, text, text, text
+) to service_role;
+
+
+-- Production hardening: receive a PO atomically (lines + inventory + activity + PO status).
+create or replace function stockr_receive_purchase_order(
+  p_company_id text,
+  p_po_id text,
+  p_location_id text,
+  p_receipts jsonb,
+  p_created_by text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  receipt jsonb;
+  v_material_id text;
+  requested_qty numeric;
+  receive_qty numeric;
+  expected_qty numeric;
+  received_qty numeric;
+  tx_id text;
+begin
+  if not exists (
+    select 1 from stockr_purchase_orders
+    where id = p_po_id and company_id = p_company_id
+  ) then
+    raise exception 'Purchase order not found in this company.';
+  end if;
+
+  if not exists (
+    select 1 from stockr_locations
+    where id = p_location_id and company_id = p_company_id
+  ) then
+    raise exception 'Receiving location does not belong to this company.';
+  end if;
+
+  for receipt in
+    select value from jsonb_array_elements(coalesce(p_receipts, '[]'::jsonb))
+  loop
+    v_material_id := receipt->>'material_id';
+    requested_qty := coalesce(nullif(receipt->>'quantity', '')::numeric, 0);
+    tx_id := coalesce(nullif(receipt->>'tx_id', ''), 'tx_' || md5(random()::text || clock_timestamp()::text));
+
+    if requested_qty <= 0 then
+      continue;
+    end if;
+
+    select expected_quantity, received_quantity
+      into expected_qty, received_qty
+    from stockr_purchase_order_lines
+    where purchase_order_id = p_po_id
+      and company_id = p_company_id
+      and material_id = v_material_id
+    for update;
+
+    if not found then
+      raise exception 'Purchase order line not found in this company.';
+    end if;
+
+    receive_qty := least(requested_qty, greatest(expected_qty - received_qty, 0));
+    if receive_qty <= 0 then
+      continue;
+    end if;
+
+    update stockr_purchase_order_lines
+      set received_quantity = received_quantity + receive_qty
+      where purchase_order_id = p_po_id
+        and company_id = p_company_id
+        and material_id = v_material_id;
+
+    insert into stockr_inventory (id, company_id, material_id, location_id, quantity)
+    values (
+      'inv_' || p_company_id || '_' || v_material_id || '_' || p_location_id,
+      p_company_id, v_material_id, p_location_id, receive_qty
+    )
+    on conflict (company_id, material_id, location_id) do update
+      set quantity = stockr_inventory.quantity + excluded.quantity;
+
+    insert into stockr_transactions (
+      id, company_id, type, material_id, quantity,
+      from_location_id, to_location_id, project, notes, created_at, created_by
+    ) values (
+      tx_id, p_company_id, 'receive', v_material_id, receive_qty,
+      null, p_location_id, null, p_po_id, clock_timestamp(), p_created_by
+    );
+  end loop;
+
+  update stockr_purchase_orders
+  set status = case
+    when not exists (
+      select 1 from stockr_purchase_order_lines
+      where purchase_order_id = p_po_id
+        and company_id = p_company_id
+        and received_quantity < expected_quantity
+    ) then 'received'
+    when exists (
+      select 1 from stockr_purchase_order_lines
+      where purchase_order_id = p_po_id
+        and company_id = p_company_id
+        and received_quantity > 0
+    ) then 'partial'
+    else status
+  end
+  where id = p_po_id and company_id = p_company_id;
+end;
+$$;
+
+revoke all on function stockr_receive_purchase_order(text, text, text, jsonb, text) from public;
+grant execute on function stockr_receive_purchase_order(text, text, text, jsonb, text) to service_role;

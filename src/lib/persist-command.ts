@@ -173,36 +173,38 @@ function actionTx(action: InventoryAction, actor: string): Transaction {
 async function persistAction(companyId: string, action: InventoryAction, actor: string): Promise<PersistResult> {
   const qty = Number(action.quantity);
   if (!action.materialId) return fail("Select a material.");
-  if (!qty || qty <= 0) return fail("Quantity must be greater than zero.");
+  if (!Number.isFinite(qty) || qty < 0 || (qty === 0 && action.type !== "adjust" && action.type !== "count")) {
+    return fail(action.type === "adjust" || action.type === "count" ? "Quantity cannot be negative." : "Quantity must be greater than zero.");
+  }
   if (needsProject(action.type) && !String(action.project || "").trim()) {
     return fail("Job / project is required.");
   }
 
-  if (action.type === "add" || action.type === "receive" || action.type === "return") {
-    if (!action.toLocationId) return fail("Destination location required.");
-    const error = await bump(companyId, action.materialId, action.toLocationId, qty);
-    if (error) return fail(error);
-  } else if (action.type === "use" || action.type === "shrink") {
-    if (!action.fromLocationId) return fail("Source location required.");
-    const error = await bump(companyId, action.materialId, action.fromLocationId, -qty);
-    if (error) return fail(error);
-  } else if (action.type === "transfer") {
-    if (!action.fromLocationId || !action.toLocationId) return fail("Both source and destination required.");
-    if (action.fromLocationId === action.toLocationId) return fail("Pick two different locations.");
-    const leave = await bump(companyId, action.materialId, action.fromLocationId, -qty);
-    if (leave) return fail(leave);
-    const arrive = await bump(companyId, action.materialId, action.toLocationId, qty);
-    if (arrive) return fail(arrive);
-  } else if (action.type === "adjust" || action.type === "count") {
-    const locationId = action.toLocationId || action.fromLocationId;
-    if (!locationId) return fail("Location required.");
-    await setQty(companyId, action.materialId, locationId, qty);
-  } else {
-    return fail("Unknown inventory action.");
-  }
+  const tx = actionTx(action, actor);
+  const { error } = await getSupabaseAdmin().rpc("stockr_apply_inventory_action", {
+    p_company_id: companyId,
+    p_tx_id: tx.id,
+    p_type: action.type,
+    p_material_id: action.materialId,
+    p_quantity: qty,
+    p_from_location_id: action.fromLocationId || null,
+    p_to_location_id: action.toLocationId || null,
+    p_project: action.project || "",
+    p_notes: action.notes || "",
+    p_created_by: actor,
+  });
 
-  await insertTransaction(companyId, actionTx(action, actor));
-  return {};
+  if (!error) return {};
+  if (/not enough/i.test(error.message)) return fail("Not enough quantity on hand.");
+  if (/does not belong to this company/i.test(error.message)) {
+    return fail("That material or location is not available in this company workspace.");
+  }
+  if (missingRpc(error) || /stockr_apply_inventory_action/i.test(error.message)) {
+    throw new Error(
+      "Production inventory migration is required. Run the latest supabase/schema.sql before accepting inventory changes.",
+    );
+  }
+  throw new Error(`Update inventory: ${error.message}`);
 }
 
 async function upsertLocation(companyId: string, command: Extract<StoreCommand, { type: "upsertLocation" }>) {
@@ -405,30 +407,31 @@ async function persistOnSupabase(
   }
 
   if (command.type === "receivePurchaseOrder") {
-    const po = await loadPurchaseOrder(companyId, command.poId);
-    if (!po) return fail("Purchase order not found.");
-    const result = applyCommand(
-      { ...createEmptyState("tmp"), purchaseOrders: [po], inventory: [] },
-      command,
-      actor,
-    );
-    if (result.error) return fail(result.error);
-    const next = result.state.purchaseOrders[0];
-    if (next) await upsertPurchaseOrder(companyId, next);
-    for (const receipt of command.receipts) {
-      if (!receipt.quantity) continue;
-      const line = po.lines.find((row) => row.material_id === receipt.material_id);
-      if (!line) continue;
-      const remaining = line.expected_quantity - line.received_quantity;
-      const qty = Math.min(receipt.quantity, Math.max(0, remaining));
-      if (qty <= 0) continue;
-      const error = await bump(companyId, receipt.material_id, command.locationId, qty);
-      if (error) return fail(error);
+    if (!command.receipts.length) return fail("Add at least one receipt quantity.");
+    const receipts = command.receipts
+      .filter((receipt) => Number(receipt.quantity) > 0)
+      .map((receipt) => ({
+        tx_id: uid("tx"),
+        material_id: receipt.material_id,
+        quantity: Number(receipt.quantity),
+      }));
+    if (!receipts.length) return fail("Receipt quantities must be greater than zero.");
+
+    const { error } = await supabase.rpc("stockr_receive_purchase_order", {
+      p_company_id: companyId,
+      p_po_id: command.poId,
+      p_location_id: command.locationId,
+      p_receipts: receipts,
+      p_created_by: actor,
+    });
+    if (!error) return {};
+    if (/not found|does not belong/i.test(error.message)) return fail(error.message);
+    if (/stockr_receive_purchase_order|does not exist|schema cache/i.test(error.message)) {
+      throw new Error(
+        "Production purchase-order migration is required. Run the latest supabase/schema.sql before receiving material.",
+      );
     }
-    for (const tx of result.state.transactions) {
-      await insertTransaction(companyId, tx);
-    }
-    return {};
+    throw new Error(`Receive purchase order: ${error.message}`);
   }
 
   if (command.type === "setPurchaseOrderStatus") {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAccount } from "@/lib/require-account";
+import { fieldOpsAccessError, type FieldOpsAction } from "@/lib/command-access";
 import {
   createBin,
   createMaterialRequest,
@@ -30,6 +31,9 @@ export async function POST(request: Request) {
   if (!account) return response;
   const body = (await request.json().catch(() => null)) as { action?: string; [key: string]: unknown } | null;
   if (!body?.action) return NextResponse.json({ error: "Missing action." }, { status: 400 });
+
+  const denied = fieldOpsAccessError(account.role, body.action as FieldOpsAction);
+  if (denied) return NextResponse.json({ error: denied }, { status: 403 });
 
   try {
     let result: unknown = null;
