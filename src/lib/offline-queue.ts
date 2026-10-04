@@ -54,7 +54,8 @@ export async function flushOfflineQueue(
   const pending = readOfflineQueue();
   let flushed = 0;
   for (const item of pending) {
-    const { queueId, queuedAt: _queuedAt, ...action } = item;
+    const { queueId, queuedAt, ...action } = item;
+    void queuedAt;
     const result = await apply(action);
     if (!result.ok) break;
     dropOfflineAction(queueId);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { useStore } from "@/lib/store";
@@ -46,7 +46,7 @@ export function ProjectSelect({
   const known = new Set(rows.map((row) => row.name));
   const canSave = Boolean(typed) && !known.has(typed);
 
-  const pullJobs = async () => {
+  const pullJobs = useCallback(async () => {
     setSyncing(true);
     setMessage("");
     try {
@@ -60,7 +60,7 @@ export function ProjectSelect({
     } finally {
       setSyncing(false);
     }
-  };
+  }, [syncBuildr]);
 
   const saveTypedJob = async () => {
     if (!canSave) return;
@@ -83,7 +83,7 @@ export function ProjectSelect({
     if (tried.current || rows.length || !linked) return;
     tried.current = true;
     void pullJobs();
-  }, [linked, rows.length]);
+  }, [linked, pullJobs, rows.length]);
 
   const active = rows.filter((row) => row.status !== "completed");
   const completed = rows.filter((row) => row.status === "completed");
