@@ -39,18 +39,48 @@ export async function POST(request: Request) {
   const supplierSources = [] as Awaited<ReturnType<typeof sourceProduct>>[];
   const supplierFirstObjects = [] as typeof vision.objects;
   for (const object of vision.objects) {
+    let companyFirst = object;
     try {
-      const sourced = await sourceProduct(account.company.id, object, {
+      const catalogKey = object.barcode || object.upc || object.mpn || object.name || "";
+      if (catalogKey) {
+        const catalog = await lookupMaterials(account.company.id, {
+          barcode: object.barcode || object.upc || "",
+          q: catalogKey,
+          limit: 8,
+        });
+        const exactCatalog = (catalog.rows || []).find((row) =>
+          (object.barcode && materialMatchesCode(row, object.barcode)) ||
+          (object.upc && materialMatchesCode(row, object.upc)) ||
+          (object.mpn && row.mpn?.trim().toLowerCase() === object.mpn.trim().toLowerCase()),
+        );
+        if (exactCatalog) {
+          companyFirst = {
+            ...object,
+            name: exactCatalog.name,
+            manufacturer: exactCatalog.manufacturer || object.manufacturer,
+            brand: exactCatalog.manufacturer || object.brand,
+            category: exactCatalog.category || object.category,
+            description: exactCatalog.description || object.description,
+            barcode: exactCatalog.barcode || exactCatalog.upc || object.barcode,
+            upc: exactCatalog.upc || object.upc,
+            mpn: exactCatalog.mpn || object.mpn,
+            image_url: exactCatalog.image_url || object.image_url,
+            source: "catalog",
+          };
+        }
+      }
+
+      const sourced = await sourceProduct(account.company.id, companyFirst, {
         supplierWebSearch: settings.supplier_web_search,
         broadWebSearch: settings.allow_broad_web_search,
       });
       supplierSources.push(sourced);
       const supplierIdentity = sourced.preferred.find((row) => row.exactMatch && row.product)?.product;
-      supplierFirstObjects.push(supplierIdentity ? { ...object, ...supplierIdentity, source: supplierIdentity.source } : object);
+      supplierFirstObjects.push(supplierIdentity ? { ...companyFirst, ...supplierIdentity, source: supplierIdentity.source } : companyFirst);
     } catch (error) {
-      console.error("supplier-first identification", error);
+      console.error("company/supplier-first identification", error);
       supplierSources.push({ preferred: [], purchaseHistory: [], broaderWebUsed: false, searchOrder: [] });
-      supplierFirstObjects.push(object);
+      supplierFirstObjects.push(companyFirst);
     }
   }
 
