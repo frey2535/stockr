@@ -59,14 +59,19 @@ export async function POST(request: Request) {
     items = await resolvePhotoIdentities(
       supplierFirstObjects,
       barcodes,
-      identifyRemoteProduct,
-      searchRemoteProduct,
+      settings.allow_broad_web_search ? identifyRemoteProduct : async () => null,
+      settings.allow_broad_web_search ? searchRemoteProduct : async () => null,
       completeProductIdentity,
     );
   } catch (error) {
     console.error("resolvePhotoIdentities", error);
     items = barcodes.length
-      ? await resolvePhotoIdentities([], barcodes, identifyRemoteProduct, searchRemoteProduct).catch(() => [])
+      ? await resolvePhotoIdentities(
+          [],
+          barcodes,
+          settings.allow_broad_web_search ? identifyRemoteProduct : async () => null,
+          settings.allow_broad_web_search ? searchRemoteProduct : async () => null,
+        ).catch(() => [])
       : [];
   }
 
