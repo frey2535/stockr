@@ -10,7 +10,7 @@ export default async function TermsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <MarketingHeader signedIn={Boolean(account)} />
       <article className="mx-auto max-w-3xl space-y-6 px-4 py-16 text-muted-foreground">
-        <h1 className="text-4xl font-extrabold text-foreground">Terms of use</h1>
+        <h1 className="text-3xl font-extrabold leading-tight text-foreground sm:text-4xl">Terms of use</h1>
         <p className="text-sm text-muted-foreground">Last updated September 28, 2026</p>
         <p>
           These terms cover the Stockr website at {SITE_HOST} and the Android app

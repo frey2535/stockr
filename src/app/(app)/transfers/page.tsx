@@ -39,7 +39,7 @@ export default function TransfersPage() {
         title="Transfers"
         description="All inventory movements and usage records"
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <Button variant="outline" onClick={() => setBulkOpen(true)}>
               Bulk transfer / add / use
             </Button>

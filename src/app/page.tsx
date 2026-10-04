@@ -65,7 +65,7 @@ export default async function LandingPage({
           <p className="text-sm font-semibold tracking-wide text-primary">
             Field inventory for contractors
           </p>
-          <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">
+          <h1 className="text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
             Know what is on the truck before the crew leaves the shop.
           </h1>
           <p className="max-w-xl text-lg text-muted-foreground">
@@ -139,7 +139,7 @@ export default async function LandingPage({
       </section>
 
       <section id="pricing" className="mx-auto max-w-6xl px-4 py-16">
-        <h2 className="text-center text-3xl font-extrabold">Plans that match a shop, not a spreadsheet.</h2>
+        <h2 className="text-center text-2xl font-extrabold leading-tight sm:text-3xl">Plans that match a shop, not a spreadsheet.</h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
           Start free. Upgrade when you add trucks or seats. Billing here is a local checkout so you
           can try upgrades without a Stripe key.

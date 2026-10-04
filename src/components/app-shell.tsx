@@ -20,7 +20,6 @@ import {
   Shield,
   Warehouse,
   Wrench,
-  X,
 } from "lucide-react";
 import { useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
@@ -146,27 +145,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="fixed top-0 right-0 left-0 z-40 flex h-14 items-center justify-between border-b border-border/60 bg-background/80 px-4 shadow-sm backdrop-blur-xl lg:hidden">
-        <BrandMark compact />
-        <div className="flex items-center gap-1">
+      <div
+        className="fixed top-0 right-0 left-0 z-40 flex h-14 items-center justify-between gap-2 border-b border-border/60 bg-background/80 px-3 shadow-sm backdrop-blur-xl lg:hidden"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
+      >
+        <div className="min-w-0">
+          <BrandMark compact />
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
           <ThemeToggle />
-          <button
-            type="button"
-            onClick={() => setMoreOpen((open) => !open)}
-            className={cn(
-              "rounded-full p-1.5",
-              moreOpen || moreActive ? "text-primary" : "text-muted-foreground",
-            )}
-            aria-expanded={moreOpen}
-            aria-label={moreOpen ? "Close menu" : "Open menu"}
-          >
-            {moreOpen ? <X className="size-[18px]" /> : <Menu className="size-[18px]" />}
-          </button>
           <button
             type="button"
             onClick={signOut}
             disabled={signingOut}
-            className="rounded-full p-1.5 text-muted-foreground"
+            className="rounded-full p-2 text-muted-foreground"
             aria-label="Sign out"
           >
             <LogOut className="size-[18px]" />
@@ -175,7 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {moreOpen ? (
-        <div className="fixed inset-0 z-30 lg:hidden">
+        <div className="fixed inset-0 z-50 lg:hidden">
           <button
             type="button"
             className="absolute inset-0 bg-foreground/20"
@@ -183,16 +175,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setMoreOpen(false)}
           />
           <div
-            className="absolute right-0 bottom-0 left-0 rounded-t-2xl border-t border-border bg-background px-3 pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.12)]"
+            className="absolute right-0 bottom-0 left-0 max-h-[75vh] overflow-y-auto rounded-t-2xl border-t border-border bg-background px-3 pt-3 shadow-[0_-8px_32px_rgba(0,0,0,0.12)]"
             style={{
-              paddingBottom: "calc(4.5rem + env(safe-area-inset-bottom))",
+              paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))",
             }}
           >
-            <p className="px-3 pb-2 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              More
-            </p>
+            <div className="mb-2 flex items-center justify-between px-3">
+              <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                More
+              </p>
+              <button
+                type="button"
+                className="rounded-full px-2 py-1 text-xs font-semibold text-muted-foreground"
+                onClick={() => setMoreOpen(false)}
+              >
+                Close
+              </button>
+            </div>
             {account ? <WorkspaceSwitcher account={account} /> : null}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {moreNav.map((item) => {
                 const Icon = item.icon;
                 const active = pathname === item.href;
@@ -203,14 +204,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     onClick={() => setMoreOpen(false)}
                     onPointerEnter={() => prefetchTab(item.href)}
                     className={cn(
-                      "flex items-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition-all",
+                      "flex min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition-all",
                       active
                         ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
                         : "bg-muted text-muted-foreground",
                     )}
                   >
                     <Icon className="size-4 shrink-0" />
-                    {item.label}
+                    <span className="min-w-0 leading-snug break-words">{item.label}</span>
                   </Link>
                 );
               })}
@@ -235,7 +236,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={() => setMoreOpen(false)}
               onPointerEnter={() => prefetchTab(item.href)}
               className={cn(
-                "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-semibold",
+                "flex min-w-0 flex-1 flex-col items-center gap-0.5 px-0.5 py-2 text-center text-[10px] leading-tight font-semibold",
                 active ? "text-primary" : "text-muted-foreground",
               )}
             >
@@ -255,7 +256,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           type="button"
           onClick={() => setMoreOpen((open) => !open)}
           className={cn(
-            "flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-semibold",
+            "flex min-w-0 flex-1 flex-col items-center gap-0.5 px-0.5 py-2 text-center text-[10px] leading-tight font-semibold",
             moreOpen || moreActive ? "text-primary" : "text-muted-foreground",
           )}
           aria-expanded={moreOpen}
@@ -274,7 +275,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main
         className={cn(
-          "min-h-screen lg:ml-64",
+          "min-h-screen overflow-x-clip lg:ml-64",
           "px-4 py-5 lg:p-8",
           "mt-14 lg:mt-0",
           "pb-24 lg:pb-8",
