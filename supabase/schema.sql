@@ -787,3 +787,114 @@ revoke all on function stockr_apply_inventory_action(
 grant execute on function stockr_apply_inventory_action(
   text, text, text, text, numeric, text, text, text, text, text
 ) to service_role;
+
+
+-- Production hardening: receive a PO atomically (lines + inventory + activity + PO status).
+create or replace function stockr_receive_purchase_order(
+  p_company_id text,
+  p_po_id text,
+  p_location_id text,
+  p_receipts jsonb,
+  p_created_by text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  receipt jsonb;
+  material_id text;
+  requested_qty numeric;
+  receive_qty numeric;
+  expected_qty numeric;
+  received_qty numeric;
+  tx_id text;
+begin
+  if not exists (
+    select 1 from stockr_purchase_orders
+    where id = p_po_id and company_id = p_company_id
+  ) then
+    raise exception 'Purchase order not found in this company.';
+  end if;
+
+  if not exists (
+    select 1 from stockr_locations
+    where id = p_location_id and company_id = p_company_id
+  ) then
+    raise exception 'Receiving location does not belong to this company.';
+  end if;
+
+  for receipt in
+    select value from jsonb_array_elements(coalesce(p_receipts, '[]'::jsonb))
+  loop
+    material_id := receipt->>'material_id';
+    requested_qty := coalesce(nullif(receipt->>'quantity', '')::numeric, 0);
+    tx_id := coalesce(nullif(receipt->>'tx_id', ''), 'tx_' || md5(random()::text || clock_timestamp()::text));
+
+    if requested_qty <= 0 then
+      continue;
+    end if;
+
+    select expected_quantity, received_quantity
+      into expected_qty, received_qty
+    from stockr_purchase_order_lines
+    where purchase_order_id = p_po_id
+      and company_id = p_company_id
+      and material_id = material_id
+    for update;
+
+    if not found then
+      raise exception 'Purchase order line not found in this company.';
+    end if;
+
+    receive_qty := least(requested_qty, greatest(expected_qty - received_qty, 0));
+    if receive_qty <= 0 then
+      continue;
+    end if;
+
+    update stockr_purchase_order_lines
+      set received_quantity = received_quantity + receive_qty
+      where purchase_order_id = p_po_id
+        and company_id = p_company_id
+        and material_id = material_id;
+
+    insert into stockr_inventory (id, company_id, material_id, location_id, quantity)
+    values (
+      'inv_' || p_company_id || '_' || material_id || '_' || p_location_id,
+      p_company_id, material_id, p_location_id, receive_qty
+    )
+    on conflict (company_id, material_id, location_id) do update
+      set quantity = stockr_inventory.quantity + excluded.quantity;
+
+    insert into stockr_transactions (
+      id, company_id, type, material_id, quantity,
+      from_location_id, to_location_id, project, notes, created_at, created_by
+    ) values (
+      tx_id, p_company_id, 'receive', material_id, receive_qty,
+      null, p_location_id, null, p_po_id, clock_timestamp(), p_created_by
+    );
+  end loop;
+
+  update stockr_purchase_orders
+  set status = case
+    when not exists (
+      select 1 from stockr_purchase_order_lines
+      where purchase_order_id = p_po_id
+        and company_id = p_company_id
+        and received_quantity < expected_quantity
+    ) then 'received'
+    when exists (
+      select 1 from stockr_purchase_order_lines
+      where purchase_order_id = p_po_id
+        and company_id = p_company_id
+        and received_quantity > 0
+    ) then 'partial'
+    else status
+  end
+  where id = p_po_id and company_id = p_company_id;
+end;
+$$;
+
+revoke all on function stockr_receive_purchase_order(text, text, text, jsonb, text) from public;
+grant execute on function stockr_receive_purchase_order(text, text, text, jsonb, text) to service_role;
