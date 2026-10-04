@@ -1,7 +1,7 @@
 import { isSupabaseConfigured } from "./db-config";
 import { getCompanyState } from "./db";
 import { getSupabaseAdmin } from "./supabase-admin";
-import { selectAllForCompany, selectAllMatching } from "./supabase-page";
+import { selectAllForCompany, selectAllForCompanySafe, selectAllMatching } from "./supabase-page";
 import { identifyRemoteProduct } from "./barcode-lookup";
 import { barcodeVariants } from "./barcode";
 import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from "./inventory";
@@ -103,76 +103,92 @@ function shellFromState(state: StoreState): WorkspaceShell {
   };
 }
 
-export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShell> {
-  if (!isSupabaseConfigured()) {
-    return shellFromState(await getCompanyState(companyId));
-  }
-
-  const supabase = getSupabaseAdmin();
-  const [companyRes, locations, projects, codes, tools, materials, inventory, transactions, purchaseOrders] =
-    await Promise.all([
-      supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
-      selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
-      selectAllForCompany<Project>(supabase, "stockr_projects", companyId),
-      selectAllForCompany<AccessCode>(supabase, "stockr_access_codes", companyId),
-      selectAllForCompany<Tool>(supabase, "stockr_tools", companyId),
-      supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
-      supabase.from("stockr_inventory").select("id", { count: "exact", head: true }).eq("company_id", companyId),
-      supabase.from("stockr_transactions").select("id", { count: "exact", head: true }).eq("company_id", companyId),
-      supabase.from("stockr_purchase_orders").select("id", { count: "exact", head: true }).eq("company_id", companyId),
-    ]);
-
-  if (companyRes.error) throw new Error(`Load company: ${companyRes.error.message}`);
-  const company = companyRes.data;
-  if (!company) {
-    return {
-      settings: {
-        company_name: "New company",
-        logo_url: "",
-        primary_color: "#2563eb",
-        accent_color: "#f97316",
-        buildr_linked: false,
-        buildr_company_id: "",
-      },
-      locations: [],
-      projects: [],
-      accessCodes: [],
-      tools: [],
-      stockRules: [],
-      counts: { locations: 0, materials: 0, inventoryRows: 0, transactions: 0, purchaseOrders: 0, tools: 0 },
-    };
-  }
-
-  const settings: Settings = {
-    company_name: company.name,
-    logo_url: company.logo_url,
-    primary_color: company.primary_color,
-    accent_color: company.accent_color,
-    buildr_linked: company.buildr_linked,
-    buildr_company_id: company.buildr_company_id,
-  };
-
-  const rawProjects = projects;
-  const tableTools = tools;
-  const resolvedTools = tableTools.length ? tableTools : toolsFromProjects(rawProjects);
-  const stockRules = stockRulesFromProjects(rawProjects);
-
+export function emptyWorkspaceShell(companyName = "New company"): WorkspaceShell {
   return {
-    settings,
-    locations,
-    projects: visibleProjects(rawProjects),
-    accessCodes: codes,
-    tools: resolvedTools,
-    stockRules,
-    counts: {
-      locations: locations.length,
-      materials: materials.count || 0,
-      inventoryRows: inventory.count || 0,
-      transactions: transactions.count || 0,
-      purchaseOrders: purchaseOrders.count || 0,
-      tools: resolvedTools.length,
+    settings: {
+      company_name: companyName,
+      logo_url: "",
+      primary_color: "#2563eb",
+      accent_color: "#f97316",
+      buildr_linked: false,
+      buildr_company_id: "",
     },
+    locations: [],
+    projects: [],
+    accessCodes: [],
+    tools: [],
+    stockRules: [],
+    counts: { locations: 0, materials: 0, inventoryRows: 0, transactions: 0, purchaseOrders: 0, tools: 0 },
   };
+}
+
+function countOrZero(result: { count: number | null; error: { message: string } | null }, label: string) {
+  if (result.error) {
+    console.error(`Count ${label}`, result.error.message);
+    return 0;
+  }
+  return result.count || 0;
+}
+
+export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShell> {
+  try {
+    if (!isSupabaseConfigured()) {
+      return shellFromState(await getCompanyState(companyId));
+    }
+
+    const supabase = getSupabaseAdmin();
+    const [companyRes, locations, projects, codes, tools, materials, inventory, transactions, purchaseOrders] =
+      await Promise.all([
+        supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
+        selectAllForCompanySafe<Location>(supabase, "stockr_locations", companyId),
+        selectAllForCompanySafe<Project>(supabase, "stockr_projects", companyId),
+        selectAllForCompanySafe<AccessCode>(supabase, "stockr_access_codes", companyId),
+        selectAllForCompanySafe<Tool>(supabase, "stockr_tools", companyId),
+        supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("stockr_inventory").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("stockr_transactions").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+        supabase.from("stockr_purchase_orders").select("id", { count: "exact", head: true }).eq("company_id", companyId),
+      ]);
+
+    if (companyRes.error) {
+      console.error("Load company", companyRes.error.message);
+    }
+    const company = companyRes.data;
+    if (!company) return emptyWorkspaceShell();
+
+    const settings: Settings = {
+      company_name: company.name || "New company",
+      logo_url: company.logo_url || "",
+      primary_color: company.primary_color || "#2563eb",
+      accent_color: company.accent_color || "#f97316",
+      buildr_linked: Boolean(company.buildr_linked),
+      buildr_company_id: company.buildr_company_id || "",
+    };
+
+    const rawProjects = projects;
+    const resolvedTools = tools.length ? tools : toolsFromProjects(rawProjects);
+    const stockRules = stockRulesFromProjects(rawProjects);
+
+    return {
+      settings,
+      locations,
+      projects: visibleProjects(rawProjects),
+      accessCodes: codes,
+      tools: resolvedTools,
+      stockRules,
+      counts: {
+        locations: locations.length,
+        materials: countOrZero(materials, "materials"),
+        inventoryRows: countOrZero(inventory, "inventory"),
+        transactions: countOrZero(transactions, "transactions"),
+        purchaseOrders: countOrZero(purchaseOrders, "purchase_orders"),
+        tools: resolvedTools.length,
+      },
+    };
+  } catch (error) {
+    console.error("getWorkspaceShell", error);
+    return emptyWorkspaceShell();
+  }
 }
 
 export async function getDashboard(companyId: string): Promise<DashboardPayload> {

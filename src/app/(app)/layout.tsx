@@ -3,12 +3,24 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
 import { getCurrentAccount } from "@/lib/auth";
 import { StoreProvider } from "@/lib/store";
-import { getWorkspaceShell } from "@/lib/workspace-data";
+import { emptyWorkspaceShell, getWorkspaceShell } from "@/lib/workspace-data";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const account = await getCurrentAccount();
+  let account;
+  try {
+    account = await getCurrentAccount();
+  } catch (error) {
+    console.error("getCurrentAccount", error);
+    redirect("/login");
+  }
   if (!account) redirect("/login");
-  const workspace = await getWorkspaceShell(account.company.id);
+  let workspace;
+  try {
+    workspace = await getWorkspaceShell(account.company.id);
+  } catch (error) {
+    console.error("getWorkspaceShell", error);
+    workspace = emptyWorkspaceShell(account.company.name);
+  }
 
   return (
     <StoreProvider initialWorkspace={workspace} initialAccount={account}>
