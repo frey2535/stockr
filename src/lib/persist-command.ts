@@ -339,6 +339,8 @@ async function persistOnSupabase(
     if (command.patch.accent_color != null) patch.accent_color = command.patch.accent_color;
     if (command.patch.buildr_linked != null) patch.buildr_linked = command.patch.buildr_linked;
     if (command.patch.buildr_company_id != null) patch.buildr_company_id = command.patch.buildr_company_id;
+    if (command.patch.supplier_web_search != null) patch.supplier_web_search = command.patch.supplier_web_search;
+    if (command.patch.allow_broad_web_search != null) patch.allow_broad_web_search = command.patch.allow_broad_web_search;
     if (Object.keys(patch).length) {
       const { error } = await supabase.from("stockr_companies").update(patch).eq("id", companyId);
       throwIfError(error, "Update settings");
