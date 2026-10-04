@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAccount } from "@/lib/require-account";
-import { listSuppliers, saveSupplier, deleteSupplier, recordVerifiedOffer } from "@/lib/supplier-intelligence";
-import type { SupplierOffer, SupplierProfile } from "@/lib/types";
+import { listSuppliers, saveSupplier, deleteSupplier, recordVerifiedOffer, listSourcingRules, saveSourcingRule, deleteSourcingRule } from "@/lib/supplier-intelligence";
+import type { SupplierOffer, SupplierProfile, SourcingRule } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -13,7 +13,7 @@ export async function GET() {
   const { account, response } = await requireAccount();
   if (!account) return response;
   try {
-    return NextResponse.json({ rows: await listSuppliers(account.company.id) });
+    return NextResponse.json({ rows: await listSuppliers(account.company.id), rules: await listSourcingRules(account.company.id) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load suppliers." }, { status: 500 });
   }
@@ -31,6 +31,8 @@ export async function POST(request: Request) {
     supplier?: Partial<SupplierProfile> & { name?: string };
     supplierId?: string;
     offer?: Partial<SupplierOffer>;
+    rule?: Partial<SourcingRule> & { category?: string };
+    ruleId?: string;
   } | null;
 
   try {
@@ -49,6 +51,18 @@ export async function POST(request: Request) {
       if (!body.supplierId) return NextResponse.json({ error: "Supplier ID is required." }, { status: 400 });
       await deleteSupplier(account.company.id, body.supplierId);
       return NextResponse.json({ ok: true, rows: await listSuppliers(account.company.id) });
+    }
+
+    if (body?.action === "saveRule") {
+      if (!body.rule?.category?.trim()) return NextResponse.json({ error: "Category is required." }, { status: 400 });
+      const rule = await saveSourcingRule(account.company.id, { ...body.rule, category: body.rule.category.trim() });
+      return NextResponse.json({ ok: true, rule, rules: await listSourcingRules(account.company.id) });
+    }
+
+    if (body?.action === "deleteRule") {
+      if (!body.ruleId) return NextResponse.json({ error: "Rule ID is required." }, { status: 400 });
+      await deleteSourcingRule(account.company.id, body.ruleId);
+      return NextResponse.json({ ok: true, rules: await listSourcingRules(account.company.id) });
     }
 
     if (body?.action === "recordVerifiedOffer") {
