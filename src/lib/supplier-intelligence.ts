@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
+import { exactIdentityMatch, verifiedPriceHasEvidence } from "./supplier-price-policy";
 import type {
   IdentifiedProduct,
   ProductSourceResult,
@@ -8,20 +9,6 @@ import type {
   SupplierSourceMatch,
   SourcingRule,
 } from "./types";
-
-function normalize(value?: string | null) {
-  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-export function exactIdentityMatch(product: Partial<IdentifiedProduct>, offer: Partial<SupplierOffer>) {
-  const pMpn = normalize(product.mpn);
-  const pUpc = normalize(product.upc || product.barcode);
-  const oMpn = normalize(offer.mpn);
-  const oUpc = normalize(offer.upc);
-  if (pMpn && oMpn && pMpn === oMpn) return true;
-  if (pUpc && oUpc && pUpc === oUpc) return true;
-  return false;
-}
 
 function asSupplier(row: Record<string, unknown>): SupplierProfile {
   return {
@@ -154,11 +141,6 @@ export async function deleteSupplier(companyId: string, id: string) {
     .eq("company_id", companyId)
     .eq("id", id);
   if (error) throw new Error(error.message);
-}
-
-export function verifiedPriceHasEvidence(offer: Partial<SupplierOffer>) {
-  if (offer.price == null) return true;
-  return Boolean(String(offer.source_reference || "").trim() || String(offer.product_url || "").trim());
 }
 
 export async function recordVerifiedOffer(
