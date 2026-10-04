@@ -27,7 +27,7 @@ export default async function DownloadPage() {
 
       <section className="mx-auto max-w-6xl px-4 py-16">
         <p className="text-sm font-semibold tracking-wide text-brand">Get Stockr</p>
-        <h1 className="mt-3 max-w-3xl text-4xl font-extrabold tracking-tight sm:text-5xl">
+        <h1 className="mt-3 max-w-3xl text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl">
           Sell and run inventory on the phone, without living inside Google Play.
         </h1>
         <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
@@ -96,7 +96,7 @@ export default async function DownloadPage() {
 
       <section id="pricing" className="border-t border-border bg-muted/50 py-16">
         <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-center text-3xl font-extrabold">Sell the subscription here</h2>
+          <h2 className="text-center text-2xl font-extrabold leading-tight sm:text-3xl">Sell the subscription here</h2>
           <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
             Play can distribute the app. Plans stay on Stockr so you can invoice, trial, and
             upgrade without a store account. Checkout is mocked until Stripe is connected.
