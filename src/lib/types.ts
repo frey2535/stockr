@@ -124,7 +124,7 @@ export type POLine = {
   material_id: string;
   expected_quantity: number;
   received_quantity: number;
-  unit_cost?: number;
+  unit_cost?: number | null;
 };
 
 export type PurchaseOrder = {
