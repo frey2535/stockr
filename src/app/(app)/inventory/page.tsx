@@ -97,12 +97,6 @@ function InventoryPageInner() {
         eyebrow="Stock ledger"
         title="Inventory"
         description="On-hand by location, min policy, and the next move — not a pile of cards."
-        actions={
-          settings.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-          ) : null
-        }
       />
 
       <Card>
