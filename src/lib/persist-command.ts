@@ -407,30 +407,31 @@ async function persistOnSupabase(
   }
 
   if (command.type === "receivePurchaseOrder") {
-    const po = await loadPurchaseOrder(companyId, command.poId);
-    if (!po) return fail("Purchase order not found.");
-    const result = applyCommand(
-      { ...createEmptyState("tmp"), purchaseOrders: [po], inventory: [] },
-      command,
-      actor,
-    );
-    if (result.error) return fail(result.error);
-    const next = result.state.purchaseOrders[0];
-    if (next) await upsertPurchaseOrder(companyId, next);
-    for (const receipt of command.receipts) {
-      if (!receipt.quantity) continue;
-      const line = po.lines.find((row) => row.material_id === receipt.material_id);
-      if (!line) continue;
-      const remaining = line.expected_quantity - line.received_quantity;
-      const qty = Math.min(receipt.quantity, Math.max(0, remaining));
-      if (qty <= 0) continue;
-      const error = await bump(companyId, receipt.material_id, command.locationId, qty);
-      if (error) return fail(error);
+    if (!command.receipts.length) return fail("Add at least one receipt quantity.");
+    const receipts = command.receipts
+      .filter((receipt) => Number(receipt.quantity) > 0)
+      .map((receipt) => ({
+        tx_id: uid("tx"),
+        material_id: receipt.material_id,
+        quantity: Number(receipt.quantity),
+      }));
+    if (!receipts.length) return fail("Receipt quantities must be greater than zero.");
+
+    const { error } = await supabase.rpc("stockr_receive_purchase_order", {
+      p_company_id: companyId,
+      p_po_id: command.poId,
+      p_location_id: command.locationId,
+      p_receipts: receipts,
+      p_created_by: actor,
+    });
+    if (!error) return {};
+    if (/not found|does not belong/i.test(error.message)) return fail(error.message);
+    if (/stockr_receive_purchase_order|does not exist|schema cache/i.test(error.message)) {
+      throw new Error(
+        "Production purchase-order migration is required. Run the latest supabase/schema.sql before receiving material.",
+      );
     }
-    for (const tx of result.state.transactions) {
-      await insertTransaction(companyId, tx);
-    }
-    return {};
+    throw new Error(`Receive purchase order: ${error.message}`);
   }
 
   if (command.type === "setPurchaseOrderStatus") {
