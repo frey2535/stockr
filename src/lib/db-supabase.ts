@@ -211,24 +211,53 @@ export async function getCompany(id: string) {
   return (data as CompanyRow | null) || undefined;
 }
 
-export async function listMembers(companyId: string): Promise<TeamMember[]> {
-  const rows = await selectAllMatching<{
-    role: MemberRole;
-    stockr_users: { id: string; email: string; name: string } | { id: string; email: string; name: string }[] | null;
-  }>(
+async function listMembersFallback(companyId: string): Promise<TeamMember[]> {
+  const supabase = getSupabaseAdmin();
+  const memberships = await selectAllMatching<{ user_id: string; role: MemberRole }>(
     (from, to) =>
-      getSupabaseAdmin()
-        .from("stockr_memberships")
-        .select("role, stockr_users ( id, email, name )")
-        .eq("company_id", companyId)
-        .range(from, to),
+      supabase.from("stockr_memberships").select("user_id, role").eq("company_id", companyId).range(from, to),
     "members",
   );
-  return rows.flatMap((row) => {
-    const user = Array.isArray(row.stockr_users) ? row.stockr_users[0] : row.stockr_users;
+  const ids = memberships.map((row) => row.user_id);
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase.from("stockr_users").select("id, email, name").in("id", ids);
+  throwIfError(error, "Load member users");
+  const byId = new Map((data || []).map((user) => [String(user.id), user]));
+  return memberships.flatMap((row) => {
+    const user = byId.get(row.user_id);
     if (!user) return [];
-    return [{ id: user.id, email: user.email, name: user.name, role: row.role }];
+    return [{ id: String(user.id), email: String(user.email), name: String(user.name), role: row.role }];
   });
+}
+
+export async function listMembers(companyId: string): Promise<TeamMember[]> {
+  try {
+    const rows = await selectAllMatching<{
+      role: MemberRole;
+      stockr_users: { id: string; email: string; name: string } | { id: string; email: string; name: string }[] | null;
+    }>(
+      (from, to) =>
+        getSupabaseAdmin()
+          .from("stockr_memberships")
+          .select("role, stockr_users ( id, email, name )")
+          .eq("company_id", companyId)
+          .range(from, to),
+      "members",
+    );
+    return rows.flatMap((row) => {
+      const user = Array.isArray(row.stockr_users) ? row.stockr_users[0] : row.stockr_users;
+      if (!user) return [];
+      return [{ id: user.id, email: user.email, name: user.name, role: row.role }];
+    });
+  } catch (error) {
+    console.error("listMembers embed failed", error);
+    try {
+      return await listMembersFallback(companyId);
+    } catch (fallbackError) {
+      console.error("listMembers fallback failed", fallbackError);
+      return [];
+    }
+  }
 }
 
 async function membershipCount(companyId: string) {
@@ -299,7 +328,10 @@ export async function getAccount(
     },
     role: membershipRes.data.role as MemberRole,
     members: options?.members === false ? [] : await listMembers(companyId),
-    workspaces: await listUserCompanies(userId),
+    workspaces: await listUserCompanies(userId).catch((error) => {
+      console.error("listUserCompanies", error);
+      return [];
+    }),
     dataBackend: "supabase",
     platformOwner: isPlatformOwner(user.email),
   };

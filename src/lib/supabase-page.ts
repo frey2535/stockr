@@ -13,9 +13,12 @@ export async function selectAllMatching<T>(
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await fetchPage(from, from + PAGE - 1);
     if (error) throw new Error(`Load ${label}: ${error.message}`);
-    const page = data || [];
-    rows.push(...page);
-    if (page.length < PAGE) break;
+    if (!Array.isArray(data)) {
+      if (data == null) break;
+      throw new Error(`Load ${label}: expected an array`);
+    }
+    rows.push(...data);
+    if (data.length < PAGE) break;
   }
   return rows;
 }
@@ -34,4 +37,18 @@ export async function selectAllForCompany<T>(
       }>,
     table,
   );
+}
+
+export async function selectAllForCompanySafe<T>(
+  supabase: SupabaseClient,
+  table: string,
+  companyId: string,
+  columns = "*",
+): Promise<T[]> {
+  try {
+    return await selectAllForCompany<T>(supabase, table, companyId, columns);
+  } catch (error) {
+    console.error(`Load ${table}`, error);
+    return [];
+  }
 }
