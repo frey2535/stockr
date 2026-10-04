@@ -17,19 +17,38 @@ export async function POST(request: Request) {
   if (!limited.ok) {
     return NextResponse.json({ error: "Photo ID limit reached for this hour. Try again later." }, { status: 429 });
   }
-  const body = (await request.json().catch(() => null)) as { image?: string; barcode?: string; barcodes?: string[] } | null;
+  let body: { image?: string; barcode?: string; barcodes?: string[] } | null = null;
+  try {
+    body = (await request.json()) as { image?: string; barcode?: string; barcodes?: string[] };
+  } catch {
+    body = null;
+  }
   const barcodes = Array.from(
     new Set([body?.barcode, ...(Array.isArray(body?.barcodes) ? body.barcodes : [])].map((value) => String(value || "").trim()).filter(Boolean)),
   );
   const image = String(body?.image || "");
-  const vision = image.startsWith("data:image") ? await detectObjectsFromVision(image) : { objects: [] as Awaited<ReturnType<typeof detectObjectsFromVision>>["objects"] };
-  const items = await resolvePhotoIdentities(
-    vision.objects,
-    barcodes,
-    identifyRemoteProduct,
-    searchRemoteProduct,
-    completeProductIdentity,
-  );
+  let vision: Awaited<ReturnType<typeof detectObjectsFromVision>> = { objects: [] };
+  try {
+    if (image.startsWith("data:image")) vision = await detectObjectsFromVision(image);
+  } catch (error) {
+    console.error("detectObjectsFromVision", error);
+    vision = { objects: [], error: "Photo recognition failed. Try a closer photo of one item." };
+  }
+  let items: Awaited<ReturnType<typeof resolvePhotoIdentities>> = [];
+  try {
+    items = await resolvePhotoIdentities(
+      vision.objects,
+      barcodes,
+      identifyRemoteProduct,
+      searchRemoteProduct,
+      completeProductIdentity,
+    );
+  } catch (error) {
+    console.error("resolvePhotoIdentities", error);
+    items = barcodes.length
+      ? await resolvePhotoIdentities([], barcodes, identifyRemoteProduct, searchRemoteProduct).catch(() => [])
+      : [];
+  }
 
   const catalogRows: Awaited<ReturnType<typeof lookupMaterials>>["rows"] = [];
   let onHandByLocation: Record<string, number> = {};
@@ -43,20 +62,24 @@ export async function POST(request: Request) {
       item.draft.name ||
       "";
     if (!catalogQuery) continue;
-    const catalog = await lookupMaterials(account.company.id, {
-      barcode: item.identified?.barcode || item.draft.barcode || (index === 0 ? barcodes[0] : "") || "",
-      q: catalogQuery,
-      limit: 8,
-    });
-    const rows = (catalog.rows || []).filter(
-      (row) =>
-        materialMatchesCode(row, catalogQuery) ||
-        row.name.toLowerCase().includes(catalogQuery.toLowerCase()) ||
-        (row.mpn && catalogQuery.toLowerCase().includes(row.mpn.toLowerCase())),
-    );
-    items[index] = fillIdentityFromCatalog(item, rows.length ? rows : catalog.rows || []);
-    catalogRows.push(...rows);
-    if (!Object.keys(onHandByLocation).length) onHandByLocation = catalog.onHandByLocation || {};
+    try {
+      const catalog = await lookupMaterials(account.company.id, {
+        barcode: item.identified?.barcode || item.draft.barcode || (index === 0 ? barcodes[0] : "") || "",
+        q: catalogQuery,
+        limit: 8,
+      });
+      const rows = (catalog.rows || []).filter(
+        (row) =>
+          materialMatchesCode(row, catalogQuery) ||
+          row.name.toLowerCase().includes(catalogQuery.toLowerCase()) ||
+          (row.mpn && catalogQuery.toLowerCase().includes(row.mpn.toLowerCase())),
+      );
+      items[index] = fillIdentityFromCatalog(item, rows.length ? rows : catalog.rows || []);
+      catalogRows.push(...rows);
+      if (!Object.keys(onHandByLocation).length) onHandByLocation = catalog.onHandByLocation || {};
+    } catch (error) {
+      console.error("identify-image catalog", error);
+    }
   }
   const first = items[0];
   const rows = catalogRows.filter(

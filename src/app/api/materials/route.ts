@@ -8,11 +8,21 @@ export async function GET(request: Request) {
   const { account, response } = await requireAccount();
   if (!account) return response;
   const url = new URL(request.url);
-  return NextResponse.json(
-    await lookupMaterials(account.company.id, {
-      barcode: url.searchParams.get("barcode") || "",
-      q: url.searchParams.get("q") || "",
-      limit: Number(url.searchParams.get("limit") || 20),
-    }),
-  );
+  const barcode = url.searchParams.get("barcode") || "";
+  try {
+    return NextResponse.json(
+      await lookupMaterials(account.company.id, {
+        barcode,
+        q: url.searchParams.get("q") || "",
+        limit: Number(url.searchParams.get("limit") || 20),
+      }),
+    );
+  } catch (error) {
+    console.error("GET /api/materials", error);
+    return NextResponse.json({
+      rows: [],
+      onHandByLocation: {},
+      identified: barcode ? { name: "", barcode, upc: barcode, source: "scan" } : null,
+    });
+  }
 }
