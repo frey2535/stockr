@@ -13,7 +13,7 @@ function normalize(value?: string | null) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function exactIdentityMatch(product: Partial<IdentifiedProduct>, offer: Partial<SupplierOffer>) {
+export function exactIdentityMatch(product: Partial<IdentifiedProduct>, offer: Partial<SupplierOffer>) {
   const pMpn = normalize(product.mpn);
   const pUpc = normalize(product.upc || product.barcode);
   const oMpn = normalize(offer.mpn);
@@ -156,6 +156,11 @@ export async function deleteSupplier(companyId: string, id: string) {
   if (error) throw new Error(error.message);
 }
 
+export function verifiedPriceHasEvidence(offer: Partial<SupplierOffer>) {
+  if (offer.price == null) return true;
+  return Boolean(String(offer.source_reference || "").trim() || String(offer.product_url || "").trim());
+}
+
 export async function recordVerifiedOffer(
   companyId: string,
   input: Omit<SupplierOffer, "id" | "company_id" | "observed_at"> & { observed_at?: string },
@@ -163,7 +168,7 @@ export async function recordVerifiedOffer(
   if (input.price != null && (!Number.isFinite(input.price) || input.price < 0)) {
     throw new Error("Verified supplier price must be a non-negative number.");
   }
-  if (input.price != null && !input.source_reference && !input.product_url) {
+  if (!verifiedPriceHasEvidence(input)) {
     throw new Error("A verified price requires a source reference or supplier product URL.");
   }
   const row = {
