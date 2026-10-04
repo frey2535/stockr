@@ -454,9 +454,11 @@ const tools: Tool[] = [
     description: "True-RMS digital multimeter",
     category: "Meters",
     barcode: "TOOL117001",
+    tool_number: "T-001",
     assigned_location_id: "loc-truck-12",
     assigned_to: "Mike Alvarez",
     status: "available",
+    condition: "good",
   },
   {
     id: "tool-drill",
@@ -464,17 +466,21 @@ const tools: Tool[] = [
     description: "M18 Fuel 1/2 in hammer drill",
     category: "Power tools",
     barcode: "TOOLDRL018",
+    tool_number: "T-002",
     assigned_location_id: "loc-wh-main",
     status: "available",
+    condition: "operating_issues",
   },
   {
     id: "tool-toner",
     name: "Ideal Circuit Tracer",
     category: "Testing",
     barcode: "TOOLTRC220",
+    tool_number: "T-003",
     assigned_location_id: "loc-truck-7",
     assigned_to: "Dana Cho",
     status: "checked_out",
+    condition: "good",
   },
 ];
 

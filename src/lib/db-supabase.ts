@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { createEmptyState, createSeedState, normalizeStoreState } from "./seed";
 import { encodeStateForPersist } from "./persist-state";
-import { toolsFromProjects } from "./tools-state";
+import { mergeToolLists, toolsFromProjects } from "./tools-state";
 import { planLimitError } from "./plans";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllMatching } from "./supabase-page";
@@ -156,7 +156,7 @@ export async function getCompanyState(companyId: string): Promise<StoreState> {
     purchaseOrders: purchaseOrdersMapped,
     accessCodes,
     projects,
-    tools: tools.length ? tools : toolsFromProjects(projects, []),
+    tools: mergeToolLists(tools, toolsFromProjects(projects, [])),
     stockRules: [],
   });
 }
@@ -174,11 +174,30 @@ async function saveTools(companyId: string, tools: Tool[]) {
       description: tool.description || "",
       category: tool.category || "",
       barcode: tool.barcode || "",
-      assigned_location_id: tool.assigned_location_id,
+      assigned_location_id: tool.assigned_location_id || "",
       assigned_to: tool.assigned_to || "",
       status: tool.status,
+      tool_number: tool.tool_number || "",
+      condition: tool.condition || "good",
     })),
   );
+  if (insert.error && /tool_number|condition|column/i.test(insert.error.message)) {
+    const fallback = await supabase.from("stockr_tools").insert(
+      tools.map((tool) => ({
+        id: tool.id,
+        company_id: companyId,
+        name: tool.name,
+        description: tool.description || "",
+        category: tool.category || "",
+        barcode: tool.barcode || "",
+        assigned_location_id: tool.assigned_location_id || "",
+        assigned_to: tool.assigned_to || "",
+        status: tool.status,
+      })),
+    );
+    if (fallback.error) throwIfError(fallback.error, "Save tools");
+    return;
+  }
   if (insert.error) throwIfError(insert.error, "Save tools");
 }
 

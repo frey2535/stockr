@@ -26,7 +26,7 @@ import type {
   WorkspaceShell,
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
-import { toolsFromProjects } from "./tools-state";
+import { mergeToolLists, toolsFromProjects } from "./tools-state";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
@@ -171,7 +171,7 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
     };
 
     const rawProjects = projects;
-    const resolvedTools = tools.length ? tools : toolsFromProjects(rawProjects);
+    const resolvedTools = mergeToolLists(tools, toolsFromProjects(rawProjects));
     const stockRules = stockRulesFromProjects(rawProjects);
 
     return {

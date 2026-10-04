@@ -24,7 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStore } from "@/lib/store";
-import type { Location, Tool, ToolStatus } from "@/lib/types";
+import { nextToolNumber, TOOL_CONDITIONS, toolConditionLabel } from "@/lib/tools-state";
+import type { Location, Tool, ToolCondition, ToolStatus } from "@/lib/types";
 
 const STATUS: Record<ToolStatus, string> = {
   available: "bg-green-100 text-green-700",
@@ -32,12 +33,24 @@ const STATUS: Record<ToolStatus, string> = {
   maintenance: "bg-gray-100 text-gray-700",
 };
 
+const CONDITION: Record<ToolCondition, string> = {
+  good: "bg-green-100 text-green-800",
+  operating_issues: "bg-amber-100 text-amber-800",
+  broken: "bg-red-100 text-red-800",
+  lost: "bg-slate-100 text-slate-800",
+  stolen: "bg-slate-200 text-slate-900",
+  in_repair: "bg-orange-100 text-orange-800",
+  retired: "bg-gray-100 text-gray-700",
+};
+
 const emptyTool: Partial<Tool> = {
   name: "",
   category: "",
   barcode: "",
+  tool_number: "",
   assigned_to: "",
   status: "available",
+  condition: "good",
 };
 
 function locationLabel(location: Location) {
@@ -54,11 +67,18 @@ function ToolCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const condition = (tool.condition || "good") as ToolCondition;
   return (
     <div className="flex items-start justify-between gap-3 rounded-xl border bg-background p-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
+          {tool.tool_number ? (
+            <Badge variant="outline" className="font-mono">
+              #{tool.tool_number}
+            </Badge>
+          ) : null}
           <h4 className="font-medium">{tool.name}</h4>
+          <Badge className={CONDITION[condition] || CONDITION.good}>{toolConditionLabel(condition)}</Badge>
           <Badge className={STATUS[tool.status]}>{tool.status.replace("_", " ")}</Badge>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -80,11 +100,12 @@ function ToolCard({
 }
 
 export default function ToolsPage() {
-  const { workspace, upsertTool, deleteTool } = useStore();
+  const { workspace, account, upsertTool, deleteTool } = useStore();
   const tools = workspace.tools;
   const locations = workspace.locations;
   const [editing, setEditing] = useState<Partial<Tool> | null>(null);
   const [defaultLocationId, setDefaultLocationId] = useState(locations[0]?.id || "");
+  const [customEmployee, setCustomEmployee] = useState(false);
 
   const grouped = useMemo(() => {
     const byLocation = locations.map((location) => ({
@@ -97,30 +118,40 @@ export default function ToolsPage() {
     const employees = Array.from(
       new Set(
         [
+          ...(account?.members || []).map((member) => member.name || ""),
           ...locations.map((location) => location.assigned_to || ""),
           ...tools.map((tool) => tool.assigned_to || ""),
         ].filter(Boolean),
       ),
     ).sort((a, b) => a.localeCompare(b));
-    return { byLocation, unassigned, employees };
-  }, [locations, tools]);
+    const toolNumbers = Array.from(
+      new Set(tools.map((tool) => String(tool.tool_number || "").trim()).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return { byLocation, unassigned, employees, toolNumbers };
+  }, [account?.members, locations, tools]);
 
   const save = async () => {
     if (!editing?.name?.trim()) {
       toast.error("Name is required.");
       return;
     }
-    if (!editing.assigned_location_id) {
-      toast.error("Assign the tool to a warehouse or vehicle.");
+    if (!editing.assigned_location_id && !editing.assigned_to?.trim()) {
+      toast.error("Assign the tool to an employee or a warehouse/vehicle.");
       return;
     }
-    const result = await upsertTool(editing);
+    const result = await upsertTool({
+      ...editing,
+      tool_number: editing.tool_number?.trim() || nextToolNumber(tools),
+      condition: editing.condition || "good",
+      assigned_to: editing.assigned_to?.trim() || "",
+    });
     if (!result.ok) {
       toast.error(result.error);
       return;
     }
-    toast.success("Tool saved");
+    toast.success(editing.assigned_to?.trim() ? `Tool assigned to ${editing.assigned_to.trim()}` : "Tool saved");
     setEditing(null);
+    setCustomEmployee(false);
   };
 
   const remove = async (id: string) => {
@@ -135,12 +166,16 @@ export default function ToolsPage() {
   const startAdd = (locationId?: string) => {
     const assigned = locationId || locations[0]?.id || "";
     setDefaultLocationId(assigned);
+    setCustomEmployee(false);
     setEditing({
       ...emptyTool,
+      tool_number: nextToolNumber(tools),
       assigned_location_id: assigned,
       assigned_to: locations.find((row) => row.id === assigned)?.assigned_to || "",
     });
   };
+
+  const employeeValue = customEmployee ? "__other__" : editing?.assigned_to?.trim() || "__none__";
 
   return (
     <div className="space-y-6">
@@ -159,8 +194,8 @@ export default function ToolsPage() {
       {locations.length === 0 && tools.length === 0 ? (
         <EmptyState
           icon={<Wrench className="size-12" />}
-          title="No locations or tools yet"
-          description="Add a warehouse or vehicle first, then assign tools to it."
+          title="No tools yet"
+          description="Add a tool and assign it to an employee, warehouse, or vehicle."
         />
       ) : (
         <div className="space-y-6">
@@ -178,6 +213,37 @@ export default function ToolsPage() {
               ))}
             </div>
           ) : null}
+
+          {grouped.employees.map((name) => {
+            const assigned = tools.filter((tool) => tool.assigned_to === name);
+            if (!assigned.length) return null;
+            return (
+              <Card key={`emp-${name}`}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <UserRound className="size-4 text-primary" />
+                    {name}
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    {assigned.length} assigned tool{assigned.length === 1 ? "" : "s"}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {assigned.map((tool) => (
+                    <ToolCard
+                      key={tool.id}
+                      tool={tool}
+                      onEdit={() => {
+                        setCustomEmployee(false);
+                        setEditing(tool);
+                      }}
+                      onDelete={() => void remove(tool.id)}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            );
+          })}
 
           {grouped.byLocation.map(({ location, tools: assigned }) => (
             <Card key={location.id}>
@@ -210,7 +276,10 @@ export default function ToolsPage() {
                     <ToolCard
                       key={tool.id}
                       tool={tool}
-                      onEdit={() => setEditing(tool)}
+                      onEdit={() => {
+                        setCustomEmployee(false);
+                        setEditing(tool);
+                      }}
                       onDelete={() => void remove(tool.id)}
                     />
                   ))
@@ -222,14 +291,17 @@ export default function ToolsPage() {
           {grouped.unassigned.length ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Unassigned tools</CardTitle>
+                <CardTitle className="text-base">Unassigned location</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {grouped.unassigned.map((tool) => (
                   <ToolCard
                     key={tool.id}
                     tool={tool}
-                    onEdit={() => setEditing(tool)}
+                    onEdit={() => {
+                      setCustomEmployee(false);
+                      setEditing(tool);
+                    }}
                     onDelete={() => void remove(tool.id)}
                   />
                 ))}
@@ -239,8 +311,16 @@ export default function ToolsPage() {
         </div>
       )}
 
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent>
+      <Dialog
+        open={!!editing}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditing(null);
+            setCustomEmployee(false);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing?.id ? "Edit tool" : "Add tool"}</DialogTitle>
           </DialogHeader>
@@ -249,6 +329,56 @@ export default function ToolsPage() {
               <div className="space-y-1">
                 <Label className="text-xs">Name *</Label>
                 <Input value={editing.name || ""} onChange={(event) => setEditing({ ...editing, name: event.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Tool #</Label>
+                  <Select
+                    value={editing.tool_number && grouped.toolNumbers.includes(editing.tool_number) ? editing.tool_number : "__custom__"}
+                    onValueChange={(value) =>
+                      setEditing({
+                        ...editing,
+                        tool_number: value === "__custom__" ? nextToolNumber(tools) : value,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select tool #" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__custom__">New tool #</SelectItem>
+                      {grouped.toolNumbers.map((number) => (
+                        <SelectItem key={number} value={number}>
+                          {number}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    className="mt-2 font-mono"
+                    value={editing.tool_number || ""}
+                    onChange={(event) => setEditing({ ...editing, tool_number: event.target.value })}
+                    placeholder="T-001"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Condition</Label>
+                  <Select
+                    value={editing.condition || "good"}
+                    onValueChange={(value) => setEditing({ ...editing, condition: value as ToolCondition })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Condition" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TOOL_CONDITIONS.map((row) => (
+                        <SelectItem key={row.id} value={row.id}>
+                          {row.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -268,21 +398,72 @@ export default function ToolsPage() {
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Assigned location *</Label>
+                <Label className="text-xs">Assigned employee</Label>
                 <Select
-                  value={editing.assigned_location_id || defaultLocationId}
-                  onValueChange={(value) =>
+                  value={employeeValue}
+                  onValueChange={(value) => {
+                    if (value === "__other__") {
+                      setCustomEmployee(true);
+                      setEditing({ ...editing, assigned_to: "" });
+                      return;
+                    }
+                    setCustomEmployee(false);
+                    if (value === "__none__") {
+                      setEditing({ ...editing, assigned_to: "" });
+                      return;
+                    }
+                    const location = locations.find((row) => row.assigned_to === value);
+                    setEditing({
+                      ...editing,
+                      assigned_to: value,
+                      assigned_location_id:
+                        editing.assigned_location_id || location?.id || editing.assigned_location_id,
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Unassigned</SelectItem>
+                    {grouped.employees.map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__other__">Someone else…</SelectItem>
+                  </SelectContent>
+                </Select>
+                {customEmployee || (editing.assigned_to && !grouped.employees.includes(editing.assigned_to)) ? (
+                  <Input
+                    className="mt-2"
+                    value={editing.assigned_to || ""}
+                    onChange={(event) => setEditing({ ...editing, assigned_to: event.target.value })}
+                    placeholder="Crew member name"
+                  />
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Assigned location</Label>
+                <Select
+                  value={editing.assigned_location_id || defaultLocationId || "__none__"}
+                  onValueChange={(value) => {
+                    if (value === "__none__") {
+                      setEditing({ ...editing, assigned_location_id: "" });
+                      return;
+                    }
                     setEditing({
                       ...editing,
                       assigned_location_id: value,
                       assigned_to: editing.assigned_to || locations.find((row) => row.id === value)?.assigned_to || "",
-                    })
-                  }
+                    });
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Warehouse or vehicle" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">No location yet</SelectItem>
                     {locations.map((location) => (
                       <SelectItem key={location.id} value={location.id}>
                         {locationLabel(location)}
@@ -291,33 +472,23 @@ export default function ToolsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs">Assigned employee</Label>
-                  <Input
-                    value={editing.assigned_to || ""}
-                    onChange={(event) => setEditing({ ...editing, assigned_to: event.target.value })}
-                    placeholder="Crew member"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Status</Label>
-                  <Select
-                    value={editing.status || "available"}
-                    onValueChange={(value) => setEditing({ ...editing, status: value as ToolStatus })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="available">Available</SelectItem>
-                      <SelectItem value="checked_out">Checked out</SelectItem>
-                      <SelectItem value="maintenance">Maintenance</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Status</Label>
+                <Select
+                  value={editing.status || "available"}
+                  onValueChange={(value) => setEditing({ ...editing, status: value as ToolStatus })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="checked_out">Checked out</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Button className="w-full" onClick={save}>
+              <Button className="w-full" onClick={() => void save()}>
                 Save tool
               </Button>
             </div>
