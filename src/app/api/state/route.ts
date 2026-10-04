@@ -64,19 +64,25 @@ export async function POST(request: Request) {
       ? createSeedState()
       : createEmptyState(account.company.name);
 
-  const result = await persistStoreCommand(account.company.id, command, account.user.email, seed);
-  if (result.error) {
-    return NextResponse.json({ error: result.error }, { status: 400 });
-  }
+  try {
+    const result = await persistStoreCommand(account.company.id, command, account.user.email, seed);
+    if (result.error) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
 
-  if (command.type === "updateSettings" && command.patch.company_name) {
-    await updateCompanyName(account.company.id, command.patch.company_name);
-  }
+    if (command.type === "updateSettings" && command.patch.company_name) {
+      await updateCompanyName(account.company.id, command.patch.company_name);
+    }
 
-  const nextAccount = await getAccount(account.user.id, account.company.id);
-  return NextResponse.json({
-    workspace: await getWorkspaceShell(account.company.id),
-    account: nextAccount,
-    created: result.created,
-  });
+    const nextAccount = await getAccount(account.user.id, account.company.id);
+    return NextResponse.json({
+      workspace: await getWorkspaceShell(account.company.id),
+      account: nextAccount,
+      created: result.created,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not save that change.";
+    console.error("POST /api/state", command.type, message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
