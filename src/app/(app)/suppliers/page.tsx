@@ -44,7 +44,27 @@ export default function SuppliersPage() {
     setRules(data?.rules || []);
   };
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/suppliers")
+      .then(async (response) => {
+        const data = await response.json().catch(() => null) as { rows?: SupplierProfile[]; rules?: SourcingRule[]; error?: string } | null;
+        if (!response.ok) {
+          toast.error(data?.error || "Could not load suppliers.");
+          return;
+        }
+        if (!cancelled) {
+          setRows(data?.rows || []);
+          setRules(data?.rules || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Could not load suppliers.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const addSupplier = async () => {
     if (!form.name.trim()) {
