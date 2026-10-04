@@ -31,6 +31,7 @@ export default function SuppliersPage() {
   const [rules, setRules] = useState<SourcingRule[]>([]);
   const [ruleForm, setRuleForm] = useState({ category: "", preferred_supplier_id: "", preferred_manufacturer: "", allow_substitutes: true });
   const [busy, setBusy] = useState(false);
+  const [priceForm, setPriceForm] = useState({ supplier_id: "", product_name: "", manufacturer: "", mpn: "", upc: "", supplier_sku: "", price: "", unit: "", product_url: "", source_reference: "", source_type: "manual_verified" });
 
   const load = async () => {
     const response = await fetch("/api/suppliers");
@@ -261,6 +262,103 @@ export default function SuppliersPage() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+
+      <Card>
+        <CardHeader><CardTitle>Record verified supplier price</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Use this for an actual quote, invoice, account price, supplier page, or price-file value. A source URL or reference is mandatory whenever a price is entered.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Supplier *</Label>
+              <Select value={priceForm.supplier_id || "none"} onValueChange={(value) => setPriceForm({ ...priceForm, supplier_id: value === "none" ? "" : value })}>
+                <SelectTrigger><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select supplier</SelectItem>
+                  {rows.map((supplier) => <SelectItem key={supplier.id} value={supplier.id}>{supplier.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Product name *</Label>
+              <Input value={priceForm.product_name} onChange={(e) => setPriceForm({ ...priceForm, product_name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Manufacturer / MPN</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input value={priceForm.manufacturer} onChange={(e) => setPriceForm({ ...priceForm, manufacturer: e.target.value })} placeholder="Manufacturer" />
+                <Input value={priceForm.mpn} onChange={(e) => setPriceForm({ ...priceForm, mpn: e.target.value })} placeholder="MPN" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>UPC / Supplier SKU</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input value={priceForm.upc} onChange={(e) => setPriceForm({ ...priceForm, upc: e.target.value })} placeholder="UPC" />
+                <Input value={priceForm.supplier_sku} onChange={(e) => setPriceForm({ ...priceForm, supplier_sku: e.target.value })} placeholder="Supplier SKU" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Exact price / unit</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="number" min="0" step="0.0001" value={priceForm.price} onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })} placeholder="Price" />
+                <Input value={priceForm.unit} onChange={(e) => setPriceForm({ ...priceForm, unit: e.target.value })} placeholder="each, ft, box..." />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Verified source type</Label>
+              <Select value={priceForm.source_type} onValueChange={(value) => setPriceForm({ ...priceForm, source_type: value })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual_verified">Verified manual/account price</SelectItem>
+                  <SelectItem value="supplier_page">Supplier product page</SelectItem>
+                  <SelectItem value="price_file">Supplier price file</SelectItem>
+                  <SelectItem value="edi">EDI</SelectItem>
+                  <SelectItem value="cxml">cXML</SelectItem>
+                  <SelectItem value="supplier_api">Supplier API</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Supplier product URL</Label>
+              <Input value={priceForm.product_url} onChange={(e) => setPriceForm({ ...priceForm, product_url: e.target.value })} placeholder="https://supplier.com/product..." />
+            </div>
+            <div className="space-y-2">
+              <Label>Quote / invoice / source reference</Label>
+              <Input value={priceForm.source_reference} onChange={(e) => setPriceForm({ ...priceForm, source_reference: e.target.value })} placeholder="Quote 4821, Invoice 7731, file name..." />
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              if (!priceForm.supplier_id || !priceForm.product_name.trim()) return toast.error("Supplier and product name are required.");
+              if (priceForm.price && !priceForm.product_url.trim() && !priceForm.source_reference.trim()) {
+                return toast.error("A verified price requires a supplier URL or source reference.");
+              }
+              const response = await fetch("/api/suppliers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "recordVerifiedOffer",
+                  offer: {
+                    ...priceForm,
+                    price: priceForm.price === "" ? null : Number(priceForm.price),
+                    currency: "USD",
+                    exact_match: Boolean(priceForm.mpn.trim() || priceForm.upc.trim()),
+                  },
+                }),
+              });
+              const data = await response.json().catch(() => null) as { error?: string } | null;
+              if (!response.ok) return toast.error(data?.error || "Could not save verified price.");
+              setPriceForm({ supplier_id: "", product_name: "", manufacturer: "", mpn: "", upc: "", supplier_sku: "", price: "", unit: "", product_url: "", source_reference: "", source_type: "manual_verified" });
+              toast.success("Verified supplier price saved");
+            }}
+          >
+            Save verified price
+          </Button>
         </CardContent>
       </Card>
 
