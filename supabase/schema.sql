@@ -804,7 +804,7 @@ set search_path = public
 as $$
 declare
   receipt jsonb;
-  material_id text;
+  v_material_id text;
   requested_qty numeric;
   receive_qty numeric;
   expected_qty numeric;
@@ -828,7 +828,7 @@ begin
   for receipt in
     select value from jsonb_array_elements(coalesce(p_receipts, '[]'::jsonb))
   loop
-    material_id := receipt->>'material_id';
+    v_material_id := receipt->>'material_id';
     requested_qty := coalesce(nullif(receipt->>'quantity', '')::numeric, 0);
     tx_id := coalesce(nullif(receipt->>'tx_id', ''), 'tx_' || md5(random()::text || clock_timestamp()::text));
 
@@ -841,7 +841,7 @@ begin
     from stockr_purchase_order_lines
     where purchase_order_id = p_po_id
       and company_id = p_company_id
-      and material_id = material_id
+      and material_id = v_material_id
     for update;
 
     if not found then
@@ -857,12 +857,12 @@ begin
       set received_quantity = received_quantity + receive_qty
       where purchase_order_id = p_po_id
         and company_id = p_company_id
-        and material_id = material_id;
+        and material_id = v_material_id;
 
     insert into stockr_inventory (id, company_id, material_id, location_id, quantity)
     values (
-      'inv_' || p_company_id || '_' || material_id || '_' || p_location_id,
-      p_company_id, material_id, p_location_id, receive_qty
+      'inv_' || p_company_id || '_' || v_material_id || '_' || p_location_id,
+      p_company_id, v_material_id, p_location_id, receive_qty
     )
     on conflict (company_id, material_id, location_id) do update
       set quantity = stockr_inventory.quantity + excluded.quantity;
@@ -871,7 +871,7 @@ begin
       id, company_id, type, material_id, quantity,
       from_location_id, to_location_id, project, notes, created_at, created_by
     ) values (
-      tx_id, p_company_id, 'receive', material_id, receive_qty,
+      tx_id, p_company_id, 'receive', v_material_id, receive_qty,
       null, p_location_id, null, p_po_id, clock_timestamp(), p_created_by
     );
   end loop;
