@@ -12,6 +12,14 @@ export type POStatus = "draft" | "ordered" | "partial" | "received" | "cancelled
 export type AccessCodeType = "trial" | "permanent";
 export type ProjectStatus = "active" | "bidding" | "completed";
 export type ToolStatus = "available" | "checked_out" | "maintenance";
+export type ToolCondition =
+  | "good"
+  | "operating_issues"
+  | "broken"
+  | "lost"
+  | "stolen"
+  | "in_repair"
+  | "retired";
 
 export type Settings = {
   company_name: string;
@@ -160,9 +168,11 @@ export type Tool = {
   description?: string;
   category?: string;
   barcode?: string;
+  tool_number?: string;
   assigned_location_id: string;
   assigned_to?: string;
   status: ToolStatus;
+  condition?: ToolCondition;
 };
 
 export type StoreState = {

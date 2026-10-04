@@ -357,8 +357,8 @@ export function applyCommand(
         created: saved,
       };
     }
-    if (!command.tool.assigned_location_id) {
-      return { state: prev, error: "Assign the tool to a warehouse or vehicle." };
+    if (!command.tool.assigned_location_id && !command.tool.assigned_to?.trim()) {
+      return { state: prev, error: "Assign the tool to an employee or a warehouse/vehicle." };
     }
     const created: Tool = {
       id: uid("tool"),
@@ -366,9 +366,11 @@ export function applyCommand(
       description: command.tool.description || "",
       category: command.tool.category || "",
       barcode: command.tool.barcode || "",
-      assigned_location_id: command.tool.assigned_location_id,
+      tool_number: command.tool.tool_number || "",
+      assigned_location_id: command.tool.assigned_location_id || "",
       assigned_to: command.tool.assigned_to || "",
       status: command.tool.status || "available",
+      condition: command.tool.condition || "good",
     };
     return { state: { ...prev, tools: [...prev.tools, created] }, created };
   }

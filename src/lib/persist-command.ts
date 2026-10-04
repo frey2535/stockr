@@ -3,7 +3,8 @@ import { applyCommand, type StoreCommand } from "./mutations";
 import { isSupabaseConfigured } from "./db-config";
 import { encodeStateForPersist } from "./persist-state";
 import { getSupabaseAdmin } from "./supabase-admin";
-import { selectAllForCompany } from "./supabase-page";
+import { selectAllForCompany, selectAllForCompanySafe } from "./supabase-page";
+import { encodeToolsForPersist, isToolsBlob, mergeToolLists, toolsFromProjects } from "./tools-state";
 import { uid } from "./id";
 import { needsProject } from "./tx";
 import type { AccessCode, InventoryAction, Material, Project, PurchaseOrder, Tool, Transaction } from "./types";
@@ -42,6 +43,60 @@ function materialRow(companyId: string, material: Material) {
     image_url: material.image_url || "",
     aliases: material.aliases || [],
   };
+}
+
+function toolRow(companyId: string, tool: Tool, includeExtras = true) {
+  return {
+    id: tool.id,
+    company_id: companyId,
+    name: tool.name,
+    description: tool.description || "",
+    category: tool.category || "",
+    barcode: tool.barcode || "",
+    assigned_location_id: tool.assigned_location_id || "",
+    assigned_to: tool.assigned_to || "",
+    status: tool.status || "available",
+    ...(includeExtras
+      ? {
+          tool_number: tool.tool_number || "",
+          condition: tool.condition || "good",
+        }
+      : {}),
+  };
+}
+
+async function upsertToolRow(companyId: string, tool: Tool) {
+  const supabase = getSupabaseAdmin();
+  const full = await supabase.from("stockr_tools").upsert(toolRow(companyId, tool, true));
+  if (!full.error) return true;
+  if (!/tool_number|condition|column|schema cache|does not exist/i.test(full.error.message)) {
+    console.error("Save tool", full.error.message);
+  }
+  const basic = await supabase.from("stockr_tools").upsert(toolRow(companyId, tool, false));
+  if (basic.error) {
+    console.error("Save tool", basic.error.message);
+    return false;
+  }
+  return true;
+}
+
+async function persistToolsFallback(companyId: string, tools: Tool[], projects: Project[]) {
+  const supabase = getSupabaseAdmin();
+  const encoded = encodeToolsForPersist({
+    ...createEmptyState("tmp"),
+    tools,
+    projects,
+  });
+  const blob = encoded.projects.find(isToolsBlob);
+  if (!blob) return;
+  const { error } = await supabase.from("stockr_projects").upsert({
+    id: blob.id,
+    company_id: companyId,
+    name: blob.name,
+    project_number: blob.project_number || "",
+    status: blob.status,
+  });
+  if (error) throw new Error(`Save tools: ${error.message}`);
 }
 
 function missingRpc(error: { message?: string; code?: string } | null) {
@@ -458,33 +513,35 @@ async function persistOnSupabase(
   }
 
   if (command.type === "upsertTool" || command.type === "deleteTool") {
-    const tools = await selectAllForCompany<Tool>(supabase, "stockr_tools", companyId);
+    const [tableTools, projects] = await Promise.all([
+      selectAllForCompanySafe<Tool>(supabase, "stockr_tools", companyId),
+      selectAllForCompanySafe<Project>(supabase, "stockr_projects", companyId),
+    ]);
     const prev = {
       ...createEmptyState("tmp"),
-      tools,
+      tools: mergeToolLists(tableTools, toolsFromProjects(projects)),
+      projects,
     };
     const result = applyCommand(prev, command, actor);
     if (result.error) return fail(result.error);
     if (command.type === "deleteTool") {
-      const { error } = await supabase.from("stockr_tools").delete().eq("id", command.id).eq("company_id", companyId);
-      throwIfError(error, "Delete tool");
+      const del = await supabase.from("stockr_tools").delete().eq("id", command.id).eq("company_id", companyId);
+      if (del.error) console.error("Delete tool", del.error.message);
+      await persistToolsFallback(companyId, result.state.tools, prev.projects);
       return {};
     }
     const saved = result.created as Tool | undefined;
     const tool = saved || result.state.tools.find((row) => row.id === command.tool.id);
     if (!tool) return fail("Could not save the tool.");
-    const { error } = await supabase.from("stockr_tools").upsert({
-      id: tool.id,
-      company_id: companyId,
-      name: tool.name,
-      description: tool.description || "",
-      category: tool.category || "",
-      barcode: tool.barcode || "",
-      assigned_location_id: tool.assigned_location_id,
-      assigned_to: tool.assigned_to || "",
-      status: tool.status,
-    });
-    throwIfError(error, "Save tool");
+    const savedToTable = await upsertToolRow(companyId, tool);
+    let savedToBlob = false;
+    try {
+      await persistToolsFallback(companyId, result.state.tools, prev.projects);
+      savedToBlob = true;
+    } catch (error) {
+      console.error("Backup tool persist", error);
+    }
+    if (!savedToTable && !savedToBlob) return fail("Could not save the tool to the company workspace.");
     return { created: tool };
   }
 

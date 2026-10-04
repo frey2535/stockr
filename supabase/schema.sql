@@ -140,10 +140,14 @@ create table if not exists stockr_tools (
   description text,
   category text,
   barcode text,
+  tool_number text not null default '',
   assigned_location_id text not null,
   assigned_to text,
-  status text not null default 'available'
+  status text not null default 'available',
+  condition text not null default 'good'
 );
+alter table stockr_tools add column if not exists tool_number text not null default '';
+alter table stockr_tools add column if not exists condition text not null default 'good';
 
 create index if not exists stockr_memberships_company_idx on stockr_memberships (company_id);
 create index if not exists stockr_sessions_expires_idx on stockr_sessions (expires_at);

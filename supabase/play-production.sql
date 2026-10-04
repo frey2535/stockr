@@ -16,6 +16,22 @@ alter table stockr_materials add column if not exists mpn text;
 alter table stockr_materials add column if not exists upc text;
 alter table stockr_materials add column if not exists supplier_number text;
 
+create table if not exists stockr_tools (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  name text not null,
+  description text,
+  category text,
+  barcode text,
+  tool_number text not null default '',
+  assigned_location_id text not null,
+  assigned_to text,
+  status text not null default 'available',
+  condition text not null default 'good'
+);
+alter table stockr_tools add column if not exists tool_number text not null default '';
+alter table stockr_tools add column if not exists condition text not null default 'good';
+
 create table if not exists stockr_password_resets (
   id text primary key,
   user_id text not null references stockr_users (id) on delete cascade,
