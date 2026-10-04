@@ -9,12 +9,30 @@ function canManage(role?: string) {
   return ["owner", "admin", "inventory_admin", "warehouse_manager"].includes(String(role || ""));
 }
 
+function supplierSchemaMissing(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return /stockr_suppliers|stockr_supplier_offers|stockr_sourcing_rules|supplier_web_search|allow_broad_web_search/i.test(message)
+    && /schema cache|could not find|does not exist|column/i.test(message);
+}
+
+function schemaRequiredResponse() {
+  return NextResponse.json(
+    {
+      error: "Supplier Intelligence database setup is required. Apply supabase/migrations/20261004_supplier_intelligence.sql to the Stockr Supabase project, then reload Stockr.",
+      code: "SUPPLIER_SCHEMA_REQUIRED",
+      migrationRequired: true,
+    },
+    { status: 503 },
+  );
+}
+
 export async function GET() {
   const { account, response } = await requireAccount();
   if (!account) return response;
   try {
     return NextResponse.json({ rows: await listSuppliers(account.company.id), rules: await listSourcingRules(account.company.id) });
   } catch (error) {
+    if (supplierSchemaMissing(error)) return schemaRequiredResponse();
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not load suppliers." }, { status: 500 });
   }
 }
@@ -92,6 +110,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Unknown supplier action." }, { status: 400 });
   } catch (error) {
+    if (supplierSchemaMissing(error)) return schemaRequiredResponse();
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save supplier data." }, { status: 400 });
   }
 }
