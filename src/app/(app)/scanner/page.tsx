@@ -925,7 +925,7 @@ export default function ScannerPage() {
                           <p className="font-semibold">
                             {new Intl.NumberFormat("en-US", { style: "currency", currency: match.offer.currency || "USD" }).format(match.offer.price)}
                           </p>
-                          <p className="text-[11px] text-muted-foreground">{match.offer.source_type.replace(/_/g, " ")}</p>
+                          <p className="text-[11px] text-muted-foreground">{match.offer.source_type.replace(/_/g, " ")} · {new Date(match.offer.observed_at).toLocaleDateString()}</p>
                         </>
                       ) : (
                         <p className="text-sm font-medium text-muted-foreground">Price unavailable</p>
