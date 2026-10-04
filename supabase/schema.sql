@@ -955,3 +955,20 @@ drop policy if exists stockr_deny_anon on stockr_suppliers;
 drop policy if exists stockr_deny_anon on stockr_supplier_offers;
 create policy stockr_deny_anon on stockr_suppliers for all to anon, authenticated using (false) with check (false);
 create policy stockr_deny_anon on stockr_supplier_offers for all to anon, authenticated using (false) with check (false);
+
+
+create table if not exists stockr_sourcing_rules (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  category text not null,
+  preferred_supplier_id text references stockr_suppliers (id) on delete set null,
+  preferred_manufacturer text,
+  allow_substitutes boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists stockr_sourcing_rules_category_idx
+  on stockr_sourcing_rules (company_id, lower(category));
+alter table stockr_sourcing_rules enable row level security;
+drop policy if exists stockr_deny_anon on stockr_sourcing_rules;
+create policy stockr_deny_anon on stockr_sourcing_rules for all to anon, authenticated using (false) with check (false);
