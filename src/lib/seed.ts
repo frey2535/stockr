@@ -27,6 +27,8 @@ export const defaultSettings: Settings = {
   accent_color: "#f97316",
   buildr_linked: true,
   buildr_company_id: "co_summit_demo",
+  supplier_web_search: true,
+  allow_broad_web_search: true,
 };
 
 const locations: Location[] = [
@@ -525,6 +527,8 @@ export function createEmptyState(companyName: string): StoreState {
       accent_color: "#f97316",
       buildr_linked: false,
       buildr_company_id: "",
+      supplier_web_search: true,
+      allow_broad_web_search: true,
     },
     locations: [],
     materials: [],
