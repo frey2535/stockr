@@ -448,3 +448,14 @@ export type ProductSourceResult = {
   broaderWebUsed: boolean;
   searchOrder: string[];
 };
+
+
+export type SourcingRule = {
+  id: string;
+  company_id: string;
+  category: string;
+  preferred_supplier_id?: string | null;
+  preferred_manufacturer?: string | null;
+  allow_substitutes: boolean;
+  created_at: string;
+};
