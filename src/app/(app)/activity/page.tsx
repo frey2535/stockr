@@ -67,16 +67,10 @@ export default function ActivityPage() {
         title="Inventory Log"
         description={`Every charge, transfer, receive, and count — ${rows.length} of ${data?.total || 0} records`}
         actions={
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            {settings.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-            ) : null}
-            <Button variant="outline" onClick={exportCsv}>
-              <Download className="mr-2 size-4" />
-              Export CSV
-            </Button>
-          </div>
+          <Button variant="outline" onClick={exportCsv}>
+            <Download className="mr-2 size-4" />
+            Export CSV
+          </Button>
         }
       />
 

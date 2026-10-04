@@ -39,15 +39,9 @@ export default function TransfersPage() {
         title="Transfers"
         description="All inventory movements and usage records"
         actions={
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <Button variant="outline" onClick={() => setBulkOpen(true)}>
-              Bulk transfer / add / use
-            </Button>
-            {settings.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={settings.logo_url} alt="Company Logo" className="h-14 w-auto max-w-[200px] object-contain" />
-            ) : null}
-          </div>
+          <Button variant="outline" onClick={() => setBulkOpen(true)}>
+            Bulk transfer / add / use
+          </Button>
         }
       />
 

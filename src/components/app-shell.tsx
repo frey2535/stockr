@@ -90,7 +90,7 @@ function NavLink({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { hydrated, account, logout } = useStore();
+  const { hydrated, account, logout, workspace } = useStore();
   const [signingOut, setSigningOut] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const nav = account?.platformOwner
@@ -108,11 +108,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
-        <div className="flex items-center justify-between gap-3 px-5 py-5">
+        <div className="flex items-center justify-between gap-3 border-b border-sidebar-border px-5 py-4">
           <BrandMark />
           <ThemeToggle />
         </div>
-        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
+        <div className="border-b border-sidebar-border px-3 py-3">
+          <div className="flex min-h-20 items-center justify-center overflow-hidden rounded-xl bg-muted/30 px-3 py-2">
+            {workspace.settings.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={workspace.settings.logo_url}
+                alt={workspace.settings.company_name || "Company"}
+                className="max-h-24 w-full max-w-[210px] object-contain"
+              />
+            ) : (
+              <div className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-sidebar-border px-3 py-5 text-muted-foreground">
+                <Building2 className="size-7" />
+                <span className="truncate text-sm font-semibold">
+                  {workspace.settings.company_name || "Company"}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pt-2">
           {nav.map((item) => (
             <NavLink
               key={item.href}

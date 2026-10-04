@@ -43,22 +43,12 @@ export default function DashboardPage() {
         title={settings.company_name || account?.company.name || "Command"}
         description="On-hand value, van coverage, and the SKUs that will stop a job if you ignore them."
         actions={
-          <>
-            {settings.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={settings.logo_url}
-                alt="Company Logo"
-                className="h-14 w-auto max-w-[200px] object-contain"
-              />
-            ) : null}
-            <Button asChild>
-              <Link href="/scanner">
-                <ScanLine className="mr-2 size-4" />
-                Scan to job
-              </Link>
-            </Button>
-          </>
+          <Button asChild>
+            <Link href="/scanner">
+              <ScanLine className="mr-2 size-4" />
+              Scan to job
+            </Link>
+          </Button>
         }
       />
 
