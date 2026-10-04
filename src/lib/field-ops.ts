@@ -1,7 +1,7 @@
-import { getCompanyState, setCompanyState } from "./db";
+import { getCompanyState } from "./db";
 import { isSupabaseConfigured } from "./db-config";
 import { uid } from "./id";
-import { applyCommand } from "./mutations";
+import { persistStoreCommand } from "./persist-command";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllMatching } from "./supabase-page";
 import type {
@@ -370,11 +370,10 @@ export async function submitCycleCount(companyId: string, actor: string, session
     .eq("session_id", sessionId);
   if (linesError) throw linesError;
 
-  let state = await getCompanyState(companyId);
   for (const line of lines || []) {
     if (line.counted_quantity == null) continue;
-    const result = applyCommand(
-      state,
+    const result = await persistStoreCommand(
+      companyId,
       {
         type: "applyAction",
         action: {
@@ -388,9 +387,7 @@ export async function submitCycleCount(companyId: string, actor: string, session
       actor,
     );
     if (result.error) throw new Error(result.error);
-    state = result.state;
   }
-  await setCompanyState(companyId, state);
   const { error: updateError } = await db
     .from("stockr_cycle_count_sessions")
     .update({ status: "submitted", submitted_at: new Date().toISOString() })
