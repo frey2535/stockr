@@ -490,7 +490,11 @@ const stockRules: StockRule[] = [
 export function normalizeStoreState(state: StoreState): StoreState {
   return decodeStateFromPersist({
     ...state,
-    settings: state.settings,
+    settings: {
+      ...state.settings,
+      supplier_web_search: state.settings.supplier_web_search ?? true,
+      allow_broad_web_search: state.settings.allow_broad_web_search ?? true,
+    },
     locations: state.locations || [],
     materials: state.materials || [],
     inventory: state.inventory || [],
