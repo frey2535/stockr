@@ -366,36 +366,75 @@ export default function SuppliersPage() {
         <CardHeader><CardTitle>Preferred supplier order</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {!rows.length ? <p className="text-sm text-muted-foreground">No suppliers selected yet.</p> : null}
-          {rows.map((supplier) => (
-            <div key={supplier.id} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-semibold">{supplier.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {"Priority " + supplier.priority}
-                  {supplier.branch_name ? " · " + supplier.branch_name : ""}
-                  {supplier.domain ? " · " + supplier.domain : ""}
-                </p>
+          {rows.map((supplier) => {
+            const saveSupplierPatch = async (patch: Partial<SupplierProfile>) => {
+              const response = await fetch("/api/suppliers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "saveSupplier", supplier: { ...supplier, ...patch } }),
+              });
+              const data = await response.json().catch(() => null) as { rows?: SupplierProfile[]; error?: string } | null;
+              if (!response.ok) return toast.error(data?.error || "Could not update supplier.");
+              setRows(data?.rows || []);
+            };
+            return (
+              <div key={supplier.id} className="space-y-3 rounded-xl border p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold">{supplier.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {supplier.branch_name || "All branches"}
+                      {supplier.domain ? " · " + supplier.domain : ""}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive"
+                    onClick={async () => {
+                      const response = await fetch("/api/suppliers", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "deleteSupplier", supplierId: supplier.id }),
+                      });
+                      const data = await response.json().catch(() => null) as { rows?: SupplierProfile[]; error?: string } | null;
+                      if (!response.ok) return toast.error(data?.error || "Could not remove supplier.");
+                      setRows(data?.rows || []);
+                      toast.success("Supplier removed");
+                    }}
+                  >
+                    <Trash2 className="mr-2 size-4" />Remove
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Priority</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      defaultValue={supplier.priority}
+                      onBlur={(e) => {
+                        const priority = Number(e.target.value || supplier.priority);
+                        if (priority !== supplier.priority) void saveSupplierPatch({ priority });
+                      }}
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 pt-6 text-sm">
+                    <Switch checked={supplier.approved} onCheckedChange={(approved) => void saveSupplierPatch({ approved })} />
+                    Approved supplier
+                  </label>
+                  <label className="flex items-center gap-2 pt-6 text-sm">
+                    <Switch checked={supplier.enabled} onCheckedChange={(enabled) => void saveSupplierPatch({ enabled })} />
+                    Include in sourcing
+                  </label>
+                  <label className="flex items-center gap-2 pt-6 text-sm">
+                    <Switch checked={supplier.web_search_enabled} onCheckedChange={(web_search_enabled) => void saveSupplierPatch({ web_search_enabled })} />
+                    Search supplier site
+                  </label>
+                </div>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-destructive"
-                onClick={async () => {
-                  const response = await fetch("/api/suppliers", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "deleteSupplier", supplierId: supplier.id }),
-                  });
-                  const data = await response.json().catch(() => null) as { rows?: SupplierProfile[]; error?: string } | null;
-                  if (!response.ok) return toast.error(data?.error || "Could not remove supplier.");
-                  setRows(data?.rows || []);
-                  toast.success("Supplier removed");
-                }}
-              >
-                <Trash2 className="mr-2 size-4" />Remove
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
     </div>
