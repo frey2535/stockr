@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { exactIdentityMatch, verifiedPriceHasEvidence } from "./supplier-intelligence.ts";
+import { exactIdentityMatch, verifiedPriceHasEvidence } from "./supplier-price-policy.ts";
 
 test("supplier match requires an exact MPN or UPC", () => {
   assert.equal(
