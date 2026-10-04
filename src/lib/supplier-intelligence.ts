@@ -6,6 +6,7 @@ import type {
   SupplierOffer,
   SupplierProfile,
   SupplierSourceMatch,
+  SourcingRule,
 } from "./types";
 
 function normalize(value?: string | null) {
@@ -106,6 +107,44 @@ export async function saveSupplier(companyId: string, input: Partial<SupplierPro
     .single();
   if (error) throw new Error(error.message);
   return asSupplier(data as Record<string, unknown>);
+}
+
+export async function listSourcingRules(companyId: string): Promise<SourcingRule[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("stockr_sourcing_rules")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("category");
+  if (error) throw new Error(error.message);
+  return (data || []).map((row) => ({
+    id: String(row.id),
+    company_id: String(row.company_id),
+    category: String(row.category || ""),
+    preferred_supplier_id: row.preferred_supplier_id ? String(row.preferred_supplier_id) : null,
+    preferred_manufacturer: row.preferred_manufacturer ? String(row.preferred_manufacturer) : null,
+    allow_substitutes: row.allow_substitutes !== false,
+    created_at: String(row.created_at || new Date().toISOString()),
+  }));
+}
+
+export async function saveSourcingRule(companyId: string, input: Partial<SourcingRule> & { category: string }) {
+  const row = {
+    id: input.id || uid("rule"),
+    company_id: companyId,
+    category: input.category.trim(),
+    preferred_supplier_id: input.preferred_supplier_id || null,
+    preferred_manufacturer: input.preferred_manufacturer?.trim() || null,
+    allow_substitutes: input.allow_substitutes !== false,
+  };
+  if (!row.category) throw new Error("Category is required.");
+  const { data, error } = await getSupabaseAdmin().from("stockr_sourcing_rules").upsert(row).select("*").single();
+  if (error) throw new Error(error.message);
+  return data as SourcingRule;
+}
+
+export async function deleteSourcingRule(companyId: string, id: string) {
+  const { error } = await getSupabaseAdmin().from("stockr_sourcing_rules").delete().eq("company_id", companyId).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteSupplier(companyId: string, id: string) {
@@ -368,7 +407,15 @@ export async function sourceProduct(
   product: IdentifiedProduct,
   options?: { supplierWebSearch?: boolean; broadWebSearch?: boolean },
 ): Promise<ProductSourceResult> {
-  const suppliers = (await listSuppliers(companyId)).filter((row) => row.enabled && row.approved);
+  const rules = await listSourcingRules(companyId);
+  const rule = rules.find((row) => row.category.trim().toLowerCase() === String(product.category || "").trim().toLowerCase());
+  const suppliers = (await listSuppliers(companyId))
+    .filter((row) => row.enabled && row.approved)
+    .sort((a, b) => {
+      if (rule?.preferred_supplier_id === a.id && rule?.preferred_supplier_id !== b.id) return -1;
+      if (rule?.preferred_supplier_id === b.id && rule?.preferred_supplier_id !== a.id) return 1;
+      return a.priority - b.priority || a.name.localeCompare(b.name);
+    });
   const stored = await storedOffers(companyId, product);
   const history = await purchaseHistoryOffers(companyId, product, suppliers);
 
