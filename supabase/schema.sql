@@ -665,8 +665,11 @@ as $$
 declare
   affected integer;
 begin
-  if p_company_id is null or p_material_id is null or p_quantity is null or p_quantity <= 0 then
+  if p_company_id is null or p_material_id is null or p_quantity is null or p_quantity < 0 then
     raise exception 'Invalid inventory action.';
+  end if;
+  if p_quantity = 0 and p_type not in ('adjust', 'count') then
+    raise exception 'Quantity must be greater than zero.';
   end if;
 
   if not exists (
