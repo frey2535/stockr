@@ -432,7 +432,7 @@ export async function sourceProduct(
         }
         return new Date(b.observed_at).getTime() - new Date(a.observed_at).getTime();
       });
-    let offer = candidates[0] || null;
+    let offer: SupplierOffer | null = candidates[0] ?? null;
     if (!offer && options?.supplierWebSearch !== false) {
       offer = await discoverSupplierOffer(supplier, product);
     }
