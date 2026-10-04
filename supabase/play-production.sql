@@ -12,6 +12,10 @@ begin
   end if;
 end $$;
 
+alter table stockr_materials add column if not exists mpn text;
+alter table stockr_materials add column if not exists upc text;
+alter table stockr_materials add column if not exists supplier_number text;
+
 create table if not exists stockr_password_resets (
   id text primary key,
   user_id text not null references stockr_users (id) on delete cascade,

@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSupabaseConfigured } from "./db-config";
 import { getCompanyState } from "./db";
 import { getSupabaseAdmin } from "./supabase-admin";
@@ -632,8 +633,38 @@ async function withRemoteIdentity(
       },
     };
   }
-  const identified = await identifyRemoteProduct(barcode);
-  return { ...result, identified: identified || { name: "", barcode, upc: barcode, source: "scan" } };
+  try {
+    const identified = await identifyRemoteProduct(barcode);
+    return { ...result, identified: identified || { name: "", barcode, upc: barcode, source: "scan" } };
+  } catch (error) {
+    console.error("identifyRemoteProduct", error);
+    return { ...result, identified: { name: "", barcode, upc: barcode, source: "scan" } };
+  }
+}
+
+async function selectMaterialsByCodes(
+  supabase: SupabaseClient,
+  companyId: string,
+  variants: string[],
+) {
+  const seen = new Map<string, Record<string, unknown>>();
+  for (const column of ["barcode", "upc", "mpn", "supplier_number"]) {
+    const { data, error } = await supabase
+      .from("stockr_materials")
+      .select("*")
+      .eq("company_id", companyId)
+      .in(column, variants)
+      .limit(20);
+    if (error) {
+      console.error(`lookup materials by ${column}`, error.message);
+      continue;
+    }
+    for (const row of data || []) {
+      const id = String((row as { id?: string }).id || "");
+      if (id) seen.set(id, row as Record<string, unknown>);
+    }
+  }
+  return [...seen.values()];
 }
 
 export async function lookupMaterials(companyId: string, opts: { barcode?: string; q?: string; limit?: number }) {
@@ -641,93 +672,95 @@ export async function lookupMaterials(companyId: string, opts: { barcode?: strin
   const barcode = (opts.barcode || "").trim();
   const q = sanitizeFilter((opts.q || "").trim().toLowerCase());
 
-  if (!isSupabaseConfigured()) {
-    const state = await getCompanyState(companyId);
-    if (barcode) {
-      const found = state.materials.find((row) => materialMatchesCode(row, barcode));
-      return withRemoteIdentity(barcode, {
-        rows: found ? [found] : [],
-        onHandByLocation: found
-          ? Object.fromEntries(state.locations.map((location) => [location.id, onHand(state, found.id, location.id)]))
-          : {},
+  try {
+    if (!isSupabaseConfigured()) {
+      const state = await getCompanyState(companyId);
+      if (barcode) {
+        const found = state.materials.find((row) => materialMatchesCode(row, barcode));
+        return withRemoteIdentity(barcode, {
+          rows: found ? [found] : [],
+          onHandByLocation: found
+            ? Object.fromEntries(state.locations.map((location) => [location.id, onHand(state, found.id, location.id)]))
+            : {},
+        });
+      }
+      if (!q) return { rows: state.materials.slice(0, limit) };
+      return {
+        rows: state.materials.filter((row) => materialMatchesQuery(row, q)).slice(0, limit),
+      };
+    }
+
+    const supabase = getSupabaseAdmin();
+    const projectsRes = await supabase.from("stockr_projects").select("*").eq("company_id", companyId);
+    const ops = opsFromProjects((projectsRes.data || []) as Project[], { stockRules: [], catalogIds: [] });
+    const merge = (rows: Material[]) =>
+      rows.map((material) => {
+        const extra = ops.catalogIds.find((item) => item.id === material.id);
+        return extra
+          ? {
+              ...material,
+              mpn: material.mpn || extra.mpn || "",
+              upc: material.upc || extra.upc || "",
+              supplier_number: material.supplier_number || extra.supplier_number || "",
+            }
+          : material;
       });
+
+    if (barcode) {
+      const variants = barcodeVariants(barcode)
+        .slice(0, 8)
+        .map((code) => code.replace(/[,()]/g, ""))
+        .filter(Boolean);
+      const extraMatch = ops.catalogIds.find((row) =>
+        variants.some((code) => row.upc === code || row.mpn === code || row.supplier_number === code),
+      );
+      const matches = await selectMaterialsByCodes(supabase, companyId, variants);
+      if (extraMatch && !matches.some((row) => String(row.id) === extraMatch.id)) {
+        const extra = await supabase.from("stockr_materials").select("*").eq("company_id", companyId).eq("id", extraMatch.id).maybeSingle();
+        if (!extra.error && extra.data) matches.push(extra.data as Record<string, unknown>);
+      }
+      const rows = merge(matches.map(mapMaterial)).filter((row) => materialMatchesCode(row, barcode));
+      const found = rows[0];
+      if (!found) return withRemoteIdentity(barcode, { rows: [], onHandByLocation: {} });
+      const inv = await supabase
+        .from("stockr_inventory")
+        .select("location_id, quantity")
+        .eq("company_id", companyId)
+        .eq("material_id", found.id);
+      if (inv.error) console.error("lookup inventory", inv.error.message);
+      const onHandByLocation: Record<string, number> = {};
+      for (const row of inv.data || []) {
+        onHandByLocation[String(row.location_id)] =
+          (onHandByLocation[String(row.location_id)] || 0) + Number(row.quantity);
+      }
+      return { rows, onHandByLocation };
     }
-    if (!q) return { rows: state.materials.slice(0, limit) };
-    return {
-      rows: state.materials.filter((row) => materialMatchesQuery(row, q)).slice(0, limit),
-    };
-  }
 
-  const supabase = getSupabaseAdmin();
-  const projectsRes = await supabase.from("stockr_projects").select("*").eq("company_id", companyId);
-  const ops = opsFromProjects((projectsRes.data || []) as Project[], { stockRules: [], catalogIds: [] });
-  const merge = (rows: Material[]) =>
-    rows.map((material) => {
-      const extra = ops.catalogIds.find((item) => item.id === material.id);
-      return extra
-        ? {
-            ...material,
-            mpn: material.mpn || extra.mpn || "",
-            upc: material.upc || extra.upc || "",
-            supplier_number: material.supplier_number || extra.supplier_number || "",
-          }
-        : material;
-    });
-
-  if (barcode) {
-    const variants = barcodeVariants(barcode).slice(0, 8);
-    const extraMatch = ops.catalogIds.find((row) =>
-      variants.some(
-        (code) => row.upc === code || row.mpn === code || row.supplier_number === code,
-      ),
-    );
-    const orParts = [
-      ...variants.flatMap((code) => {
-        const safe = code.replace(/[,()]/g, "");
-        if (!safe) return [];
-        return [`barcode.eq.${safe}`, `upc.eq.${safe}`, `mpn.eq.${safe}`, `supplier_number.eq.${safe}`];
-      }),
-      extraMatch ? `id.eq.${extraMatch.id}` : "",
-    ].filter(Boolean);
-    const { data, error } = await supabase
-      .from("stockr_materials")
-      .select("*")
-      .eq("company_id", companyId)
-      .or(orParts.join(","))
-      .limit(20);
-    if (error) throw new Error(error.message);
-    const rows = merge((data || []).map(mapMaterial)).filter((row) => materialMatchesCode(row, barcode));
-    const found = rows[0];
-    if (!found) return withRemoteIdentity(barcode, { rows: [], onHandByLocation: {} });
-    const inv = await supabase
-      .from("stockr_inventory")
-      .select("location_id, quantity")
-      .eq("company_id", companyId)
-      .eq("material_id", found.id);
-    if (inv.error) throw new Error(inv.error.message);
-    const onHandByLocation: Record<string, number> = {};
-    for (const row of inv.data || []) {
-      onHandByLocation[String(row.location_id)] =
-        (onHandByLocation[String(row.location_id)] || 0) + Number(row.quantity);
+    const extraIds = q
+      ? ops.catalogIds
+          .filter((row) =>
+            [row.mpn, row.upc, row.supplier_number].some((value) => (value || "").toLowerCase().includes(q)),
+          )
+          .map((row) => row.id)
+      : [];
+    let query = supabase.from("stockr_materials").select("*").eq("company_id", companyId).order("name").limit(limit);
+    if (q) {
+      const search = `name.ilike.%${q}%,barcode.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%`;
+      query = extraIds.length ? query.or(`${search},id.in.(${extraIds.join(",")})`) : query.or(search);
     }
-    return { rows, onHandByLocation };
+    const { data, error } = await query;
+    if (error) {
+      console.error("lookup materials", error.message);
+      const fallback = await supabase.from("stockr_materials").select("*").eq("company_id", companyId).order("name").limit(limit);
+      if (fallback.error) return { rows: [] };
+      return { rows: merge((fallback.data || []).map(mapMaterial)) };
+    }
+    return { rows: merge((data || []).map(mapMaterial)) };
+  } catch (error) {
+    console.error("lookupMaterials", error);
+    if (barcode) return withRemoteIdentity(barcode, { rows: [], onHandByLocation: {} });
+    return { rows: [] };
   }
-
-  const extraIds = q
-    ? ops.catalogIds
-        .filter((row) =>
-          [row.mpn, row.upc, row.supplier_number].some((value) => (value || "").toLowerCase().includes(q)),
-        )
-        .map((row) => row.id)
-    : [];
-  let query = supabase.from("stockr_materials").select("*").eq("company_id", companyId).order("name").limit(limit);
-  if (q) {
-    const search = `name.ilike.%${q}%,barcode.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%`;
-    query = extraIds.length ? query.or(`${search},id.in.(${extraIds.join(",")})`) : query.or(search);
-  }
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return { rows: merge((data || []).map(mapMaterial)) };
 }
 
 export async function listRestock(companyId: string) {
