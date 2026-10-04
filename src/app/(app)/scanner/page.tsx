@@ -910,7 +910,7 @@ export default function ScannerPage() {
                     <div>
                       <p className="text-sm font-medium">{match.supplier.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {match.exactMatch ? "Exact product match" : "No exact supplier match"}
+                        {match.exactMatch ? `Exact match · ${match.evidence === "mpn_and_upc" ? "MPN + UPC" : match.evidence === "mpn" ? "MPN" : match.evidence === "upc" ? "UPC" : "verified identity"}` : "No exact supplier match"}
                         {match.offer?.supplier_sku ? " · SKU " + match.offer.supplier_sku : ""}
                       </p>
                       {match.offer?.product_url ? (
