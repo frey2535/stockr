@@ -116,3 +116,62 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
 
   return { projects: [], source: "none", error: lastError || "Could not sync Buildr projects." };
 }
+
+export type BuildrFamilyAppBootstrap = {
+  valid: boolean;
+  error?: string;
+  product_key?: string;
+  company_id?: string;
+  company_name?: string;
+  user_id?: string;
+  email?: string;
+  name?: string;
+  role?: string;
+  password_hash?: string;
+};
+
+/** Exchange a Buildr SSO token for identity + password hash (POST body only). */
+export async function bootstrapBuildrFamilyAppSso(
+  token: string,
+  audience = "stockr",
+): Promise<BuildrFamilyAppBootstrap> {
+  const trimmed = String(token || "").trim();
+  if (!trimmed) return { valid: false, error: "token_required" };
+
+  const bases = buildrApiBases();
+  if (!bases.length) return { valid: false, error: "buildr_not_configured" };
+
+  let lastError = "buildr_unavailable";
+  for (const base of bases) {
+    try {
+      const response = await fetch(`${base}/functions/bootstrapFamilyAppSSO`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token: trimmed, audience }),
+      });
+      const { html, payload, text } = await readPayload(response);
+      if (html) {
+        lastError = `Buildr ${base} returned the website instead of the API.`;
+        continue;
+      }
+      const data = (payload && typeof payload === "object" ? payload : {}) as BuildrFamilyAppBootstrap;
+      if (!response.ok) {
+        lastError = data.error || `Buildr returned ${response.status}`;
+        if (response.status >= 400 && response.status < 500) return { valid: false, error: lastError };
+        continue;
+      }
+      if (!data.valid || !data.email || !data.company_id || !data.password_hash) {
+        lastError = data.error || "invalid_bootstrap";
+        return { valid: false, error: lastError };
+      }
+      return data;
+    } catch (error) {
+      lastError = describeReachError(error);
+    }
+  }
+
+  return { valid: false, error: lastError };
+}

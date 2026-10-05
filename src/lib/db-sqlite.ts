@@ -442,6 +442,102 @@ export function resolveBuildrSsoIdentity(email: string, buildrCompanyId: string)
   return { userId: user.id, companyId: picked.companyId, role: picked.role as MemberRole };
 }
 
+
+export type BuildrSsoBootstrapInput = {
+  email: string;
+  name?: string;
+  buildrCompanyId: string;
+  companyName?: string;
+  passwordHash?: string;
+  role?: string;
+};
+
+function mapBuildrRole(role: string | undefined): MemberRole {
+  const value = String(role || "").trim().toLowerCase();
+  if (value === "owner") return "owner";
+  if (value === "admin") return "admin";
+  return "member";
+}
+
+export function ensureBuildrSsoIdentity(input: BuildrSsoBootstrapInput) {
+  const email = String(input.email || "").trim().toLowerCase();
+  const buildrCompanyId = String(input.buildrCompanyId || "").trim();
+  if (!email || !buildrCompanyId) return null;
+
+  const existing = resolveBuildrSsoIdentity(email, buildrCompanyId);
+  const passwordHash = String(input.passwordHash || "").trim();
+  const displayName = String(input.name || "").trim() || email.split("@")[0];
+  const memberRole = mapBuildrRole(input.role);
+
+  if (existing) {
+    if (passwordHash) {
+      db.prepare("UPDATE users SET password_hash = ?, name = ? WHERE id = ?").run(
+        passwordHash,
+        displayName,
+        existing.userId,
+      );
+    }
+    return existing;
+  }
+
+  let companyId = "";
+  const companies = db
+    .prepare("SELECT id FROM companies")
+    .all() as { id: string }[];
+  for (const row of companies) {
+    const settings = getCompanyState(row.id).settings;
+    if (String(settings.buildr_company_id || "").trim() === buildrCompanyId || row.id === buildrCompanyId) {
+      companyId = row.id;
+      break;
+    }
+  }
+
+  if (!companyId) {
+    companyId = buildrCompanyId;
+    const companyName = String(input.companyName || "").trim() || "Buildr company";
+    db.prepare(
+      "INSERT INTO companies (id, name, slug, plan, plan_status, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(companyId, companyName, slugify(companyName), "starter", "active", new Date().toISOString());
+    setCompanyState(companyId, {
+      ...createEmptyState(companyName),
+      settings: {
+        ...createEmptyState(companyName).settings,
+        buildr_linked: true,
+        buildr_company_id: buildrCompanyId,
+      },
+    });
+  } else {
+    const state = getCompanyState(companyId);
+    setCompanyState(companyId, {
+      ...state,
+      settings: {
+        ...state.settings,
+        buildr_linked: true,
+        buildr_company_id: buildrCompanyId,
+      },
+    });
+  }
+
+  let user = getUserByEmail(email);
+  if (!user) {
+    if (!passwordHash) return null;
+    const userId = uid("usr");
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(userId, email, displayName, passwordHash, new Date().toISOString());
+    user = { id: userId, email, name: displayName, password_hash: passwordHash, created_at: "" };
+  } else if (passwordHash) {
+    db.prepare("UPDATE users SET password_hash = ?, name = ? WHERE id = ?").run(
+      passwordHash,
+      displayName,
+      user.id,
+    );
+  }
+
+  ensureCompanyMembership(user.id, companyId, memberRole);
+  return { userId: user.id, companyId, role: memberRole };
+}
+
 export function setCompanyPlan(companyId: string, plan: PlanId) {
   db.prepare("UPDATE companies SET plan = ?, plan_status = ? WHERE id = ?").run(plan, "active", companyId);
 }

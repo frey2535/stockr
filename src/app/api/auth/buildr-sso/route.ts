@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { applySessionCookie } from "@/lib/auth";
+import { bootstrapBuildrFamilyAppSso } from "@/lib/buildr";
 import { familySsoTokenFromSearch, verifyFamilySsoToken } from "@/lib/buildr-sso";
-import { createSession, resolveBuildrSsoIdentity } from "@/lib/db";
+import { createSession, ensureBuildrSsoIdentity } from "@/lib/db";
 import { requestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -14,8 +15,8 @@ function errorRedirect(request: Request, code: string) {
 }
 
 /**
- * Buildr sidebar launches Stockr at the site root with ?sso_token=.
- * This handler signs that user into the linked company workspace.
+ * Buildr sidebar launch: verify SSO, bootstrap the Buildr identity (same login +
+ * company ID), create a Stockr session, and land on the dashboard.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -31,10 +32,33 @@ export async function GET(request: Request) {
     return errorRedirect(request, "company_mismatch");
   }
 
-  const identity = await resolveBuildrSsoIdentity(claims.email!, claims.company_id!);
-  if (!identity) {
-    return errorRedirect(request, "stockr_account_not_linked");
+  const bootstrap = await bootstrapBuildrFamilyAppSso(token, "stockr");
+  if (!bootstrap.valid) {
+    // Fall back to an already-linked workspace when Buildr bootstrap is unreachable.
+    const identity = await ensureBuildrSsoIdentity({
+      email: claims.email!,
+      name: String(url.searchParams.get("name") || claims.email || "").trim(),
+      buildrCompanyId: claims.company_id!,
+      role: claims.role,
+    });
+    if (!identity) return errorRedirect(request, bootstrap.error || "stockr_account_not_linked");
+    const session = await createSession(identity.userId, identity.companyId);
+    const next = url.searchParams.get("next");
+    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+    const response = NextResponse.redirect(new URL(safeNext, requestOrigin(request)), 303);
+    await applySessionCookie(response, session.id, session.expiresAt);
+    return response;
   }
+
+  const identity = await ensureBuildrSsoIdentity({
+    email: bootstrap.email!,
+    name: bootstrap.name,
+    buildrCompanyId: bootstrap.company_id!,
+    companyName: bootstrap.company_name,
+    passwordHash: bootstrap.password_hash,
+    role: bootstrap.role || claims.role,
+  });
+  if (!identity) return errorRedirect(request, "stockr_account_not_linked");
 
   const session = await createSession(identity.userId, identity.companyId);
   const next = url.searchParams.get("next");

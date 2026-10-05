@@ -17,8 +17,8 @@ function isAdminRole(role: string) {
 /**
  * Pick an existing Stockr workspace for a verified Buildr SSO identity.
  *
- * Never creates a user or company. Prefers an already-linked workspace,
- * then a unique membership, then a unique admin/owner membership.
+ * Prefers an already-linked workspace, then a unique membership, then a unique admin/owner membership.
+ * New Buildr-bundled users are created by ensureBuildrSsoIdentity via bootstrap.
  */
 export function pickBuildrSsoCompany(
   candidates: BuildrSsoCandidate[],
@@ -55,7 +55,7 @@ export function buildrSsoLoginMessage(reason: string) {
     case "invalid_issued_at":
       return "That Buildr sign-in link expired. Open Stockr from Buildr again.";
     case "stockr_account_not_linked":
-      return "No Stockr account matches that Buildr user. Sign in once with email, then open Stockr from Buildr again.";
+      return "Buildr could not open Stockr for this company yet. Confirm Stockr is granted, you have Access Control permission, and Stockr can reach Buildr SSO.";
     case "company_mismatch":
       return "That Buildr company does not match this Stockr workspace.";
     case "invalid_token":

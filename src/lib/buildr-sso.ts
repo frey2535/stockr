@@ -8,6 +8,7 @@ export type FamilySsoClaims = {
   company_id?: string;
   user_id?: string;
   email?: string;
+  name?: string;
   role?: string;
   iat?: number;
   exp?: number;
@@ -33,6 +34,7 @@ export function familySsoSearch(search: URLSearchParams) {
     "company_id",
     "app_tenant_binding_company_id",
     "email",
+    "name",
     "next",
     "source",
     "app_id",
