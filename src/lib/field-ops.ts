@@ -268,16 +268,21 @@ export async function createMaterialRequest(companyId: string, actor: string, in
     notes: input.notes?.trim() || null,
     created_at: new Date().toISOString(),
   };
-  const lines: MaterialRequestLine[] = input.lines
-    .filter((line) => Number(line.quantity) > 0)
-    .map((line) => ({
-      id: uid("rql"),
-      request_id: request.id,
-      company_id: companyId,
-      material_id: line.materialId,
-      quantity_requested: Number(line.quantity),
-      quantity_fulfilled: 0,
-    }));
+  const quantities = new Map<string, number>();
+  for (const line of input.lines) {
+    const materialId = line.materialId.trim();
+    const quantity = (quantities.get(materialId) || 0) + line.quantity;
+    if (!Number.isFinite(quantity)) throw new Error("Combined material quantity exceeds the supported range.");
+    quantities.set(materialId, quantity);
+  }
+  const lines: MaterialRequestLine[] = [...quantities].map(([materialId, quantity]) => ({
+    id: uid("rql"),
+    request_id: request.id,
+    company_id: companyId,
+    material_id: materialId,
+    quantity_requested: quantity,
+    quantity_fulfilled: 0,
+  }));
   if (!lines.length) throw new Error("Requested quantities must be greater than zero.");
 
   const { error: requestError } = await db.from("stockr_material_requests").insert(request);
