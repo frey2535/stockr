@@ -182,17 +182,35 @@ export async function recordVerifiedOffer(
 }
 
 async function storedOffers(companyId: string, product: IdentifiedProduct) {
-  const db = getSupabaseAdmin();
-  const { data, error } = await db
-    .from("stockr_supplier_offers")
-    .select("*")
-    .eq("company_id", companyId)
-    .order("observed_at", { ascending: false })
-    .limit(200);
-  if (error) throw new Error(error.message);
+  // Query by product identity instead of taking the company's 200 newest
+  // offers: unrelated recently imported catalog rows must not hide a match.
+  const identifiers = [
+    ["mpn", product.mpn],
+    ["upc", product.upc || product.barcode],
+  ] as const;
+  const lookups = identifiers
+    .filter(([, value]) => Boolean(value?.trim()))
+    .map(([column, value]) =>
+      getSupabaseAdmin()
+        .from("stockr_supplier_offers")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq(column, value!.trim())
+        .order("observed_at", { ascending: false })
+        .limit(200),
+    );
+  if (!lookups.length) return [];
+  const results = await Promise.all(lookups);
+  const unique = new Map<string, SupplierOffer>();
+  for (const { data, error } of results) {
+    if (error) throw new Error(error.message);
+    for (const row of data || []) {
+      const offer = asOffer(row as Record<string, unknown>);
+      unique.set(offer.id, offer);
+    }
+  }
   const now = Date.now();
-  return (data || [])
-    .map((row) => asOffer(row as Record<string, unknown>))
+  return [...unique.values()]
     .filter((offer) => !offer.expires_at || new Date(offer.expires_at).getTime() >= now)
     .filter((offer) => exactIdentityMatch(product, offer));
 }
