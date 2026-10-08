@@ -16,7 +16,7 @@ function normalize(value?: string | null) {
 
 function matchEvidence(product: IdentifiedProduct, offer: SupplierOffer): SupplierSourceMatch["evidence"] {
   const mpn = Boolean(normalize(product.mpn) && normalize(product.mpn) === normalize(offer.mpn));
-  const upc = Boolean(normalize(product.upc || product.barcode) && normalize(product.upc || product.barcode) === normalize(offer.upc));
+  const upc = Boolean(normalize(offer.upc) && [product.upc, product.barcode].some((value) => normalize(value) === normalize(offer.upc)));
   if (mpn && upc) return "mpn_and_upc";
   if (mpn) return "mpn";
   if (upc) return "upc";
