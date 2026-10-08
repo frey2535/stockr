@@ -247,6 +247,16 @@ export async function createMaterialRequest(companyId: string, actor: string, in
     throw new Error("Every requested material must have an ID and a finite quantity greater than zero.");
   }
   const db = getSupabaseAdmin();
+  const materialIds = [...new Set(input.lines.map((line) => line.materialId.trim()))];
+  const { data: companyMaterials, error: materialError } = await db
+    .from("stockr_materials")
+    .select("id")
+    .eq("company_id", companyId)
+    .in("id", materialIds);
+  if (materialError) throw materialError;
+  if ((companyMaterials || []).length !== materialIds.length) {
+    throw new Error("One or more requested materials do not belong to this company.");
+  }
   const request: MaterialRequest = {
     id: uid("req"),
     company_id: companyId,
