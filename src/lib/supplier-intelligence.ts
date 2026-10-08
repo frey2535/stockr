@@ -186,7 +186,8 @@ async function storedOffers(companyId: string, product: IdentifiedProduct) {
   // offers: unrelated recently imported catalog rows must not hide a match.
   const identifiers = [
     ["mpn", product.mpn],
-    ["upc", product.upc || product.barcode],
+    ["upc", product.upc],
+    ["upc", product.barcode],
   ] as const;
   const lookups = identifiers
     .filter(([, value]) => Boolean(value?.trim()))
