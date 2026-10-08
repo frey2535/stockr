@@ -296,13 +296,16 @@ export async function setMaterialRequestStatus(
   requestId: string,
   status: MaterialRequest["status"],
 ) {
-  if (!isSupabaseConfigured()) return;
-  const { error } = await getSupabaseAdmin()
+  if (!isSupabaseConfigured()) throw new Error("Material requests require the production Supabase database.");
+  const { data, error } = await getSupabaseAdmin()
     .from("stockr_material_requests")
     .update({ status })
     .eq("company_id", companyId)
-    .eq("id", requestId);
+    .eq("id", requestId)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error("Material request not found for this company.");
 }
 
 export async function startCycleCount(companyId: string, actor: string, input: {
