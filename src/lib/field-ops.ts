@@ -312,6 +312,10 @@ export async function setMaterialRequestStatus(
   status: MaterialRequest["status"],
 ) {
   if (!isSupabaseConfigured()) throw new Error("Material requests require the production Supabase database.");
+  const allowedStatuses: MaterialRequest["status"][] = [
+    "requested", "approved", "picking", "staged", "in_transit", "fulfilled", "cancelled",
+  ];
+  if (!allowedStatuses.includes(status)) throw new Error("Invalid material request status.");
   const { data, error } = await getSupabaseAdmin()
     .from("stockr_material_requests")
     .update({ status })
