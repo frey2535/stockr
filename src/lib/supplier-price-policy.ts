@@ -6,11 +6,11 @@ function normalize(value?: string | null) {
 
 export function exactIdentityMatch(product: Partial<IdentifiedProduct>, offer: Partial<SupplierOffer>) {
   const pMpn = normalize(product.mpn);
-  const pUpc = normalize(product.upc || product.barcode);
+  const pUpcs = [product.upc, product.barcode].map(normalize).filter(Boolean);
   const oMpn = normalize(offer.mpn);
   const oUpc = normalize(offer.upc);
   if (pMpn && oMpn && pMpn === oMpn) return true;
-  if (pUpc && oUpc && pUpc === oUpc) return true;
+  if (oUpc && pUpcs.includes(oUpc)) return true;
   return false;
 }
 
