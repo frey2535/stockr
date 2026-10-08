@@ -315,19 +315,46 @@ export async function setMaterialRequestStatus(
   status: MaterialRequest["status"],
 ) {
   if (!isSupabaseConfigured()) throw new Error("Material requests require the production Supabase database.");
-  const allowedStatuses: MaterialRequest["status"][] = [
-    "requested", "approved", "picking", "staged", "in_transit", "fulfilled", "cancelled",
-  ];
-  if (!allowedStatuses.includes(status)) throw new Error("Invalid material request status.");
-  const { data, error } = await getSupabaseAdmin()
+  const transitions: Record<MaterialRequest["status"], MaterialRequest["status"][]> = {
+    requested: ["approved", "cancelled"],
+    approved: ["picking", "cancelled"],
+    picking: ["staged", "cancelled"],
+    staged: ["in_transit", "fulfilled", "cancelled"],
+    in_transit: ["fulfilled", "cancelled"],
+    fulfilled: [],
+    cancelled: [],
+  };
+  if (!Object.prototype.hasOwnProperty.call(transitions, status)) {
+    throw new Error("Invalid material request status.");
+  }
+  const db = getSupabaseAdmin();
+  const { data: current, error: lookupError } = await db
+    .from("stockr_material_requests")
+    .select("status")
+    .eq("company_id", companyId)
+    .eq("id", requestId)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (!current) throw new Error("Material request not found for this company.");
+  const currentStatus = current.status as MaterialRequest["status"];
+  if (!Object.prototype.hasOwnProperty.call(transitions, currentStatus)) {
+    throw new Error("Material request has an unsupported current status.");
+  }
+  if (currentStatus === status) return;
+  if (!transitions[currentStatus].includes(status)) {
+    throw new Error(`Cannot move material request from ${currentStatus} to ${status}.`);
+  }
+  // The status predicate rejects concurrent changes rather than overwriting them.
+  const { data, error } = await db
     .from("stockr_material_requests")
     .update({ status })
     .eq("company_id", companyId)
     .eq("id", requestId)
+    .eq("status", currentStatus)
     .select("id")
     .maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error("Material request not found for this company.");
+  if (!data) throw new Error("Material request changed during the update. Refresh and retry.");
 }
 
 export async function startCycleCount(companyId: string, actor: string, input: {
