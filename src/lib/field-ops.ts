@@ -270,7 +270,21 @@ export async function createMaterialRequest(companyId: string, actor: string, in
   const { error: requestError } = await db.from("stockr_material_requests").insert(request);
   if (requestError) throw requestError;
   const { error: linesError } = await db.from("stockr_material_request_lines").insert(lines);
-  if (linesError) throw linesError;
+  if (linesError) {
+    // Avoid leaving a request with no lines when the second insert fails.
+    // Keep the original error visible if cleanup also fails.
+    const { error: cleanupError } = await db
+      .from("stockr_material_requests")
+      .delete()
+      .eq("company_id", companyId)
+      .eq("id", request.id);
+    if (cleanupError) {
+      throw new Error(
+        `Unable to save request lines (${linesError.message}); cleanup also failed (${cleanupError.message}). Request ID: ${request.id}`,
+      );
+    }
+    throw linesError;
+  }
   return { ...request, lines };
 }
 
