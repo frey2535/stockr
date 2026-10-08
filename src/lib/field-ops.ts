@@ -246,6 +246,9 @@ export async function createMaterialRequest(companyId: string, actor: string, in
   if (input.lines.some((line) => !line.materialId?.trim() || !Number.isFinite(line.quantity) || line.quantity <= 0)) {
     throw new Error("Every requested material must have an ID and a finite quantity greater than zero.");
   }
+  if (input.priority && !["normal", "urgent", "critical"].includes(input.priority)) {
+    throw new Error("Invalid material request priority.");
+  }
   const db = getSupabaseAdmin();
   const materialIds = [...new Set(input.lines.map((line) => line.materialId.trim()))];
   const { data: companyMaterials, error: materialError } = await db
