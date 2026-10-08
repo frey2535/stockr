@@ -243,6 +243,9 @@ export async function createMaterialRequest(companyId: string, actor: string, in
 }) {
   if (!isSupabaseConfigured()) throw new Error("Material requests require the production Supabase database.");
   if (!input.lines.length) throw new Error("Add at least one material.");
+  if (input.lines.some((line) => !line.materialId?.trim() || !Number.isFinite(line.quantity) || line.quantity <= 0)) {
+    throw new Error("Every requested material must have an ID and a finite quantity greater than zero.");
+  }
   const db = getSupabaseAdmin();
   const request: MaterialRequest = {
     id: uid("req"),
