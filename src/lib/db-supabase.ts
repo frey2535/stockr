@@ -780,7 +780,7 @@ export async function ensureBuildrSsoIdentity(input: BuildrSsoBootstrapInput) {
       password_hash: passwordHash,
     });
     throwIfError(userInsert.error, "Create Stockr user from Buildr SSO");
-    user = { id: userId, email, name: displayName, password_hash: passwordHash, created_at: "" };
+    user = { id: userId, email, name: displayName, password_hash: passwordHash };
   } else if (passwordHash) {
     const { error } = await supabase
       .from("stockr_users")
@@ -789,6 +789,7 @@ export async function ensureBuildrSsoIdentity(input: BuildrSsoBootstrapInput) {
     throwIfError(error, "Sync Buildr password into Stockr");
   }
 
+  if (!user) throw new Error("Unable to resolve Stockr user after Buildr SSO.");
   await ensureCompanyMembership(user.id, companyId, memberRole);
   return { userId: user.id, companyId, role: memberRole };
 }
