@@ -27,3 +27,17 @@ test("priced offers require a source reference or product URL", () => {
 test("unknown prices remain valid without fabricated evidence", () => {
   assert.equal(verifiedPriceHasEvidence({ price: null }), true);
 });
+
+test("matches barcode even when a different UPC is also supplied", () => {
+  assert.equal(
+    exactIdentityMatch({ upc: "999999999999", barcode: "012345678901" }, { upc: "012345678901" }),
+    true,
+  );
+});
+
+test("does not accept unrelated UPC and barcode", () => {
+  assert.equal(
+    exactIdentityMatch({ upc: "999999999999", barcode: "111111111111" }, { upc: "012345678901" }),
+    false,
+  );
+});
