@@ -20,7 +20,21 @@ type ImportResult = {
 
 export function CatalogFileImport({ onDone }: { onDone: () => Promise<void> | void }) {
   const { data } = useApi<{ rows: SupplierProfile[] }>("/api/suppliers");
+  const { data: historyData, reload: reloadHistory } = useApi<{
+    rows: Array<{
+      id: string;
+      file_name: string;
+      status: string;
+      row_count: number;
+      created_count: number;
+      updated_count: number;
+      priced_count: number;
+      error_message?: string | null;
+      created_at: string;
+    }>;
+  }>("/api/catalog/import");
   const suppliers = (data?.rows || []).filter((row) => row.enabled && row.approved);
+  const history = historyData?.rows || [];
   const [file, setFile] = useState<File | null>(null);
   const [supplierId, setSupplierId] = useState("none");
   const [busy, setBusy] = useState(false);
@@ -68,7 +82,7 @@ export function CatalogFileImport({ onDone }: { onDone: () => Promise<void> | vo
       };
       setResult(next);
       toast.success(`Catalog import completed: ${next.created} created, ${next.updated} updated.`);
-      await onDone();
+      await Promise.all([Promise.resolve(onDone()), reloadHistory()]);
     } finally {
       setBusy(false);
     }
@@ -144,6 +158,26 @@ export function CatalogFileImport({ onDone }: { onDone: () => Promise<void> | vo
             {result.processed} processed · {result.created} created · {result.updated} updated · {result.priced} verified price record{result.priced === 1 ? "" : "s"}.
           </p>
           <p className="mt-1 font-mono text-[11px] text-muted-foreground">Import {result.importId}</p>
+        </div>
+      ) : null}
+
+      {history.length ? (
+        <div className="space-y-2 border-t pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent imports</p>
+          {history.slice(0, 5).map((item) => (
+            <div key={item.id} className="rounded-lg border bg-background p-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate font-medium">{item.file_name}</span>
+                <span className={item.status === "completed" ? "text-emerald-700" : item.status === "failed" ? "text-destructive" : "text-muted-foreground"}>
+                  {item.status}
+                </span>
+              </div>
+              <p className="mt-1 text-muted-foreground">
+                {item.row_count} rows · {item.created_count} created · {item.updated_count} updated · {item.priced_count} prices
+              </p>
+              {item.error_message ? <p className="mt-1 text-destructive">{item.error_message}</p> : null}
+            </div>
+          ))}
         </div>
       ) : null}
     </div>
