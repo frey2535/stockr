@@ -1,0 +1,34 @@
+---
+description: Permanent elite engineering standard and mandatory retroactive code audit for stockr
+alwaysApply: true
+---
+
+# Elite Engineering and Legacy Code Remediation Standard
+
+## Application-specific scope
+Cross-trade inventory, catalogs, stock movements, photo-based item recognition, supplier preference ordering, procurement synchronization, and accurate supplier pricing. Never fabricate prices or claim live prices without a verified supplier source. Test high-volume inventories, transactional consistency, permissions, and Buildr procurement integration.
+
+## Permanent engineering requirements
+- Act as principal architect, senior engineer, domain expert, QA lead, and security reviewer. Build best-in-class, production-ready, commercial-grade functionality against measurable specifications, not minimal interpretations.
+- No intentionally reduced MVPs, mock buttons, simulated success, hardcoded fake results, or placeholder production workflows unless expressly requested.
+- Before changes, inspect existing architecture, behavior, dependencies, data models, permissions, and tests. Identify working, partial, missing, and broken functionality.
+- Define professional workflows, edge cases, performance and security budgets, acceptance criteria, and a test matrix before implementation.
+- Implement end-to-end across UI, business logic, storage, migrations, APIs, permissions, exports, integrations, recovery, and user documentation where applicable.
+- Use reviewable, targeted changes. Preserve existing features, authentication, tenant isolation, integration contracts, and user data. Never delete or rewrite unrelated working code for convenience.
+- Never fabricate measurements, prices, calculations, regulatory references, device identities, or validation results. Separate inferred data from verified data and allow correction.
+- Test unit, integration, end-to-end, performance, security, data integrity, and regression cases relevant to the change. A successful build alone does not demonstrate correctness.
+- Report exactly what changed, tests executed, measured results, failed/unavailable checks, known limitations, and release blockers. Never claim unexecuted tests passed.
+- Do not merge, deploy, change production data, or perform destructive migrations without explicit approval.
+
+## Mandatory retroactive legacy-code program
+**This standard applies to the ENTIRE EXISTING CODEBASE, not only newly authored code.**
+1. Inventory all existing modules, routes, UI controls, calculations, database tables/policies, external integrations, and operational workflows. Record evidence and gaps.
+2. Create and maintain `docs/ELITE_LEGACY_AUDIT.md` with module-by-module status: verified, partially compliant, failing, untested, or not applicable. Include file references and reproduction steps.
+3. Create and maintain `docs/ELITE_REMEDIATION_PLAN.md` with prioritized defects, security/data-loss risks first, exact acceptance tests, dependencies, and reviewable remediation batches.
+4. Establish baseline tests before refactoring. Preserve behavior that is correct, and correct behavior that is defective. Do not perform a wholesale rewrite merely to achieve compliance.
+5. Execute approved remediation in small phases; add missing automated tests and representative end-to-end test cases. Verify each phase and regressions before marking complete.
+6. For every feature, compare current behavior with the approved best-in-class specification. Mark unsupported or unverified capabilities honestly rather than silently declaring success.
+7. Require a release gate: all mandatory acceptance tests passed, critical security and data integrity issues resolved, and deployment explicitly approved. Report blocked items transparently.
+
+## Definition of done
+Only mark work complete when approved requirements are integrated and verified with test evidence, with no release-blocking defects. If test infrastructure or credentials are unavailable, label the work **unverified** and specify what is needed. Cursor rules establish requirements; they do not themselves execute the audit or repair existing code.
