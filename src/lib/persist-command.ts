@@ -472,14 +472,29 @@ async function persistOnSupabase(
   }
 
   if (command.type === "createPurchaseOrder") {
-    const po: PurchaseOrder = {
-      ...command.po,
-      id: uid("po"),
-      status: command.po.status || "ordered",
-      created_at: new Date().toISOString(),
-    };
-    await upsertPurchaseOrder(companyId, po);
-    return {};
+    const poId = uid("po");
+    const createdAt = new Date().toISOString();
+    const lines = command.po.lines.map((line) => ({
+      material_id: line.material_id,
+      expected_quantity: Number(line.expected_quantity),
+      received_quantity: Number(line.received_quantity || 0),
+      unit_cost: line.unit_cost == null ? null : Number(line.unit_cost),
+    }));
+    const { error } = await supabase.rpc("stockr_create_purchase_order", {
+      p_company_id: companyId,
+      p_po_id: poId,
+      p_po_number: command.po.po_number,
+      p_supplier: command.po.supplier || "",
+      p_expected_delivery: command.po.expected_delivery || "",
+      p_lines: lines,
+      p_created_at: createdAt,
+    });
+    if (!error) return {};
+    if (/already exists|material does not belong|quantity|unit cost/i.test(error.message)) return fail(error.message);
+    if (/stockr_create_purchase_order|does not exist|schema cache/i.test(error.message)) {
+      throw new Error("Production purchasing integrity migration is required before creating purchase orders.");
+    }
+    throw new Error(`Create purchase order: ${error.message}`);
   }
 
   if (command.type === "receivePurchaseOrder") {
@@ -493,8 +508,9 @@ async function persistOnSupabase(
       }));
     if (!receipts.length) return fail("Receipt quantities must be greater than zero.");
 
-    const { error } = await supabase.rpc("stockr_receive_purchase_order", {
+    const { error } = await supabase.rpc("stockr_receive_purchase_order_once", {
       p_company_id: companyId,
+      p_operation_key: command.operationId || uid("po_recv"),
       p_po_id: command.poId,
       p_location_id: command.locationId,
       p_receipts: receipts,
@@ -502,10 +518,8 @@ async function persistOnSupabase(
     });
     if (!error) return {};
     if (/not found|does not belong/i.test(error.message)) return fail(error.message);
-    if (/stockr_receive_purchase_order|does not exist|schema cache/i.test(error.message)) {
-      throw new Error(
-        "Production purchase-order migration is required. Run the latest supabase/schema.sql before receiving material.",
-      );
+    if (/stockr_receive_purchase_order_once|stockr_operation_keys|does not exist|schema cache/i.test(error.message)) {
+      throw new Error("Production purchasing integrity migration is required before receiving material.");
     }
     throw new Error(`Receive purchase order: ${error.message}`);
   }
