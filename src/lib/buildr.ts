@@ -1,6 +1,5 @@
 import { mapProject, scopeProjects, unwrapProjects } from "./buildr-parse";
 import { buildrProjectPaths, preferBuildrError } from "./buildr-paths";
-import { uid } from "./id";
 import type { Project } from "./types";
 
 export { buildrProjectPaths, preferBuildrError } from "./buildr-paths";
@@ -103,8 +102,11 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
           );
           continue;
         }
+        // A remote project without a stable Buildr ID cannot be synchronized safely.
+        // Never mint a random local ID for an authoritative Buildr project.
         const projects = scopeProjects(unwrapProjects(payload), id)
-          .map((row, index) => mapProject(row, index, () => uid("prj")))
+          .filter((row) => typeof row.id === "string" && row.id.trim().length > 0)
+          .map((row, index) => mapProject(row, index, () => ""))
           .filter((row): row is Project => Boolean(row));
         if (projects.length) return { projects, source: "buildr" };
         lastError = "Buildr returned no projects for that company ID.";
