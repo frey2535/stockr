@@ -39,6 +39,7 @@ type UserRow = {
   email: string;
   name: string;
   password_hash: string;
+  created_at?: string;
 };
 
 type CompanyRow = {
@@ -789,6 +790,7 @@ export async function ensureBuildrSsoIdentity(input: BuildrSsoBootstrapInput) {
     throwIfError(error, "Sync Buildr password into Stockr");
   }
 
+  if (!user) return null;
   await ensureCompanyMembership(user.id, companyId, memberRole);
   return { userId: user.id, companyId, role: memberRole };
 }
