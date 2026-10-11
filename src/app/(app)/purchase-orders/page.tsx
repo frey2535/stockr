@@ -29,6 +29,7 @@ import { PageBusy } from "@/components/page-busy";
 import { useStore } from "@/lib/store";
 import { useApi } from "@/lib/use-api";
 import { money } from "@/lib/format";
+import { canManagePurchasing, canReceivePurchasing } from "@/lib/command-access";
 import type { POLine, POStatus } from "@/lib/types";
 import type { PurchaseOrderListPayload } from "@/lib/workspace-types";
 
@@ -41,8 +42,10 @@ const STATUS: Record<POStatus, string> = {
 };
 
 export default function PurchaseOrdersPage() {
-  const { workspace, createPurchaseOrder, receivePurchaseOrder, setPurchaseOrderStatus, deletePurchaseOrder, upsertMaterial } = useStore();
+  const { workspace, account, createPurchaseOrder, receivePurchaseOrder, setPurchaseOrderStatus, deletePurchaseOrder, upsertMaterial } = useStore();
   const { locations } = workspace;
+  const canManagePo = canManagePurchasing(account?.role);
+  const canReceivePo = canReceivePurchasing(account?.role);
   const [status, setStatus] = useState("all");
   const params = new URLSearchParams();
   if (status !== "all") params.set("status", status);
@@ -67,7 +70,7 @@ export default function PurchaseOrdersPage() {
     if (!first) return;
     setLines([
       ...lines,
-      { material_id: first.id, expected_quantity: 1, received_quantity: 0, unit_cost: first.unit_cost || 0 },
+      { material_id: first.id, expected_quantity: 1, received_quantity: 0, unit_cost: first.unit_cost ?? null },
     ]);
   };
 
@@ -126,10 +129,12 @@ export default function PurchaseOrdersPage() {
         description="Track orders and reconcile received stock"
         icon={<ShoppingCart className="size-7 text-primary" />}
         actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-2 size-4" />
-            New PO
-          </Button>
+          canManagePo ? (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="mr-2 size-4" />
+              New PO
+            </Button>
+          ) : null
         }
       />
 
@@ -165,7 +170,7 @@ export default function PurchaseOrdersPage() {
           {filtered.map((po) => {
             const expectedQty = po.lines.reduce((sum, line) => sum + line.expected_quantity, 0);
             const receivedQty = po.lines.reduce((sum, line) => sum + line.received_quantity, 0);
-            const canReceive = po.status === "ordered" || po.status === "partial";
+            const canReceive = canReceivePo && (po.status === "ordered" || po.status === "partial");
             return (
               <Card key={po.id} className="hover:shadow-md">
                 <CardContent className="p-4">
@@ -187,7 +192,7 @@ export default function PurchaseOrdersPage() {
                           <li key={line.material_id}>
                             {materials.find((row) => row.id === line.material_id)?.name || "Unknown"} —{" "}
                             {line.received_quantity}/{line.expected_quantity}
-                            {line.unit_cost ? ` · $${money(line.unit_cost)}` : ""}
+                            {line.unit_cost != null ? ` · ${money(line.unit_cost)}` : " · Price unavailable"}
                           </li>
                         ))}
                       </ul>
@@ -204,7 +209,7 @@ export default function PurchaseOrdersPage() {
                           Receive
                         </Button>
                       ) : null}
-                      {po.status === "ordered" || po.status === "draft" ? (
+                      {canManagePo && (po.status === "ordered" || po.status === "draft") ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -221,23 +226,25 @@ export default function PurchaseOrdersPage() {
                           Cancel
                         </Button>
                       ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive"
-                        onClick={async () => {
-                          const result = await deletePurchaseOrder(po.id);
-                          if (!result.ok) {
-                            toast.error(result.error || "Could not delete this PO.");
-                            return;
-                          }
-                          toast.success(`${po.po_number} deleted`);
-                          await reload();
-                        }}
-                      >
-                        <Trash2 className="mr-1 size-3.5" />
-                        Delete
-                      </Button>
+                      {canManagePo ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive"
+                          onClick={async () => {
+                            const result = await deletePurchaseOrder(po.id);
+                            if (!result.ok) {
+                              toast.error(result.error || "Could not delete this PO.");
+                              return;
+                            }
+                            toast.success(`${po.po_number} deleted`);
+                            await reload();
+                          }}
+                        >
+                          <Trash2 className="mr-1 size-3.5" />
+                          Delete
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 </CardContent>
@@ -277,7 +284,7 @@ export default function PurchaseOrdersPage() {
                     material_id: row.material.id,
                     expected_quantity: row.quantity,
                     received_quantity: 0,
-                    unit_cost: row.material.unit_cost || 0,
+                    unit_cost: row.material.unit_cost ?? null,
                   })),
                 ]);
               }}
@@ -331,10 +338,11 @@ export default function PurchaseOrdersPage() {
                     <Input
                       type="number"
                       step="0.01"
-                      value={line.unit_cost || 0}
+                      value={line.unit_cost ?? ""}
                       onChange={(event) => {
                         const next = [...lines];
-                        next[index] = { ...next[index], unit_cost: parseFloat(event.target.value) || 0 };
+                        const raw = event.target.value;
+                        next[index] = { ...next[index], unit_cost: raw === "" ? null : Number(raw) };
                         setLines(next);
                       }}
                       placeholder="Unit cost"
