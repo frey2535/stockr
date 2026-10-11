@@ -35,9 +35,11 @@ export function writeOfflineQueue(rows: QueuedAction[]) {
 }
 
 export function enqueueOfflineAction(action: InventoryAction): QueuedAction {
+  const queueId = `off_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const item: QueuedAction = {
     ...action,
-    queueId: `off_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    operationId: action.operationId || queueId,
+    queueId,
     queuedAt: new Date().toISOString(),
   };
   writeOfflineQueue([...readOfflineQueue(), item]);
