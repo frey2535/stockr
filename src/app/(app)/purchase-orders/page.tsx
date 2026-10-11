@@ -29,6 +29,7 @@ import { PageBusy } from "@/components/page-busy";
 import { useStore } from "@/lib/store";
 import { useApi } from "@/lib/use-api";
 import { money } from "@/lib/format";
+import { uid } from "@/lib/id";
 import { canManagePurchasing, canReceivePurchasing } from "@/lib/command-access";
 import type { POLine, POStatus } from "@/lib/types";
 import type { PurchaseOrderListPayload } from "@/lib/workspace-types";
@@ -54,6 +55,8 @@ export default function PurchaseOrdersPage() {
   const materials = data?.materials ?? [];
   const [createOpen, setCreateOpen] = useState(false);
   const [receiveId, setReceiveId] = useState<string | null>(null);
+  const [receiveOperationId, setReceiveOperationId] = useState("");
+  const [receiveBusy, setReceiveBusy] = useState(false);
   const [poNumber, setPoNumber] = useState("");
   const [supplier, setSupplier] = useState("");
   const [expected, setExpected] = useState("");
@@ -111,7 +114,11 @@ export default function PurchaseOrdersPage() {
       toast.error("Enter quantities to receive.");
       return;
     }
-    const result = await receivePurchaseOrder(receiving.id, receiveLocation, payload);
+    const operationId = receiveOperationId || uid("po_recv");
+    if (!receiveOperationId) setReceiveOperationId(operationId);
+    setReceiveBusy(true);
+    const result = await receivePurchaseOrder(receiving.id, receiveLocation, payload, operationId);
+    setReceiveBusy(false);
     if (!result.ok) {
       toast.error(result.error);
       return;
@@ -119,6 +126,7 @@ export default function PurchaseOrdersPage() {
     toast.success("Stock received");
     await reload();
     setReceiveId(null);
+    setReceiveOperationId("");
     setReceipts({});
   };
 
@@ -203,6 +211,7 @@ export default function PurchaseOrdersPage() {
                           size="sm"
                           onClick={() => {
                             setReceiveId(po.id);
+                            setReceiveOperationId(uid("po_recv"));
                             setReceipts({});
                           }}
                         >
@@ -368,7 +377,16 @@ export default function PurchaseOrdersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!receiving} onOpenChange={(open) => !open && setReceiveId(null)}>
+      <Dialog
+        open={!!receiving}
+        onOpenChange={(open) => {
+          if (!open && !receiveBusy) {
+            setReceiveId(null);
+            setReceiveOperationId("");
+            setReceipts({});
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Receive {receiving?.po_number}</DialogTitle>
