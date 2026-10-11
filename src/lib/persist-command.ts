@@ -7,6 +7,7 @@ import { selectAllForCompany, selectAllForCompanySafe } from "./supabase-page";
 import { encodeToolsForPersist, isToolsBlob, mergeToolLists, toolsFromProjects } from "./tools-state";
 import { uid } from "./id";
 import { needsProject } from "./tx";
+import { assertTenantWriteAllowed } from "./tenant-write-policy";
 import type { AccessCode, InventoryAction, Material, Project, PurchaseOrder, Tool, Transaction } from "./types";
 
 export type PersistResult = {
@@ -302,8 +303,10 @@ async function persistMaterial(companyId: string, material: Partial<Material> & 
       .eq("company_id", companyId)
       .maybeSingle();
     throwIfError(loaded.error, "Load material");
-    if (!loaded.data) {
-      return fail("Material not found in this company workspace.");
+    try {
+      assertTenantWriteAllowed(material.id, Boolean(loaded.data), "Material");
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "Material not found in this company workspace.");
     }
     existing = loaded.data as Material;
   }
