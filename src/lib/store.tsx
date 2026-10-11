@@ -19,6 +19,7 @@ import type {
 import { invalidateApiCache } from "./api-cache";
 import { createEmptyState } from "./seed";
 import type { StoreCommand } from "./mutations";
+import { uid } from "./id";
 
 type CommandResult = {
   ok: boolean;
@@ -174,10 +175,13 @@ export function StoreProvider({
       upsertMaterials: (materials) => send({ type: "upsertMaterials", materials }),
       deleteMaterial: (id) => send({ type: "deleteMaterial", id }),
       applyAction: async (action) => {
+        if (!action.operationId) action.operationId = uid("op");
         const result = await send({ type: "applyAction", action });
         return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not update inventory." };
       },
       applyBulkActions: async (actions) => {
+        const operationId = actions.find((action) => action.operationId)?.operationId || uid("op");
+        for (const action of actions) action.operationId = operationId;
         const result = await send({ type: "applyBulkActions", actions });
         return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not apply bulk update." };
       },
