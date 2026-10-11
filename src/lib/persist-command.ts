@@ -7,6 +7,7 @@ import { selectAllForCompany, selectAllForCompanySafe } from "./supabase-page";
 import { encodeToolsForPersist, isToolsBlob, mergeToolLists, toolsFromProjects } from "./tools-state";
 import { uid } from "./id";
 import { needsProject } from "./tx";
+import { assertTenantWriteAllowed } from "./tenant-write-policy";
 import type { AccessCode, InventoryAction, Material, Project, PurchaseOrder, Tool, Transaction } from "./types";
 
 export type PersistResult = {
@@ -236,8 +237,9 @@ async function persistAction(companyId: string, action: InventoryAction, actor: 
   }
 
   const tx = actionTx(action, actor);
-  const { error } = await getSupabaseAdmin().rpc("stockr_apply_inventory_action", {
+  const { error } = await getSupabaseAdmin().rpc("stockr_apply_inventory_action_once", {
     p_company_id: companyId,
+    p_operation_key: action.operationId || uid("op"),
     p_tx_id: tx.id,
     p_type: action.type,
     p_material_id: action.materialId,
@@ -254,9 +256,9 @@ async function persistAction(companyId: string, action: InventoryAction, actor: 
   if (/does not belong to this company/i.test(error.message)) {
     return fail("That material or location is not available in this company workspace.");
   }
-  if (missingRpc(error) || /stockr_apply_inventory_action/i.test(error.message)) {
+  if (missingRpc(error) || /stockr_apply_inventory_action_once|stockr_operation_keys/i.test(error.message)) {
     throw new Error(
-      "Production inventory migration is required. Run the latest supabase/schema.sql before accepting inventory changes.",
+      "Production inventory idempotency migration is required before accepting inventory changes.",
     );
   }
   throw new Error(`Update inventory: ${error.message}`);
@@ -302,11 +304,16 @@ async function persistMaterial(companyId: string, material: Partial<Material> & 
       .eq("company_id", companyId)
       .maybeSingle();
     throwIfError(loaded.error, "Load material");
-    if (loaded.data) existing = loaded.data as Material;
+    try {
+      assertTenantWriteAllowed(material.id, Boolean(loaded.data), "Material");
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : "Material not found in this company workspace.");
+    }
+    existing = loaded.data as Material;
   }
   const result = applyCommand(
     { ...createEmptyState("tmp"), materials: existing ? [existing] : [] },
-    { type: "upsertMaterial", material },
+    { type: "upsertMaterial", material: existing ? material : { ...material, id: undefined } },
     "system",
   );
   if (result.error || !result.created || !("unit" in result.created)) {
@@ -435,11 +442,31 @@ async function persistOnSupabase(
 
   if (command.type === "applyBulkActions") {
     if (!command.actions.length) return fail("Add at least one line.");
-    for (const [index, action] of command.actions.entries()) {
-      const result = await persistAction(companyId, action, actor);
-      if (result.error) return fail(`Line ${index + 1}: ${result.error}`);
+    const operationId = command.actions.find((action) => action.operationId)?.operationId || uid("op");
+    const actions = command.actions.map((action) => ({
+      tx_id: uid("tx"),
+      type: action.type,
+      material_id: action.materialId,
+      quantity: Number(action.quantity),
+      from_location_id: action.fromLocationId || null,
+      to_location_id: action.toLocationId || null,
+      project: action.project || "",
+      notes: action.notes || "",
+    }));
+    const { error } = await supabase.rpc("stockr_apply_inventory_batch_once", {
+      p_company_id: companyId,
+      p_operation_key: operationId,
+      p_actions: actions,
+      p_created_by: actor,
+    });
+    if (!error) return {};
+    if (/Line \d+:|not enough/i.test(error.message)) return fail(error.message);
+    if (/stockr_apply_inventory_batch_once|stockr_operation_keys|does not exist|schema cache/i.test(error.message)) {
+      throw new Error(
+        "Production atomic inventory migration is required before accepting bulk inventory changes.",
+      );
     }
-    return {};
+    throw new Error(`Apply bulk inventory: ${error.message}`);
   }
 
   if (command.type === "deleteTransaction") {

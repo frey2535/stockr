@@ -34,12 +34,22 @@ export function writeOfflineQueue(rows: QueuedAction[]) {
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(rows));
 }
 
-export function enqueueOfflineAction(action: InventoryAction): QueuedAction {
-  const item: QueuedAction = {
+export function prepareQueuedAction(
+  action: InventoryAction,
+  queueId: string,
+  queuedAt: string,
+): QueuedAction {
+  return {
     ...action,
-    queueId: `off_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    queuedAt: new Date().toISOString(),
+    operationId: action.operationId || queueId,
+    queueId,
+    queuedAt,
   };
+}
+
+export function enqueueOfflineAction(action: InventoryAction): QueuedAction {
+  const queueId = `off_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const item = prepareQueuedAction(action, queueId, new Date().toISOString());
   writeOfflineQueue([...readOfflineQueue(), item]);
   return item;
 }

@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
 import { exactIdentityMatch, verifiedPriceHasEvidence } from "./supplier-price-policy";
+import { assertTenantWriteAllowed } from "./tenant-write-policy";
 import type {
   IdentifiedProduct,
   ProductSourceResult,
@@ -76,6 +77,7 @@ export async function listSuppliers(companyId: string) {
 }
 
 export async function saveSupplier(companyId: string, input: Partial<SupplierProfile> & { name: string }) {
+  const db = getSupabaseAdmin();
   let domain = String(input.domain || "").trim().toLowerCase();
   const website = String(input.website_url || "").trim();
   if (!domain && website) {
@@ -85,8 +87,7 @@ export async function saveSupplier(companyId: string, input: Partial<SupplierPro
       domain = "";
     }
   }
-  const row = {
-    id: input.id || uid("sup"),
+  const values = {
     company_id: companyId,
     name: input.name.trim(),
     website_url: website,
@@ -99,10 +100,32 @@ export async function saveSupplier(companyId: string, input: Partial<SupplierPro
     allow_substitutes: input.allow_substitutes !== false,
     web_search_enabled: input.web_search_enabled !== false,
   };
-  if (!row.name) throw new Error("Supplier name is required.");
-  const { data, error } = await getSupabaseAdmin()
+  if (!values.name) throw new Error("Supplier name is required.");
+
+  if (input.id) {
+    const existing = await db
+      .from("stockr_suppliers")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("id", input.id)
+      .maybeSingle();
+    if (existing.error) throw new Error(existing.error.message);
+    assertTenantWriteAllowed(input.id, Boolean(existing.data), "Supplier");
+
+    const { data, error } = await db
+      .from("stockr_suppliers")
+      .update(values)
+      .eq("company_id", companyId)
+      .eq("id", input.id)
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return asSupplier(data as Record<string, unknown>);
+  }
+
+  const { data, error } = await db
     .from("stockr_suppliers")
-    .upsert(row)
+    .insert({ id: uid("sup"), ...values })
     .select("*")
     .single();
   if (error) throw new Error(error.message);
@@ -128,16 +151,55 @@ export async function listSourcingRules(companyId: string): Promise<SourcingRule
 }
 
 export async function saveSourcingRule(companyId: string, input: Partial<SourcingRule> & { category: string }) {
-  const row = {
-    id: input.id || uid("rule"),
+  const db = getSupabaseAdmin();
+  const category = input.category.trim();
+  if (!category) throw new Error("Category is required.");
+
+  if (input.preferred_supplier_id) {
+    const supplier = await db
+      .from("stockr_suppliers")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("id", input.preferred_supplier_id)
+      .maybeSingle();
+    if (supplier.error) throw new Error(supplier.error.message);
+    if (!supplier.data) throw new Error("Preferred supplier not found in this company workspace.");
+  }
+
+  const values = {
     company_id: companyId,
-    category: input.category.trim(),
+    category,
     preferred_supplier_id: input.preferred_supplier_id || null,
     preferred_manufacturer: input.preferred_manufacturer?.trim() || null,
     allow_substitutes: input.allow_substitutes !== false,
   };
-  if (!row.category) throw new Error("Category is required.");
-  const { data, error } = await getSupabaseAdmin().from("stockr_sourcing_rules").upsert(row).select("*").single();
+
+  if (input.id) {
+    const existing = await db
+      .from("stockr_sourcing_rules")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("id", input.id)
+      .maybeSingle();
+    if (existing.error) throw new Error(existing.error.message);
+    assertTenantWriteAllowed(input.id, Boolean(existing.data), "Sourcing rule");
+
+    const { data, error } = await db
+      .from("stockr_sourcing_rules")
+      .update(values)
+      .eq("company_id", companyId)
+      .eq("id", input.id)
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return data as SourcingRule;
+  }
+
+  const { data, error } = await db
+    .from("stockr_sourcing_rules")
+    .insert({ id: uid("rule"), ...values })
+    .select("*")
+    .single();
   if (error) throw new Error(error.message);
   return data as SourcingRule;
 }
@@ -166,13 +228,35 @@ export async function recordVerifiedOffer(
   if (!verifiedPriceHasEvidence(input)) {
     throw new Error("A verified price requires a source reference or supplier product URL.");
   }
+
+  const db = getSupabaseAdmin();
+  const supplier = await db
+    .from("stockr_suppliers")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("id", input.supplier_id)
+    .maybeSingle();
+  if (supplier.error) throw new Error(supplier.error.message);
+  if (!supplier.data) throw new Error("Supplier not found in this company workspace.");
+
+  if (input.material_id) {
+    const material = await db
+      .from("stockr_materials")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("id", input.material_id)
+      .maybeSingle();
+    if (material.error) throw new Error(material.error.message);
+    if (!material.data) throw new Error("Material not found in this company workspace.");
+  }
+
   const row = {
     ...input,
     id: uid("off"),
     company_id: companyId,
     observed_at: input.observed_at || new Date().toISOString(),
   };
-  const { data, error } = await getSupabaseAdmin()
+  const { data, error } = await db
     .from("stockr_supplier_offers")
     .insert(row)
     .select("*")

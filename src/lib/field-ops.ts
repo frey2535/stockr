@@ -28,6 +28,23 @@ function isMissingTable(error: { message?: string; code?: string } | null) {
   );
 }
 
+async function requireOwnedId(
+  db: ReturnType<typeof getSupabaseAdmin>,
+  table: string,
+  companyId: string,
+  id: string,
+  label: string,
+) {
+  const { data, error } = await db
+    .from(table)
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(`${label} not found in this company workspace.`);
+}
+
 async function catalog(companyId: string) {
   if (isSupabaseConfigured()) {
     const { selectAllForCompany } = await import("./supabase-page");
@@ -138,6 +155,7 @@ export async function getFieldOps(companyId: string): Promise<FieldOpsPayload> {
 export async function createZone(companyId: string, input: { locationId: string; name: string; code?: string }) {
   if (!isSupabaseConfigured()) throw new Error("Storage zones require the production Supabase database.");
   const db = getSupabaseAdmin();
+  await requireOwnedId(db, "stockr_locations", companyId, input.locationId, "Location");
   const row: StorageZone = {
     id: uid("zone"),
     company_id: companyId,
@@ -161,6 +179,20 @@ export async function createBin(companyId: string, input: {
 }) {
   if (!isSupabaseConfigured()) throw new Error("Storage bins require the production Supabase database.");
   const db = getSupabaseAdmin();
+  await requireOwnedId(db, "stockr_locations", companyId, input.locationId, "Location");
+  if (input.zoneId) {
+    const { data: zone, error: zoneError } = await db
+      .from("stockr_storage_zones")
+      .select("id, location_id")
+      .eq("company_id", companyId)
+      .eq("id", input.zoneId)
+      .maybeSingle();
+    if (zoneError) throw zoneError;
+    if (!zone) throw new Error("Zone not found in this company workspace.");
+    if (String(zone.location_id) !== input.locationId) {
+      throw new Error("Zone does not belong to the selected location.");
+    }
+  }
   const row: StorageBin = {
     id: uid("bin"),
     company_id: companyId,
@@ -185,6 +217,12 @@ export async function createReservation(companyId: string, actor: string, input:
   notes?: string;
 }) {
   if (!isSupabaseConfigured()) throw new Error("Reservations require the production Supabase database.");
+  const db = getSupabaseAdmin();
+  await requireOwnedId(db, "stockr_materials", companyId, input.materialId, "Material");
+  await requireOwnedId(db, "stockr_locations", companyId, input.locationId, "Location");
+  if (input.projectId) {
+    await requireOwnedId(db, "stockr_projects", companyId, input.projectId, "Project");
+  }
   const state = await getCompanyState(companyId);
   const onHand = state.inventory.find(
     (row) => row.material_id === input.materialId && row.location_id === input.locationId,
@@ -206,7 +244,7 @@ export async function createReservation(companyId: string, actor: string, input:
     created_by: actor,
     created_at: new Date().toISOString(),
   };
-  const { error } = await getSupabaseAdmin().from("stockr_inventory_reservations").insert(row);
+  const { error } = await db.from("stockr_inventory_reservations").insert(row);
   if (error) throw error;
   return row;
 }
@@ -244,6 +282,16 @@ export async function createMaterialRequest(companyId: string, actor: string, in
   if (!isSupabaseConfigured()) throw new Error("Material requests require the production Supabase database.");
   if (!input.lines.length) throw new Error("Add at least one material.");
   const db = getSupabaseAdmin();
+  if (input.destinationLocationId) {
+    await requireOwnedId(db, "stockr_locations", companyId, input.destinationLocationId, "Destination location");
+  }
+  if (input.projectId) {
+    await requireOwnedId(db, "stockr_projects", companyId, input.projectId, "Project");
+  }
+  const materialIds = Array.from(new Set(input.lines.map((line) => line.materialId).filter(Boolean)));
+  for (const materialId of materialIds) {
+    await requireOwnedId(db, "stockr_materials", companyId, materialId, "Material");
+  }
   const request: MaterialRequest = {
     id: uid("req"),
     company_id: companyId,
@@ -294,6 +342,31 @@ export async function startCycleCount(companyId: string, actor: string, input: {
   binId?: string;
 }) {
   if (!isSupabaseConfigured()) throw new Error("Cycle counts require the production Supabase database.");
+  const db = getSupabaseAdmin();
+  await requireOwnedId(db, "stockr_locations", companyId, input.locationId, "Location");
+  if (input.zoneId) {
+    const { data: zone, error: zoneError } = await db
+      .from("stockr_storage_zones")
+      .select("id, location_id")
+      .eq("company_id", companyId)
+      .eq("id", input.zoneId)
+      .maybeSingle();
+    if (zoneError) throw zoneError;
+    if (!zone) throw new Error("Zone not found in this company workspace.");
+    if (String(zone.location_id) !== input.locationId) throw new Error("Zone does not belong to the selected location.");
+  }
+  if (input.binId) {
+    const { data: bin, error: binError } = await db
+      .from("stockr_storage_bins")
+      .select("id, location_id, zone_id")
+      .eq("company_id", companyId)
+      .eq("id", input.binId)
+      .maybeSingle();
+    if (binError) throw binError;
+    if (!bin) throw new Error("Bin not found in this company workspace.");
+    if (String(bin.location_id) !== input.locationId) throw new Error("Bin does not belong to the selected location.");
+    if (input.zoneId && String(bin.zone_id || "") !== input.zoneId) throw new Error("Bin does not belong to the selected zone.");
+  }
   const state = await getCompanyState(companyId);
   const session: CycleCountSession = {
     id: uid("cnt"),
@@ -316,7 +389,6 @@ export async function startCycleCount(companyId: string, actor: string, input: {
       expected_quantity: row.quantity,
       counted_quantity: null,
     }));
-  const db = getSupabaseAdmin();
   const { error: sessionError } = await db.from("stockr_cycle_count_sessions").insert(session);
   if (sessionError) throw sessionError;
   if (lines.length) {
@@ -329,6 +401,8 @@ export async function startCycleCount(companyId: string, actor: string, input: {
 export async function updateCycleCountLine(companyId: string, sessionId: string, materialId: string, countedQuantity: number) {
   if (!isSupabaseConfigured()) return;
   const db = getSupabaseAdmin();
+  await requireOwnedId(db, "stockr_materials", companyId, materialId, "Material");
+  await requireOwnedId(db, "stockr_cycle_count_sessions", companyId, sessionId, "Cycle count");
   const { data: existing, error: lookupError } = await db
     .from("stockr_cycle_count_lines")
     .select("id")
