@@ -88,11 +88,14 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
           continue;
         }
         if (response.status === 401 || response.status === 403) {
-          lastError = preferBuildrError(
-            lastError,
-            "Buildr asked for a login token. Deploy the company job list route so Stockr can sync by company ID.",
-          );
-          continue;
+          // Never silently downgrade authentication or try a broader endpoint.
+          // Buildr currently requires a company-scoped user JWT for these routes;
+          // a shared API key is not a compatible substitute.
+          return {
+            projects: [],
+            source: "none",
+            error: "Buildr project synchronization was denied. A compatible authenticated company session or approved service-to-service contract is required.",
+          };
         }
         if (!response.ok) {
           const body = payload && typeof payload === "object" ? (payload as { message?: string; error?: string }) : {};
