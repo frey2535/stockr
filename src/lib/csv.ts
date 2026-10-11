@@ -11,6 +11,7 @@ export type CsvMaterialRow = {
   manufacturer: string;
   supplier: string;
   unit_cost: number | null;
+  unit_cost_raw?: string;
   quantity: number;
 };
 
@@ -77,6 +78,8 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
       const mpn = (mpnIdx >= 0 ? cells[mpnIdx] : "") || "";
       const supplier_number = (supplierNoIdx >= 0 ? cells[supplierNoIdx] : "") || "";
       const quantity = Number(qtyIdx >= 0 ? cells[qtyIdx] : cells[2] || 1) || 1;
+      const unitCostRaw = costIdx >= 0 ? String(cells[costIdx] || "").trim() : "";
+      const parsedUnitCost = unitCostRaw === "" ? null : Number(unitCostRaw);
       return {
         name: name || (barcode ? `Unknown Product - ${barcode}` : ""),
         barcode,
@@ -88,7 +91,8 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
         category: (categoryIdx >= 0 ? cells[categoryIdx] : "") || "",
         manufacturer: (mfrIdx >= 0 ? cells[mfrIdx] : "") || "",
         supplier: (supplierIdx >= 0 ? cells[supplierIdx] : "") || "",
-        unit_cost: costIdx >= 0 && cells[costIdx] ? Number(cells[costIdx]) || null : null,
+        unit_cost: parsedUnitCost != null && Number.isFinite(parsedUnitCost) ? parsedUnitCost : null,
+        unit_cost_raw: unitCostRaw,
       };
     })
     .filter((row) => row.name || row.barcode);
