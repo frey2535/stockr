@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from "./supabase-admin";
 import { uid } from "./id";
 import { exactIdentityMatch, verifiedPriceHasEvidence } from "./supplier-price-policy";
+import { assertTenantWriteAllowed } from "./tenant-write-policy";
 import type {
   IdentifiedProduct,
   ProductSourceResult,
@@ -109,7 +110,7 @@ export async function saveSupplier(companyId: string, input: Partial<SupplierPro
       .eq("id", input.id)
       .maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    if (!existing.data) throw new Error("Supplier not found in this company workspace.");
+    assertTenantWriteAllowed(input.id, Boolean(existing.data), "Supplier");
 
     const { data, error } = await db
       .from("stockr_suppliers")
@@ -181,7 +182,7 @@ export async function saveSourcingRule(companyId: string, input: Partial<Sourcin
       .eq("id", input.id)
       .maybeSingle();
     if (existing.error) throw new Error(existing.error.message);
-    if (!existing.data) throw new Error("Sourcing rule not found in this company workspace.");
+    assertTenantWriteAllowed(input.id, Boolean(existing.data), "Sourcing rule");
 
     const { data, error } = await db
       .from("stockr_sourcing_rules")
