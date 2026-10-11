@@ -1241,3 +1241,86 @@ revoke all on function stockr_submit_cycle_count_once(text, text, text) from pub
 grant execute on function stockr_submit_cycle_count_once(text, text, text) to service_role;
 
 notify pgrst, 'reload schema';
+
+
+create or replace function stockr_set_cycle_count_line(
+  p_company_id text,
+  p_session_id text,
+  p_line_id text,
+  p_material_id text,
+  p_counted_quantity numeric
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  session_row stockr_cycle_count_sessions%rowtype;
+  expected_qty numeric := 0;
+begin
+  if p_counted_quantity is null or p_counted_quantity < 0 then
+    raise exception 'Counted quantity cannot be negative.';
+  end if;
+
+  select *
+    into session_row
+    from stockr_cycle_count_sessions
+    where id = p_session_id
+      and company_id = p_company_id
+    for update;
+
+  if not found then
+    raise exception 'Cycle count not found in this company workspace.';
+  end if;
+
+  if session_row.status <> 'open' then
+    raise exception 'Cycle count is already submitted.';
+  end if;
+
+  if not exists (
+    select 1 from stockr_materials
+    where id = p_material_id
+      and company_id = p_company_id
+  ) then
+    raise exception 'Material not found in this company workspace.';
+  end if;
+
+  update stockr_cycle_count_lines
+    set counted_quantity = p_counted_quantity
+    where company_id = p_company_id
+      and session_id = p_session_id
+      and material_id = p_material_id;
+
+  if found then
+    return;
+  end if;
+
+  select coalesce(quantity, 0)
+    into expected_qty
+    from stockr_inventory
+    where company_id = p_company_id
+      and material_id = p_material_id
+      and location_id = session_row.location_id;
+
+  insert into stockr_cycle_count_lines (
+    id,
+    session_id,
+    company_id,
+    material_id,
+    expected_quantity,
+    counted_quantity
+  ) values (
+    p_line_id,
+    p_session_id,
+    p_company_id,
+    p_material_id,
+    coalesce(expected_qty, 0),
+    p_counted_quantity
+  );
+end;
+$;
+
+revoke all on function stockr_set_cycle_count_line(text, text, text, text, numeric) from public;
+grant execute on function stockr_set_cycle_count_line(text, text, text, text, numeric) to service_role;
+
