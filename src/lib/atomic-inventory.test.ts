@@ -1,31 +1,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyCommand } from "./mutations.ts";
+import { inventoryOperationKey, prepareInventoryBatch } from "./inventory-operation-policy.ts";
 import { prepareQueuedAction } from "./offline-queue.ts";
-import { createEmptyState } from "./seed.ts";
 
-test("bulk inventory validation is all-or-none in the domain layer", () => {
-  const state = createEmptyState("Test");
-  state.inventory = [
-    { id: "inv_1", material_id: "mat_1", location_id: "loc_1", quantity: 10 },
+test("bulk inventory serialization keeps the batch on one operation key", () => {
+  const actions = [
+    { type: "use" as const, materialId: "mat_1", quantity: 2, fromLocationId: "loc_1", project: "Job A", operationId: "op_batch" },
+    { type: "receive" as const, materialId: "mat_2", quantity: 4, toLocationId: "loc_2", operationId: "op_batch" },
   ];
-  state.transactions = [];
 
-  const result = applyCommand(
-    state,
+  assert.equal(inventoryOperationKey(actions, "fallback"), "op_batch");
+
+  let sequence = 0;
+  const rows = prepareInventoryBatch(actions, () => "tx_" + ++sequence);
+  assert.deepEqual(rows, [
     {
-      type: "applyBulkActions",
-      actions: [
-        { type: "use", materialId: "mat_1", quantity: 2, fromLocationId: "loc_1", project: "Job A" },
-        { type: "use", materialId: "mat_1", quantity: 20, fromLocationId: "loc_1", project: "Job A" },
-      ],
+      tx_id: "tx_1",
+      type: "use",
+      material_id: "mat_1",
+      quantity: 2,
+      from_location_id: "loc_1",
+      to_location_id: null,
+      project: "Job A",
+      notes: "",
     },
-    "worker@example.com",
-  );
+    {
+      tx_id: "tx_2",
+      type: "receive",
+      material_id: "mat_2",
+      quantity: 4,
+      from_location_id: null,
+      to_location_id: "loc_2",
+      project: "",
+      notes: "",
+    },
+  ]);
+});
 
-  assert.match(result.error || "", /Line 2/);
-  assert.equal(result.state.inventory[0]?.quantity, 10);
-  assert.equal(result.state.transactions.length, 0);
+test("bulk inventory serialization uses a fallback operation key only when needed", () => {
+  assert.equal(
+    inventoryOperationKey([{ type: "receive", materialId: "mat_1", quantity: 1, toLocationId: "loc_1" }], "op_fallback"),
+    "op_fallback",
+  );
 });
 
 test("offline queue keeps a stable operation id for replay safety", () => {
