@@ -1,6 +1,6 @@
 export function buildrProjectPaths(companyId: string) {
   const id = encodeURIComponent(companyId.trim());
-  return [`/companies/${id}/projects`, `/stockr/projects?company_id=${id}`, "/projects"];
+  return [`/companies/${id}/projects`, `/stockr/projects?company_id=${id}`];
 }
 
 export function preferBuildrError(prev: string, next: string) {
