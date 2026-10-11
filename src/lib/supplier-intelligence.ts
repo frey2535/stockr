@@ -100,11 +100,12 @@ export async function saveSupplier(companyId: string, input: Partial<SupplierPro
     web_search_enabled: input.web_search_enabled !== false,
   };
   if (!row.name) throw new Error("Supplier name is required.");
-  const { data, error } = await getSupabaseAdmin()
-    .from("stockr_suppliers")
-    .upsert(row)
-    .select("*")
-    .single();
+  // Admin client bypasses RLS: never allow an ID supplied by another
+  // company to be overwritten through an unscoped upsert.
+  const supplierQuery = getSupabaseAdmin().from("stockr_suppliers");
+  const { data, error } = input.id
+    ? await supplierQuery.update(row).eq("company_id", companyId).eq("id", input.id).select("*").single()
+    : await supplierQuery.insert(row).select("*").single();
   if (error) throw new Error(error.message);
   return asSupplier(data as Record<string, unknown>);
 }
@@ -137,7 +138,11 @@ export async function saveSourcingRule(companyId: string, input: Partial<Sourcin
     allow_substitutes: input.allow_substitutes !== false,
   };
   if (!row.category) throw new Error("Category is required.");
-  const { data, error } = await getSupabaseAdmin().from("stockr_sourcing_rules").upsert(row).select("*").single();
+  // Restrict edits to the authenticated company even with service-role access.
+  const ruleQuery = getSupabaseAdmin().from("stockr_sourcing_rules");
+  const { data, error } = input.id
+    ? await ruleQuery.update(row).eq("company_id", companyId).eq("id", input.id).select("*").single()
+    : await ruleQuery.insert(row).select("*").single();
   if (error) throw new Error(error.message);
   return data as SourcingRule;
 }
