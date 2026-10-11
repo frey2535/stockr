@@ -22,6 +22,26 @@ function migrationMissing(error: { message?: string; code?: string } | null) {
   );
 }
 
+export async function GET() {
+  const { account, response } = await requireAccount();
+  if (!account) return response;
+
+  const result = await getSupabaseAdmin()
+    .from("stockr_catalog_imports")
+    .select("id, file_name, supplier_id, status, row_count, created_count, updated_count, priced_count, error_message, created_by, created_at, completed_at")
+    .eq("company_id", account.company.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (result.error) {
+    if (migrationMissing(result.error)) {
+      return NextResponse.json({ rows: [], migrationRequired: true });
+    }
+    return NextResponse.json({ error: result.error.message }, { status: 500 });
+  }
+  return NextResponse.json({ rows: result.data || [] });
+}
+
 export async function POST(request: Request) {
   const { account, response } = await requireAccount();
   if (!account) return response;
