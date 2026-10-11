@@ -78,6 +78,27 @@ export async function POST(request: Request) {
 
   const importId = uid("imp");
   const db = getSupabaseAdmin();
+
+  if (supplierId) {
+    const supplier = await db
+      .from("stockr_suppliers")
+      .select("id")
+      .eq("company_id", account.company.id)
+      .eq("id", supplierId)
+      .eq("enabled", true)
+      .eq("approved", true)
+      .maybeSingle();
+    if (supplier.error) {
+      return NextResponse.json({ error: supplier.error.message }, { status: 400 });
+    }
+    if (!supplier.data) {
+      return NextResponse.json(
+        { error: "Selected supplier is not an approved supplier for this company." },
+        { status: 400 },
+      );
+    }
+  }
+
   const createdAt = new Date().toISOString();
   const history = await db.from("stockr_catalog_imports").insert({
     id: importId,
