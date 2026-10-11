@@ -302,11 +302,14 @@ async function persistMaterial(companyId: string, material: Partial<Material> & 
       .eq("company_id", companyId)
       .maybeSingle();
     throwIfError(loaded.error, "Load material");
-    if (loaded.data) existing = loaded.data as Material;
+    if (!loaded.data) {
+      return fail("Material not found in this company workspace.");
+    }
+    existing = loaded.data as Material;
   }
   const result = applyCommand(
     { ...createEmptyState("tmp"), materials: existing ? [existing] : [] },
-    { type: "upsertMaterial", material },
+    { type: "upsertMaterial", material: existing ? material : { ...material, id: undefined } },
     "system",
   );
   if (result.error || !result.created || !("unit" in result.created)) {
