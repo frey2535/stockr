@@ -9,6 +9,7 @@ import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from ".
 import { opsFromProjects } from "./ops-state";
 import { visibleProjects } from "./persist-state";
 import { listRestockNeeds } from "./replenish";
+import { restockMaterialIds } from "./restock-scope";
 import { WORKSPACE_PAGE_SIZE } from "./types";
 import type {
   AccessCode,
@@ -746,7 +747,7 @@ export async function listRestock(companyId: string) {
   const stockRules = stockRulesFromProjects((projectsRes.data || []) as Project[]);
   if (!stockRules.length) return { rows: [] };
 
-  const materialIds = Array.from(new Set(stockRules.map((row) => row.material_id)));
+  const materialIds = restockMaterialIds(stockRules);
   const [materialsRes, inventoryRes] = await Promise.all([
     supabase
       .from("stockr_materials")
