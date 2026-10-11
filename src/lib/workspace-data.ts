@@ -731,25 +731,43 @@ export async function listRestock(companyId: string) {
   if (!isSupabaseConfigured()) {
     return { rows: listRestockNeeds(await getCompanyState(companyId)) };
   }
+
   const supabase = getSupabaseAdmin();
-  const { selectAllForCompany } = await import("./supabase-page");
-  const [materials, locations, inventory, projectsRes] = await Promise.all([
-    selectAllForCompany<Material>(supabase, "stockr_materials", companyId, "id, name, unit, supplier"),
-    selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
-    selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
-      supabase,
-      "stockr_inventory",
-      companyId,
-      "material_id, location_id, quantity",
-    ),
+  const [projectsRes, locationsRes] = await Promise.all([
     supabase.from("stockr_projects").select("*").eq("company_id", companyId),
+    supabase
+      .from("stockr_locations")
+      .select("id, name, type, description, assigned_to")
+      .eq("company_id", companyId),
   ]);
+  if (projectsRes.error) throw new Error(projectsRes.error.message);
+  if (locationsRes.error) throw new Error(locationsRes.error.message);
+
+  const stockRules = stockRulesFromProjects((projectsRes.data || []) as Project[]);
+  if (!stockRules.length) return { rows: [] };
+
+  const materialIds = Array.from(new Set(stockRules.map((row) => row.material_id)));
+  const [materialsRes, inventoryRes] = await Promise.all([
+    supabase
+      .from("stockr_materials")
+      .select("id, name, unit, supplier")
+      .eq("company_id", companyId)
+      .in("id", materialIds),
+    supabase
+      .from("stockr_inventory")
+      .select("material_id, location_id, quantity")
+      .eq("company_id", companyId)
+      .in("material_id", materialIds),
+  ]);
+  if (materialsRes.error) throw new Error(materialsRes.error.message);
+  if (inventoryRes.error) throw new Error(inventoryRes.error.message);
+
   return {
     rows: listRestockNeeds({
-      materials: materials.map(mapMaterial),
-      locations,
-      inventory: inventory.map(mapInventory),
-      stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
+      materials: (materialsRes.data || []).map((row) => mapMaterial(row as Record<string, unknown>)),
+      locations: (locationsRes.data || []) as Location[],
+      inventory: (inventoryRes.data || []).map((row) => mapInventory(row as Record<string, unknown>)),
+      stockRules,
     }),
   };
 }
