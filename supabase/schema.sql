@@ -2055,7 +2055,7 @@ begin
         v_name,
         nullif(v_manufacturer, ''),
         nullif(v_mpn, ''),
-        nullif(v_upc, ''),
+        nullif(coalesce(nullif(v_upc, ''), v_barcode), ''),
         nullif(v_supplier_number, ''),
         v_unit_cost,
         'USD',
