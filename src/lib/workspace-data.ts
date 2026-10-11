@@ -832,77 +832,123 @@ export async function listPurchaseOrders(companyId: string, opts: { status?: str
 }
 
 export async function getReports(companyId: string, opts: { from?: string; to?: string }) {
-  const stateLike = async () => {
-    if (!isSupabaseConfigured()) return getCompanyState(companyId);
-    const supabase = getSupabaseAdmin();
-    const [locations, materials, inventory, transactions] = await Promise.all([
-      selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
-      selectAllForCompany<{ id: string; name: string; unit_cost: number | null }>(
-        supabase,
-        "stockr_materials",
-        companyId,
-        "id, name, unit_cost",
-      ),
-      selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
-        supabase,
-        "stockr_inventory",
-        companyId,
-        "material_id, location_id, quantity",
-      ),
-      selectAllMatching<Transaction>(
-        (from, to) =>
-          supabase
-            .from("stockr_transactions")
-            .select("*")
-            .eq("company_id", companyId)
-            .gte("created_at", opts.from ? `${opts.from}T00:00:00` : "1970-01-01")
-            .lte("created_at", opts.to ? `${opts.to}T23:59:59` : "2999-12-31")
-            .range(from, to),
-        "report transactions",
-      ),
-    ]);
+  const fromIso = opts.from ? `${opts.from}T00:00:00.000Z` : "1970-01-01T00:00:00.000Z";
+  const toIso = opts.to ? `${opts.to}T23:59:59.999Z` : "2999-12-31T23:59:59.999Z";
+
+  if (!isSupabaseConfigured()) {
+    const state = await getCompanyState(companyId);
+    const transactions = state.transactions.filter((tx) => tx.created_at >= fromIso && tx.created_at <= toIso);
+    const valuation = state.locations.map((location) => {
+      const rows = state.inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
+      const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
+      const totalValue = rows.reduce((sum, row) => {
+        const material = state.materials.find((item) => item.id === row.material_id);
+        return sum + row.quantity * (material?.unit_cost || 0);
+      }, 0);
+      return { location: location.name, type: location.type, totalQty, totalValue };
+    });
+
+    const usageMap = new Map<string, { qty: number; value: number }>();
+    for (const tx of transactions.filter((row) => row.type === "use")) {
+      const key = tx.project || "Unassigned";
+      const material = state.materials.find((item) => item.id === tx.material_id);
+      const current = usageMap.get(key) || { qty: 0, value: 0 };
+      current.qty += tx.quantity;
+      current.value += tx.quantity * (material?.unit_cost || 0);
+      usageMap.set(key, current);
+    }
+
+    const shrinkage = transactions
+      .filter((tx) => tx.type === "shrink")
+      .map((tx) => ({
+        ...tx,
+        materialName: state.materials.find((row) => row.id === tx.material_id)?.name || "Unknown",
+        locationName: state.locations.find((row) => row.id === tx.from_location_id)?.name || "",
+      }));
+
     return {
-      locations,
-      materials: materials.map(mapMaterial),
-      inventory: inventory.map(mapInventory),
-      transactions: transactions.map((row) => mapTransaction(row as unknown as Record<string, unknown>)),
+      valuation,
+      grand: valuation.reduce((sum, row) => sum + row.totalValue, 0),
+      usage: Array.from(usageMap.entries()).sort((a, b) => b[1].value - a[1].value),
+      shrinkage,
     };
-  };
-
-  const data = await stateLike();
-  const valuation = data.locations.map((location) => {
-    const rows = data.inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
-    const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
-    const totalValue = rows.reduce((sum, row) => {
-      const material = data.materials.find((item) => item.id === row.material_id);
-      return sum + row.quantity * (material?.unit_cost || 0);
-    }, 0);
-    return { location: location.name, type: location.type, totalQty, totalValue };
-  });
-
-  const usageMap = new Map<string, { qty: number; value: number }>();
-  for (const tx of data.transactions.filter((row) => row.type === "use")) {
-    const key = tx.project || "Unassigned";
-    const material = data.materials.find((item) => item.id === tx.material_id);
-    const current = usageMap.get(key) || { qty: 0, value: 0 };
-    current.qty += tx.quantity;
-    current.value += tx.quantity * (material?.unit_cost || 0);
-    usageMap.set(key, current);
   }
 
-  const shrinkage = data.transactions
-    .filter((tx) => tx.type === "shrink")
-    .map((tx) => ({
-      ...tx,
-      materialName: data.materials.find((row) => row.id === tx.material_id)?.name || "Unknown",
-      locationName: data.locations.find((row) => row.id === tx.from_location_id)?.name || "",
-    }));
+  const supabase = getSupabaseAdmin();
+  const [summaryRes, shrinkRes] = await Promise.all([
+    supabase.rpc("stockr_reports_summary", {
+      p_company_id: companyId,
+      p_from: fromIso,
+      p_to: toIso,
+    }),
+    supabase
+      .from("stockr_transactions")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("type", "shrink")
+      .gte("created_at", fromIso)
+      .lte("created_at", toIso)
+      .order("created_at", { ascending: false }),
+  ]);
+
+  if (summaryRes.error) {
+    if (/stockr_reports_summary|does not exist|schema cache/i.test(summaryRes.error.message)) {
+      throw new Error("Production reports scale migration is required before loading reports.");
+    }
+    throw new Error(summaryRes.error.message);
+  }
+  if (shrinkRes.error) throw new Error(shrinkRes.error.message);
+
+  const summary = (summaryRes.data || {}) as {
+    valuation?: Array<{ location: string; type: string; totalQty: number | string; totalValue: number | string }>;
+    grand?: number | string;
+    usage?: Array<{ project: string; qty: number | string; value: number | string }>;
+  };
+
+  const shrinkRows = (shrinkRes.data || []).map(mapTransaction);
+  const materialIds = Array.from(new Set(shrinkRows.map((row) => row.material_id)));
+  const locationIds = Array.from(
+    new Set(shrinkRows.map((row) => row.from_location_id).filter((id): id is string => Boolean(id))),
+  );
+  const [materialsRes, locationsRes] = await Promise.all([
+    materialIds.length
+      ? supabase
+          .from("stockr_materials")
+          .select("id, name")
+          .eq("company_id", companyId)
+          .in("id", materialIds)
+      : Promise.resolve({ data: [], error: null }),
+    locationIds.length
+      ? supabase
+          .from("stockr_locations")
+          .select("id, name")
+          .eq("company_id", companyId)
+          .in("id", locationIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (materialsRes.error) throw new Error(materialsRes.error.message);
+  if (locationsRes.error) throw new Error(locationsRes.error.message);
+
+  const materialNames = new Map((materialsRes.data || []).map((row) => [String(row.id), String(row.name || "")]));
+  const locationNames = new Map((locationsRes.data || []).map((row) => [String(row.id), String(row.name || "")]));
 
   return {
-    valuation,
-    grand: valuation.reduce((sum, row) => sum + row.totalValue, 0),
-    usage: Array.from(usageMap.entries()).sort((a, b) => b[1].value - a[1].value),
-    shrinkage,
+    valuation: (summary.valuation || []).map((row) => ({
+      location: row.location,
+      type: row.type,
+      totalQty: Number(row.totalQty || 0),
+      totalValue: Number(row.totalValue || 0),
+    })),
+    grand: Number(summary.grand || 0),
+    usage: (summary.usage || []).map((row) => [
+      row.project,
+      { qty: Number(row.qty || 0), value: Number(row.value || 0) },
+    ] as [string, { qty: number; value: number }]),
+    shrinkage: shrinkRows.map((tx) => ({
+      ...tx,
+      materialName: materialNames.get(tx.material_id) || "Unknown",
+      locationName: tx.from_location_id ? locationNames.get(tx.from_location_id) || "" : "",
+    })),
   };
 }
 
