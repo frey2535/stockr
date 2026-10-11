@@ -538,18 +538,11 @@ export async function listCatalog(
   if (error) throw new Error(error.message);
   const rows = (data || []).map(mapMaterial);
 
-  const [cats, subs, inv] = await Promise.all([
-    selectAllForCompany<{ category: string | null }>(supabase, "stockr_materials", companyId, "category"),
-    selectAllMatching<{ sub_category: string | null }>(
-      (from, to) =>
-        supabase
-          .from("stockr_materials")
-          .select("sub_category")
-          .eq("company_id", companyId)
-          .not("sub_category", "is", null)
-          .range(from, to),
-      "subcategories",
-    ),
+  const [facetsRes, inv] = await Promise.all([
+    supabase.rpc("stockr_catalog_facets", {
+      p_company_id: companyId,
+      p_category: category || null,
+    }),
     rows.length
       ? supabase
           .from("stockr_inventory")
@@ -561,7 +554,17 @@ export async function listCatalog(
           )
       : Promise.resolve({ data: [], error: null }),
   ]);
+  if (facetsRes.error) {
+    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
+      throw new Error("Production catalog scale migration is required before loading catalog filters.");
+    }
+    throw new Error(facetsRes.error.message);
+  }
 
+  const facets = (facetsRes.data || {}) as {
+    categories?: string[];
+    subcategories?: string[];
+  };
   const onHandMap: Record<string, number> = {};
   for (const row of inv.data || []) {
     onHandMap[row.material_id] = (onHandMap[row.material_id] || 0) + Number(row.quantity);
@@ -570,8 +573,8 @@ export async function listCatalog(
   return {
     rows,
     total: count || 0,
-    categories: Array.from(new Set(cats.map((row) => row.category).filter(Boolean))) as string[],
-    subcategories: Array.from(new Set(subs.map((item) => item.sub_category).filter(Boolean))) as string[],
+    categories: facets.categories || [],
+    subcategories: facets.subcategories || [],
     onHand: onHandMap,
   };
 }
