@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { materialColumnsToOmit } from "./material-columns.ts";
 
 function bumpQty(
   inventory: { id: string; material_id: string; location_id: string; quantity: number }[],
@@ -26,4 +27,23 @@ test("bumping one SKU leaves the other SKU untouched", () => {
   );
   assert.equal(next.find((row) => row.material_id === "mat_screw")?.quantity, 50);
   assert.equal(next.find((row) => row.material_id === "mat_wire")?.quantity, 8);
+});
+
+test("omits mpn when PostgREST reports a missing npm or mpn column", () => {
+  assert.deepEqual(
+    materialColumnsToOmit("Could not find the 'npm' column of 'stockr_materials' in the schema cache"),
+    ["mpn"],
+  );
+  assert.deepEqual(
+    materialColumnsToOmit("Could not find the 'mpn' column of 'stockr_materials' in the schema cache"),
+    ["mpn"],
+  );
+});
+
+test("omits identity columns when the schema cache error has no column name", () => {
+  assert.deepEqual(materialColumnsToOmit("Could not find the column in the schema cache"), [
+    "mpn",
+    "upc",
+    "supplier_number",
+  ]);
 });

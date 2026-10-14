@@ -2,6 +2,8 @@ import { createEmptyState } from "./seed";
 import { applyCommand, type StoreCommand } from "./mutations";
 import { isSupabaseConfigured } from "./db-config";
 import { encodeStateForPersist } from "./persist-state";
+import { materialColumnsToOmit } from "./material-columns";
+import { isOpsBlob, OPS_BLOB_ID, OPS_BLOB_MARKER, opsFromProjects } from "./ops-state";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllForCompanySafe } from "./supabase-page";
 import { encodeToolsForPersist, isToolsBlob, mergeToolLists, toolsFromProjects } from "./tools-state";
@@ -24,8 +26,8 @@ function throwIfError(error: { message: string } | null, action: string) {
   if (error) throw new Error(`${action}: ${error.message}`);
 }
 
-function materialRow(companyId: string, material: Material) {
-  return {
+function materialRow(companyId: string, material: Material, omit: string[] = []) {
+  const row: Record<string, unknown> = {
     id: material.id,
     company_id: companyId,
     name: material.name,
@@ -37,14 +39,54 @@ function materialRow(companyId: string, material: Material) {
     unit: material.unit || "each",
     unit_cost: material.unit_cost ?? null,
     barcode: material.barcode || "",
-    mpn: material.mpn || "",
-    upc: material.upc || "",
-    supplier_number: material.supplier_number || "",
     reorder_point: material.reorder_point ?? null,
     min_stock_level: material.min_stock_level ?? null,
     image_url: material.image_url || "",
-    aliases: material.aliases || [],
   };
+  if (!omit.includes("mpn")) row.mpn = material.mpn || "";
+  if (!omit.includes("upc")) row.upc = material.upc || "";
+  if (!omit.includes("supplier_number")) row.supplier_number = material.supplier_number || "";
+  if (!omit.includes("aliases")) row.aliases = material.aliases || [];
+  return row;
+}
+
+async function upsertMaterialRow(companyId: string, material: Material) {
+  const supabase = getSupabaseAdmin();
+  let omit: string[] = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { error } = await supabase.from("stockr_materials").upsert(materialRow(companyId, material, omit));
+    if (!error) return true;
+    const next = materialColumnsToOmit(error.message);
+    if (!next.length || next.every((column) => omit.includes(column))) {
+      console.error("Save material", error.message);
+      return false;
+    }
+    omit = [...new Set([...omit, ...next])];
+  }
+  return false;
+}
+
+async function persistCatalogExtras(companyId: string, material: Material) {
+  if (!material.mpn && !material.upc && !material.supplier_number) return;
+  const supabase = getSupabaseAdmin();
+  const projects = await selectAllForCompanySafe<Project>(supabase, "stockr_projects", companyId);
+  const current = opsFromProjects(projects, { stockRules: [], catalogIds: [] });
+  const extras = current.catalogIds.filter((row) => row.id !== material.id);
+  extras.push({
+    id: material.id,
+    mpn: material.mpn || "",
+    upc: material.upc || "",
+    supplier_number: material.supplier_number || "",
+  });
+  const blobId = projects.find(isOpsBlob)?.id || OPS_BLOB_ID;
+  const { error } = await supabase.from("stockr_projects").upsert({
+    id: blobId,
+    company_id: companyId,
+    name: JSON.stringify({ stockRules: current.stockRules, catalogIds: extras }),
+    project_number: OPS_BLOB_MARKER,
+    status: "completed",
+  });
+  if (error) console.error("Save catalog extras", error.message);
 }
 
 function toolRow(companyId: string, tool: Tool, includeExtras = true) {
@@ -321,8 +363,13 @@ async function persistMaterial(companyId: string, material: Partial<Material> & 
     return fail(result.error || "Could not save the material.");
   }
   const saved = result.created as Material;
-  const { error } = await supabase.from("stockr_materials").upsert(materialRow(companyId, saved));
-  throwIfError(error, "Save material");
+  const savedRow = await upsertMaterialRow(companyId, saved);
+  if (!savedRow) return fail("Could not save the material.");
+  try {
+    await persistCatalogExtras(companyId, saved);
+  } catch (error) {
+    console.error("Save catalog extras", error instanceof Error ? error.message : error);
+  }
   return { created: saved };
 }
 
