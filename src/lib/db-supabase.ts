@@ -781,7 +781,7 @@ export async function ensureBuildrSsoIdentity(input: BuildrSsoBootstrapInput) {
       password_hash: passwordHash,
     });
     throwIfError(userInsert.error, "Create Stockr user from Buildr SSO");
-    user = { id: userId, email, name: displayName, password_hash: passwordHash, created_at: "" };
+    user = { id: userId, email, name: displayName, password_hash: passwordHash };
   } else if (passwordHash) {
     const { error } = await supabase
       .from("stockr_users")
