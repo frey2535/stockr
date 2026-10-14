@@ -1324,3 +1324,315 @@ $;
 revoke all on function stockr_set_cycle_count_line(text, text, text, text, numeric) from public;
 grant execute on function stockr_set_cycle_count_line(text, text, text, text, numeric) to service_role;
 
+
+
+-- Purchasing integrity: transaction-safe PO creation and replay-safe receiving.
+-- Safe to run more than once.
+
+create or replace function stockr_create_purchase_order(
+  p_company_id text,
+  p_po_id text,
+  p_po_number text,
+  p_supplier text,
+  p_expected_delivery text,
+  p_lines jsonb,
+  p_created_at timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  line_row jsonb;
+  v_material_id text;
+  v_expected numeric;
+  v_received numeric;
+  v_unit_cost numeric;
+begin
+  if nullif(trim(p_po_number), '') is null then
+    raise exception 'PO number is required.';
+  end if;
+
+  if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'At least one purchase-order line is required.';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(p_company_id || ':' || lower(trim(p_po_number))));
+
+  if exists (
+    select 1
+      from stockr_purchase_orders
+      where company_id = p_company_id
+        and lower(trim(po_number)) = lower(trim(p_po_number))
+  ) then
+    raise exception 'A purchase order with this PO number already exists.';
+  end if;
+
+  for line_row in select value from jsonb_array_elements(p_lines)
+  loop
+    v_material_id := line_row->>'material_id';
+    v_expected := coalesce(nullif(line_row->>'expected_quantity', '')::numeric, 0);
+    v_received := coalesce(nullif(line_row->>'received_quantity', '')::numeric, 0);
+    v_unit_cost := nullif(line_row->>'unit_cost', '')::numeric;
+
+    if not exists (
+      select 1 from stockr_materials
+      where id = v_material_id
+        and company_id = p_company_id
+    ) then
+      raise exception 'Purchase-order material does not belong to this company.';
+    end if;
+
+    if v_expected <= 0 then
+      raise exception 'Expected quantity must be greater than zero.';
+    end if;
+
+    if v_received < 0 or v_received > v_expected then
+      raise exception 'Received quantity is invalid.';
+    end if;
+
+    if v_unit_cost is not null and v_unit_cost < 0 then
+      raise exception 'Unit cost cannot be negative.';
+    end if;
+  end loop;
+
+  insert into stockr_purchase_orders (
+    id, company_id, po_number, supplier, expected_delivery, status, created_at
+  ) values (
+    p_po_id,
+    p_company_id,
+    trim(p_po_number),
+    coalesce(p_supplier, ''),
+    nullif(p_expected_delivery, ''),
+    'ordered',
+    coalesce(p_created_at, clock_timestamp())
+  );
+
+  insert into stockr_purchase_order_lines (
+    purchase_order_id,
+    company_id,
+    material_id,
+    expected_quantity,
+    received_quantity,
+    unit_cost
+  )
+  select
+    p_po_id,
+    p_company_id,
+    line_row->>'material_id',
+    (line_row->>'expected_quantity')::numeric,
+    coalesce(nullif(line_row->>'received_quantity', '')::numeric, 0),
+    nullif(line_row->>'unit_cost', '')::numeric
+  from jsonb_array_elements(p_lines) line_row;
+end;
+$$;
+
+revoke all on function stockr_create_purchase_order(
+  text, text, text, text, text, jsonb, timestamptz
+) from public;
+grant execute on function stockr_create_purchase_order(
+  text, text, text, text, text, jsonb, timestamptz
+) to service_role;
+
+create or replace function stockr_receive_purchase_order_once(
+  p_company_id text,
+  p_operation_key text,
+  p_po_id text,
+  p_location_id text,
+  p_receipts jsonb,
+  p_created_by text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  inserted integer;
+begin
+  if nullif(trim(p_operation_key), '') is null then
+    raise exception 'Operation key required.';
+  end if;
+
+  insert into stockr_operation_keys (company_id, operation_key, operation_type)
+  values (p_company_id, p_operation_key, 'purchase_order_receive')
+  on conflict (company_id, operation_key) do nothing;
+
+  get diagnostics inserted = row_count;
+  if inserted = 0 then
+    return jsonb_build_object('applied', false, 'duplicate', true);
+  end if;
+
+  perform stockr_receive_purchase_order(
+    p_company_id,
+    p_po_id,
+    p_location_id,
+    p_receipts,
+    p_created_by
+  );
+
+  return jsonb_build_object('applied', true, 'duplicate', false);
+end;
+$$;
+
+revoke all on function stockr_receive_purchase_order_once(
+  text, text, text, text, jsonb, text
+) from public;
+grant execute on function stockr_receive_purchase_order_once(
+  text, text, text, text, jsonb, text
+) to service_role;
+
+notify pgrst, 'reload schema';
+
+
+-- Large-tenant dashboard aggregation.
+-- Keeps dashboard totals/valuation/location summaries/alerts inside Postgres instead of
+-- loading the entire company catalog and inventory ledger into the application process.
+
+create or replace function stockr_dashboard_summary(p_company_id text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+with inventory_totals as (
+  select
+    coalesce(sum(i.quantity), 0)::numeric as total_items,
+    coalesce(sum(i.quantity * coalesce(m.unit_cost, 0)), 0)::numeric as total_value
+  from stockr_inventory i
+  join stockr_materials m
+    on m.id = i.material_id
+   and m.company_id = p_company_id
+  where i.company_id = p_company_id
+),
+material_count as (
+  select count(*)::integer as count
+  from stockr_materials
+  where company_id = p_company_id
+),
+location_rows as (
+  select
+    l.id,
+    l.name,
+    l.type,
+    l.description,
+    l.assigned_to,
+    coalesce(sum(case when i.quantity > 0 then i.quantity else 0 end), 0)::numeric as units,
+    count(distinct case when i.quantity > 0 then i.material_id end)::integer as material_count
+  from stockr_locations l
+  left join stockr_inventory i
+    on i.company_id = p_company_id
+   and i.location_id = l.id
+  where l.company_id = p_company_id
+  group by l.id, l.name, l.type, l.description, l.assigned_to
+),
+location_summary as (
+  select
+    coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', id,
+        'name', name,
+        'type', type,
+        'description', description,
+        'assigned_to', assigned_to,
+        'units', units,
+        'materialCount', material_count
+      )
+      order by name
+    ), '[]'::jsonb) as rows,
+    count(*) filter (where type = 'vehicle')::integer as vehicles,
+    count(*) filter (where type = 'warehouse')::integer as warehouses
+  from location_rows
+),
+material_totals as (
+  select
+    m.id,
+    m.name,
+    m.description,
+    m.category,
+    m.sub_category,
+    m.manufacturer,
+    m.supplier,
+    m.unit,
+    m.unit_cost,
+    m.barcode,
+    m.mpn,
+    m.upc,
+    m.supplier_number,
+    m.reorder_point,
+    m.min_stock_level,
+    m.image_url,
+    m.aliases,
+    coalesce(sum(i.quantity), 0)::numeric as total_qty
+  from stockr_materials m
+  left join stockr_inventory i
+    on i.company_id = p_company_id
+   and i.material_id = m.id
+  where m.company_id = p_company_id
+    and (m.reorder_point is not null or m.min_stock_level is not null)
+  group by
+    m.id, m.name, m.description, m.category, m.sub_category, m.manufacturer,
+    m.supplier, m.unit, m.unit_cost, m.barcode, m.mpn, m.upc,
+    m.supplier_number, m.reorder_point, m.min_stock_level, m.image_url, m.aliases
+),
+alert_rows as (
+  select *
+  from (
+    select
+      mt.*,
+      case
+        when mt.min_stock_level is not null and mt.total_qty <= mt.min_stock_level then 'critical'
+        when mt.reorder_point is not null and mt.total_qty <= mt.reorder_point then 'reorder'
+        else null
+      end as status
+    from material_totals mt
+  ) ranked
+  where status is not null
+  order by
+    case status when 'critical' then 0 else 1 end,
+    name
+  limit 25
+),
+alerts as (
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id', id,
+      'name', name,
+      'description', description,
+      'category', category,
+      'sub_category', sub_category,
+      'manufacturer', manufacturer,
+      'supplier', supplier,
+      'unit', unit,
+      'unit_cost', unit_cost,
+      'barcode', barcode,
+      'mpn', mpn,
+      'upc', upc,
+      'supplier_number', supplier_number,
+      'reorder_point', reorder_point,
+      'min_stock_level', min_stock_level,
+      'image_url', image_url,
+      'aliases', aliases,
+      'totalQty', total_qty,
+      'status', status
+    )
+  ), '[]'::jsonb) as rows
+  from alert_rows
+)
+select jsonb_build_object(
+  'totalItems', (select total_items from inventory_totals),
+  'value', (select total_value from inventory_totals),
+  'materialCount', (select count from material_count),
+  'vehicles', (select vehicles from location_summary),
+  'warehouses', (select warehouses from location_summary),
+  'locations', (select rows from location_summary),
+  'alerts', (select rows from alerts)
+);
+$$;
+
+revoke all on function stockr_dashboard_summary(text) from public;
+grant execute on function stockr_dashboard_summary(text) to service_role;
+
+notify pgrst, 'reload schema';
