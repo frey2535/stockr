@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Package, Printer, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { BulkMaterialImport } from "@/components/bulk-material-import";
+import { CatalogFileImport } from "@/components/catalog-file-import";
 import { PageHeader } from "@/components/page-header";
 import { StockStatusBadge } from "@/components/stock-status-badge";
 import { EmptyState } from "@/components/empty-state";
@@ -388,10 +389,15 @@ export default function CatalogPage() {
         </DialogContent>
       </Dialog>
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Bulk create catalog items</DialogTitle>
           </DialogHeader>
+          <CatalogFileImport
+            onDone={async () => {
+              await reload();
+            }}
+          />
           <BulkMaterialImport
             materials={filtered}
             onCreate={upsertMaterial}
@@ -400,7 +406,8 @@ export default function CatalogPage() {
               setBulkOpen(false);
               await reload();
             }}
-            label="Scan unknown barcodes or upload a CSV. Items not in the catalog are created."
+            label="Scan an unknown barcode to create one item manually."
+            allowCsv={false}
           />
         </DialogContent>
       </Dialog>
