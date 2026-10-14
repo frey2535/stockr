@@ -1,7 +1,6 @@
 import { getCompanyState } from "./db";
 import { isSupabaseConfigured } from "./db-config";
 import { uid } from "./id";
-import { persistStoreCommand } from "./persist-command";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllMatching } from "./supabase-page";
 import type {
@@ -218,35 +217,31 @@ export async function createReservation(companyId: string, actor: string, input:
 }) {
   if (!isSupabaseConfigured()) throw new Error("Reservations require the production Supabase database.");
   const db = getSupabaseAdmin();
-  await requireOwnedId(db, "stockr_materials", companyId, input.materialId, "Material");
-  await requireOwnedId(db, "stockr_locations", companyId, input.locationId, "Location");
-  if (input.projectId) {
-    await requireOwnedId(db, "stockr_projects", companyId, input.projectId, "Project");
+  const reservationId = uid("res");
+  const { error } = await db.rpc("stockr_create_inventory_reservation", {
+    p_company_id: companyId,
+    p_reservation_id: reservationId,
+    p_material_id: input.materialId,
+    p_location_id: input.locationId,
+    p_project_id: input.projectId || null,
+    p_quantity: Number(input.quantity),
+    p_notes: input.notes || "",
+    p_created_by: actor,
+  });
+  if (error) {
+    if (/stockr_create_inventory_reservation|does not exist|schema cache/i.test(error.message)) {
+      throw new Error("Production reservation integrity migration is required before creating reservations.");
+    }
+    throw new Error(error.message);
   }
-  const state = await getCompanyState(companyId);
-  const onHand = state.inventory.find(
-    (row) => row.material_id === input.materialId && row.location_id === input.locationId,
-  )?.quantity || 0;
-  const reserved = await getReservedQuantity(companyId, input.materialId, input.locationId);
-  const available = Math.max(0, onHand - reserved);
-  if (input.quantity <= 0) throw new Error("Reservation quantity must be greater than zero.");
-  if (input.quantity > available) throw new Error(`Only ${available} are available after existing reservations.`);
-
-  const row: InventoryReservation = {
-    id: uid("res"),
-    company_id: companyId,
-    material_id: input.materialId,
-    location_id: input.locationId,
-    project_id: input.projectId || null,
-    quantity: input.quantity,
-    status: "active",
-    notes: input.notes?.trim() || null,
-    created_by: actor,
-    created_at: new Date().toISOString(),
-  };
-  const { error } = await db.from("stockr_inventory_reservations").insert(row);
-  if (error) throw error;
-  return row;
+  const { data, error: loadError } = await db
+    .from("stockr_inventory_reservations")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("id", reservationId)
+    .single();
+  if (loadError) throw loadError;
+  return data as InventoryReservation;
 }
 
 export async function releaseReservation(companyId: string, reservationId: string) {
@@ -400,72 +395,32 @@ export async function startCycleCount(companyId: string, actor: string, input: {
 
 export async function updateCycleCountLine(companyId: string, sessionId: string, materialId: string, countedQuantity: number) {
   if (!isSupabaseConfigured()) return;
-  const db = getSupabaseAdmin();
-  await requireOwnedId(db, "stockr_materials", companyId, materialId, "Material");
-  await requireOwnedId(db, "stockr_cycle_count_sessions", companyId, sessionId, "Cycle count");
-  const { data: existing, error: lookupError } = await db
-    .from("stockr_cycle_count_lines")
-    .select("id")
-    .eq("company_id", companyId)
-    .eq("session_id", sessionId)
-    .eq("material_id", materialId)
-    .maybeSingle();
-  if (lookupError) throw lookupError;
-  if (existing) {
-    const { error } = await db.from("stockr_cycle_count_lines").update({ counted_quantity: countedQuantity }).eq("id", existing.id);
-    if (error) throw error;
-  } else {
-    const { error } = await db.from("stockr_cycle_count_lines").insert({
-      id: uid("ctl"),
-      session_id: sessionId,
-      company_id: companyId,
-      material_id: materialId,
-      expected_quantity: 0,
-      counted_quantity: countedQuantity,
-    });
-    if (error) throw error;
+  const { error } = await getSupabaseAdmin().rpc("stockr_set_cycle_count_line", {
+    p_company_id: companyId,
+    p_session_id: sessionId,
+    p_line_id: uid("ctl"),
+    p_material_id: materialId,
+    p_counted_quantity: Number(countedQuantity),
+  });
+  if (error) {
+    if (/stockr_set_cycle_count_line|does not exist|schema cache/i.test(error.message)) {
+      throw new Error("Production cycle-count integrity migration is required before editing counts.");
+    }
+    throw new Error(error.message);
   }
 }
 
 export async function submitCycleCount(companyId: string, actor: string, sessionId: string) {
   if (!isSupabaseConfigured()) throw new Error("Cycle counts require the production Supabase database.");
-  const db = getSupabaseAdmin();
-  const { data: session, error: sessionError } = await db
-    .from("stockr_cycle_count_sessions")
-    .select("*")
-    .eq("company_id", companyId)
-    .eq("id", sessionId)
-    .single();
-  if (sessionError) throw sessionError;
-  const { data: lines, error: linesError } = await db
-    .from("stockr_cycle_count_lines")
-    .select("*")
-    .eq("company_id", companyId)
-    .eq("session_id", sessionId);
-  if (linesError) throw linesError;
-
-  for (const line of lines || []) {
-    if (line.counted_quantity == null) continue;
-    const result = await persistStoreCommand(
-      companyId,
-      {
-        type: "applyAction",
-        action: {
-          type: "count",
-          materialId: line.material_id,
-          quantity: Number(line.counted_quantity),
-          toLocationId: session.location_id,
-          notes: `Cycle count ${sessionId}`,
-        },
-      },
-      actor,
-    );
-    if (result.error) throw new Error(result.error);
+  const { error } = await getSupabaseAdmin().rpc("stockr_submit_cycle_count_once", {
+    p_company_id: companyId,
+    p_session_id: sessionId,
+    p_created_by: actor,
+  });
+  if (error) {
+    if (/stockr_submit_cycle_count_once|does not exist|schema cache/i.test(error.message)) {
+      throw new Error("Production cycle-count integrity migration is required before submitting counts.");
+    }
+    throw new Error(error.message);
   }
-  const { error: updateError } = await db
-    .from("stockr_cycle_count_sessions")
-    .update({ status: "submitted", submitted_at: new Date().toISOString() })
-    .eq("company_id", companyId)
-    .eq("id", sessionId);
-  if (updateError) throw updateError;
 }

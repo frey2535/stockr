@@ -8,6 +8,7 @@ import { encodeToolsForPersist, isToolsBlob, mergeToolLists, toolsFromProjects }
 import { uid } from "./id";
 import { needsProject } from "./tx";
 import { assertTenantWriteAllowed } from "./tenant-write-policy";
+import { inventoryOperationKey, prepareInventoryBatch } from "./inventory-operation-policy";
 import type { AccessCode, InventoryAction, Material, Project, PurchaseOrder, Tool, Transaction } from "./types";
 
 export type PersistResult = {
@@ -442,17 +443,8 @@ async function persistOnSupabase(
 
   if (command.type === "applyBulkActions") {
     if (!command.actions.length) return fail("Add at least one line.");
-    const operationId = command.actions.find((action) => action.operationId)?.operationId || uid("op");
-    const actions = command.actions.map((action) => ({
-      tx_id: uid("tx"),
-      type: action.type,
-      material_id: action.materialId,
-      quantity: Number(action.quantity),
-      from_location_id: action.fromLocationId || null,
-      to_location_id: action.toLocationId || null,
-      project: action.project || "",
-      notes: action.notes || "",
-    }));
+    const operationId = inventoryOperationKey(command.actions, uid("op"));
+    const actions = prepareInventoryBatch(command.actions, () => uid("tx"));
     const { error } = await supabase.rpc("stockr_apply_inventory_batch_once", {
       p_company_id: companyId,
       p_operation_key: operationId,
