@@ -36,3 +36,16 @@ test("scopes by company when that field exists", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0]?.name, "B");
 });
+
+
+test("rejects all rows if none match the requested company", () => {
+  assert.deepEqual(scopeProjects([{ id: "other", company_id: "co_2" }], "co_1"), []);
+});
+
+test("rejects rows missing tenant identifiers", () => {
+  assert.deepEqual(scopeProjects([{ id: "unknown" }], "co_1"), []);
+});
+
+test("rejects project rows when requested tenant is empty", () => {
+  assert.deepEqual(scopeProjects([{ id: "a", company_id: "co_1" }], ""), []);
+});

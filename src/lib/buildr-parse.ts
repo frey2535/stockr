@@ -83,10 +83,10 @@ export function unwrapProjects(payload: unknown): RemoteProject[] {
 
 export function scopeProjects(rows: RemoteProject[], companyId: string) {
   const id = companyId.trim();
-  if (!id) return rows;
+  if (!id) return [];
   const matches = rows.filter((row) => {
     const cid = row.company_id || row.companyId || row.company?.id;
     return cid != null && String(cid) === id;
   });
-  return matches.length ? matches : rows;
+  return matches;
 }

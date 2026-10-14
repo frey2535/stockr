@@ -211,6 +211,7 @@ export const WORKSPACE_PAGE_SIZE = 50;
 
 export type InventoryAction = {
   type: TxType;
+  operationId?: string;
   materialId: string;
   quantity: number;
   fromLocationId?: string | null;
