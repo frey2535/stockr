@@ -5,8 +5,8 @@ export type DayOneCatalogExistingRow = {
   company_id: string;
 };
 
-export function shouldBootstrapDayOneCatalog(companyId: string) {
-  return companyId === DAY_ONE_COMPANY_ID;
+export function shouldBootstrapDayOneCatalog(companyId: string, buildrCompanyId = "") {
+  return companyId === DAY_ONE_COMPANY_ID || buildrCompanyId === DAY_ONE_COMPANY_ID;
 }
 
 export function dayOneMaterialId(item: Pick<DayOneCatalogSeed, "sku">) {
@@ -17,17 +17,22 @@ export function dayOneExpectedIds() {
   return DAY_ONE_CATALOG.map(dayOneMaterialId);
 }
 
-export function dayOneMissingItems(existingRows: DayOneCatalogExistingRow[]) {
-  const collisions = existingRows.filter(
-    (row) => row.company_id !== DAY_ONE_COMPANY_ID,
+export function dayOneMissingItems(
+  existingRows: DayOneCatalogExistingRow[],
+  targetCompanyId: string,
+) {
+  const expected = new Set(dayOneExpectedIds());
+  const relevantRows = existingRows.filter((row) => expected.has(row.id));
+  const collisions = relevantRows.filter(
+    (row) => row.company_id !== targetCompanyId,
   );
   if (collisions.length) {
     throw new Error(
-      "Day One catalog tenant isolation violation: reserved catalog IDs exist outside co_dayoneelectric.",
+      "Day One catalog tenant isolation violation: reserved catalog IDs exist outside the resolved Day One workspace.",
     );
   }
 
-  const existingIds = new Set(existingRows.map((row) => row.id));
+  const existingIds = new Set(relevantRows.map((row) => row.id));
   return DAY_ONE_CATALOG.filter((item) => !existingIds.has(dayOneMaterialId(item)));
 }
 
