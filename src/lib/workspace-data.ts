@@ -28,9 +28,64 @@ import type {
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
 import { mergeToolLists, toolsFromProjects } from "./tools-state";
+import { DAY_ONE_CATALOG, DAY_ONE_CATALOG_COUNT, DAY_ONE_COMPANY_ID } from "./dayone-catalog";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
+}
+
+let dayOneBootstrapPromise: Promise<void> | null = null;
+
+async function ensureDayOneCatalog(companyId: string) {
+  if (companyId !== DAY_ONE_COMPANY_ID || !isSupabaseConfigured()) return;
+  if (dayOneBootstrapPromise) return dayOneBootstrapPromise;
+
+  dayOneBootstrapPromise = (async () => {
+    const db = getSupabaseAdmin();
+    const { data, error } = await db
+      .from("stockr_materials")
+      .select("id")
+      .eq("company_id", DAY_ONE_COMPANY_ID)
+      .like("id", "dayone_stk_e_%");
+    if (error) throw new Error(error.message);
+
+    const existing = new Set((data || []).map((row) => String(row.id)));
+    if (existing.size >= DAY_ONE_CATALOG_COUNT) return;
+
+    const missing = DAY_ONE_CATALOG.filter((item) => !existing.has("dayone_" + item.sku.toLowerCase().replace(/-/g, "_")));
+    for (let index = 0; index < missing.length; index += 100) {
+      const batch = missing.slice(index, index + 100).map((item) => ({
+        id: "dayone_" + item.sku.toLowerCase().replace(/-/g, "_"),
+        company_id: DAY_ONE_COMPANY_ID,
+        name: item.name,
+        description: [item.variant ? "Variant: " + item.variant : "", "Generic taxonomy entry - verify manufacturer SKU", "Verification: Unverified"]
+          .filter(Boolean)
+          .join(" | "),
+        category: item.category,
+        sub_category: item.subCategory,
+        manufacturer: "",
+        supplier: "",
+        unit: item.unit === "EA" ? "each" : item.unit === "FT" ? "ft" : item.unit === "STICK" ? "stick" : item.unit.toLowerCase(),
+        unit_cost: null,
+        barcode: "",
+        mpn: "",
+        upc: "",
+        supplier_number: "",
+        reorder_point: null,
+        min_stock_level: null,
+        image_url: "",
+        aliases: [item.sku, item.variant].filter(Boolean),
+      }));
+      const { error: insertError } = await db.from("stockr_materials").insert(batch);
+      if (insertError && !/duplicate key/i.test(insertError.message)) throw new Error(insertError.message);
+    }
+  })();
+
+  try {
+    await dayOneBootstrapPromise;
+  } finally {
+    dayOneBootstrapPromise = null;
+  }
 }
 
 function sanitizeFilter(value: string) {
@@ -529,6 +584,8 @@ export async function listCatalog(
     };
   }
 
+  await ensureDayOneCatalog(companyId);
+
   const supabase = getSupabaseAdmin();
   let query = supabase.from("stockr_materials").select("*", { count: "exact" }).eq("company_id", companyId).order("name");
   if (category) query = query.eq("category", category);
@@ -554,17 +611,33 @@ export async function listCatalog(
           )
       : Promise.resolve({ data: [], error: null }),
   ]);
-  if (facetsRes.error) {
-    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
-      throw new Error("Production catalog scale migration is required before loading catalog filters.");
-    }
-    throw new Error(facetsRes.error.message);
-  }
-
-  const facets = (facetsRes.data || {}) as {
+  let facets = (facetsRes.data || {}) as {
     categories?: string[];
     subcategories?: string[];
   };
+  if (facetsRes.error) {
+    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
+      const fallback = await selectAllForCompanySafe<{ category: string | null; sub_category: string | null }>(
+        supabase,
+        "stockr_materials",
+        companyId,
+        "category, sub_category",
+      );
+      facets = {
+        categories: Array.from(new Set(fallback.map((row) => row.category).filter(Boolean))) as string[],
+        subcategories: Array.from(
+          new Set(
+            fallback
+              .filter((row) => !category || row.category === category)
+              .map((row) => row.sub_category)
+              .filter(Boolean),
+          ),
+        ) as string[],
+      };
+    } else {
+      throw new Error(facetsRes.error.message);
+    }
+  }
   const onHandMap: Record<string, number> = {};
   for (const row of inv.data || []) {
     onHandMap[row.material_id] = (onHandMap[row.material_id] || 0) + Number(row.quantity);
