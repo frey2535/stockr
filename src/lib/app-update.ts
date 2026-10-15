@@ -1,5 +1,6 @@
+import { invalidateApiCache } from "./api-cache";
 import { isReleaseSha, shouldAnnounceAppliedUpdate, shouldOfferUpdate } from "./build-version";
-import { wantsUpdatePreview as previewFromSearch } from "./update-preview";
+import { nextRefreshUrl, wantsUpdatePreview as previewFromSearch } from "./update-preview";
 
 export const UPDATE_EVENT = "stockr-update-available";
 export const SEEN_SHA_KEY = "stockr_build_sha";
@@ -79,13 +80,17 @@ export function wantsUpdatePreview(search = typeof window === "undefined" ? "" :
   return previewFromSearch(search);
 }
 
-export async function reloadFresh(targetSha?: string) {
+async function clearStaleClientState() {
+  invalidateApiCache();
+  window.__stockrPendingUpdate = undefined;
   try {
-    sessionStorage.setItem(UPDATE_IN_PROGRESS_KEY, String(Date.now()));
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
   } catch {
-    /* private mode */
+    /* service worker cleanup is best-effort */
   }
-  if (targetSha) writeSeenSha(targetSha);
   try {
     if ("caches" in window) {
       const keys = await caches.keys();
@@ -94,11 +99,24 @@ export async function reloadFresh(targetSha?: string) {
   } catch {
     /* cache clearing is best-effort */
   }
+}
+
+export async function reloadFresh(targetSha?: string) {
+  try {
+    sessionStorage.setItem(UPDATE_IN_PROGRESS_KEY, String(Date.now()));
+  } catch {
+    /* private mode */
+  }
+  if (targetSha) writeSeenSha(targetSha);
+  await clearStaleClientState();
   const nextUrl = new URL(window.location.href);
-  nextUrl.searchParams.delete("update_now");
-  nextUrl.searchParams.set("t", String(Date.now()));
-  if (targetSha) nextUrl.searchParams.set("build", targetSha);
-  window.location.replace(nextUrl.toString());
+  const refreshed = nextRefreshUrl(nextUrl.toString(), Date.now(), targetSha);
+  window.location.replace(refreshed);
+}
+
+export async function refreshApp() {
+  const remote = await readRemoteVersion();
+  await reloadFresh(isReleaseSha(remote) ? remote : undefined);
 }
 
 export function markUpdateSeen(sha: string) {

@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
 import { prefetchTab } from "@/lib/tab-prefetch";
+import { AppRefreshButton } from "@/components/app-refresh-button";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 
 const NAV = [
@@ -154,6 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               ) : null}
             </div>
           ) : null}
+          <AppRefreshButton />
           <button
             type="button"
             onClick={signOut}
@@ -174,6 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <BrandMark compact />
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <AppRefreshButton compact />
           <ThemeToggle />
           <button
             type="button"
@@ -214,6 +217,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             {account ? <WorkspaceSwitcher account={account} /> : null}
+            <AppRefreshButton className="mb-2 bg-muted" />
             <div className="grid grid-cols-1 gap-2">
               {moreNav.map((item) => {
                 const Icon = item.icon;
