@@ -8,9 +8,15 @@ export type CsvMaterialRow = {
   upc: string;
   supplier_number: string;
   category: string;
+  sub_category: string;
+  description: string;
   manufacturer: string;
   supplier: string;
   unit_cost: number | null;
+  unit_cost_raw?: string;
+  reorder_point: number | null;
+  min_stock_level: number | null;
+  image_url: string;
   quantity: number;
 };
 
@@ -64,6 +70,11 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
   const qtyIdx = headerIndex(headers, ["qty", "quantity", "expected", "count"]);
   const unitIdx = headerIndex(headers, ["unit", "uom"]);
   const categoryIdx = headerIndex(headers, ["category", "cat"]);
+  const subCategoryIdx = headerIndex(headers, ["sub_category", "subcategory", "sub-category", "subcat"]);
+  const descriptionIdx = headerIndex(headers, ["description", "desc"]);
+  const reorderIdx = headerIndex(headers, ["reorder_point", "reorder", "reorder_level"]);
+  const minStockIdx = headerIndex(headers, ["min_stock_level", "min_stock", "minimum", "min"]);
+  const imageIdx = headerIndex(headers, ["image_url", "image", "photo_url"]);
   const mfrIdx = headerIndex(headers, ["manufacturer", "mfr", "brand"]);
   const supplierIdx = headerIndex(headers, ["supplier", "vendor"]);
   const costIdx = headerIndex(headers, ["unit_cost", "cost", "price"]);
@@ -77,6 +88,8 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
       const mpn = (mpnIdx >= 0 ? cells[mpnIdx] : "") || "";
       const supplier_number = (supplierNoIdx >= 0 ? cells[supplierNoIdx] : "") || "";
       const quantity = Number(qtyIdx >= 0 ? cells[qtyIdx] : cells[2] || 1) || 1;
+      const unitCostRaw = costIdx >= 0 ? String(cells[costIdx] || "").trim() : "";
+      const parsedUnitCost = unitCostRaw === "" ? null : Number(unitCostRaw);
       return {
         name: name || (barcode ? `Unknown Product - ${barcode}` : ""),
         barcode,
@@ -86,9 +99,15 @@ export function parseMaterialCsv(text: string): CsvMaterialRow[] {
         quantity,
         unit: (unitIdx >= 0 ? cells[unitIdx] : "each") || "each",
         category: (categoryIdx >= 0 ? cells[categoryIdx] : "") || "",
+        sub_category: (subCategoryIdx >= 0 ? cells[subCategoryIdx] : "") || "",
+        description: (descriptionIdx >= 0 ? cells[descriptionIdx] : "") || "",
         manufacturer: (mfrIdx >= 0 ? cells[mfrIdx] : "") || "",
         supplier: (supplierIdx >= 0 ? cells[supplierIdx] : "") || "",
-        unit_cost: costIdx >= 0 && cells[costIdx] ? Number(cells[costIdx]) || null : null,
+        unit_cost: parsedUnitCost != null && Number.isFinite(parsedUnitCost) ? parsedUnitCost : null,
+        unit_cost_raw: unitCostRaw,
+        reorder_point: reorderIdx >= 0 && cells[reorderIdx] ? Number(cells[reorderIdx]) : null,
+        min_stock_level: minStockIdx >= 0 && cells[minStockIdx] ? Number(cells[minStockIdx]) : null,
+        image_url: (imageIdx >= 0 ? cells[imageIdx] : "") || "",
       };
     })
     .filter((row) => row.name || row.barcode);
@@ -103,8 +122,13 @@ export function materialFromCsv(row: CsvMaterialRow): Partial<Material> {
     supplier_number: row.supplier_number,
     unit: row.unit || "each",
     category: row.category,
+    sub_category: row.sub_category,
+    description: row.description,
     manufacturer: row.manufacturer,
     supplier: row.supplier,
     unit_cost: row.unit_cost,
+    reorder_point: row.reorder_point,
+    min_stock_level: row.min_stock_level,
+    image_url: row.image_url,
   };
 }

@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "./db-config";
 import { uid } from "./id";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllMatching } from "./supabase-page";
+import { attachProcurement, assertRequestCanMoveInventory } from "./procurement";
 import type {
   CycleCountLine,
   CycleCountSession,
@@ -135,10 +136,13 @@ export async function getFieldOps(companyId: string): Promise<FieldOpsPayload> {
       zones,
       bins,
       reservations,
-      requests: requests.map((request) => ({
-        ...request,
-        lines: requestLines.filter((line) => line.request_id === request.id),
-      })),
+      requests: await attachProcurement(
+        companyId,
+        requests.map((request) => ({
+          ...request,
+          lines: requestLines.filter((line) => line.request_id === request.id),
+        })),
+      ),
       countSessions: sessions.map((session) => ({
         ...session,
         lines: countLines.filter((line) => line.session_id === session.id),
@@ -323,6 +327,7 @@ export async function setMaterialRequestStatus(
   status: MaterialRequest["status"],
 ) {
   if (!isSupabaseConfigured()) return;
+  await assertRequestCanMoveInventory(companyId, requestId, status);
   const { error } = await getSupabaseAdmin()
     .from("stockr_material_requests")
     .update({ status })

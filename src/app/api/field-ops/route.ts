@@ -3,7 +3,6 @@ import { requireAccount } from "@/lib/require-account";
 import { fieldOpsAccessError, type FieldOpsAction } from "@/lib/command-access";
 import {
   createBin,
-  createMaterialRequest,
   createReservation,
   createZone,
   getFieldOps,
@@ -13,6 +12,12 @@ import {
   submitCycleCount,
   updateCycleCountLine,
 } from "@/lib/field-ops";
+import {
+  authorizeRequestPurchasing,
+  collectPriceBaseline,
+  convertRequestToProcurement,
+  submitProcurementRequest,
+} from "@/lib/procurement";
 
 export const runtime = "nodejs";
 
@@ -63,11 +68,15 @@ export async function POST(request: Request) {
     } else if (body.action === "releaseReservation") {
       await releaseReservation(account.company.id, String(body.reservationId || ""));
     } else if (body.action === "createRequest") {
-      result = await createMaterialRequest(account.company.id, account.user.email, {
+      result = await submitProcurementRequest(account.company.id, account.user.email, {
+        requestType: body.requestType,
         projectId: body.projectId ? String(body.projectId) : undefined,
         destinationLocationId: body.destinationLocationId ? String(body.destinationLocationId) : undefined,
         priority: (body.priority as "normal" | "urgent" | "critical") || "normal",
         notes: body.notes ? String(body.notes) : undefined,
+        eventId: body.eventId ? String(body.eventId) : undefined,
+        buildrRequestId: body.buildrRequestId ? String(body.buildrRequestId) : undefined,
+        payloadCompanyId: body.companyId ? String(body.companyId) : undefined,
         lines: Array.isArray(body.lines)
           ? body.lines.map((line) => ({
               materialId: String((line as { materialId?: unknown }).materialId || ""),
@@ -75,6 +84,19 @@ export async function POST(request: Request) {
             }))
           : [],
       });
+    } else if (body.action === "authorizePurchasing") {
+      result = await authorizeRequestPurchasing(
+        account.company.id,
+        account.user.email,
+        String(body.requestId || ""),
+      );
+    } else if (body.action === "convertToProcurement") {
+      result = await convertRequestToProcurement(account.company.id, String(body.requestId || ""));
+    } else if (body.action === "collectPrices") {
+      const fieldOps = await getFieldOps(account.company.id);
+      const request = fieldOps.requests.find((row) => row.id === String(body.requestId || ""));
+      if (!request) throw new Error("Material request not found in this company workspace.");
+      result = await collectPriceBaseline(account.company.id, request, request.lines);
     } else if (body.action === "setRequestStatus") {
       await setMaterialRequestStatus(
         account.company.id,

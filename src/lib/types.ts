@@ -344,6 +344,53 @@ export type MaterialRequestStatus =
   | "fulfilled"
   | "cancelled";
 
+export type ProcurementRequestType = "QUOTE_ONLY" | "PROCUREMENT";
+
+export type PriceObservation = {
+  id: string;
+  company_id: string;
+  request_id: string;
+  line_id: string;
+  material_id: string;
+  supplier_id?: string | null;
+  supplier_name: string;
+  product_url?: string | null;
+  source_reference?: string | null;
+  observed_at: string;
+  mpn?: string | null;
+  upc?: string | null;
+  supplier_sku?: string | null;
+  unit?: string | null;
+  pack_qty?: number | null;
+  currency?: string | null;
+  unit_price: number | null;
+  availability?: string | null;
+  price_status: "verified" | "unavailable";
+  note?: string | null;
+};
+
+export type RfqJob = {
+  id: string;
+  company_id: string;
+  request_id: string;
+  supplier_id: string;
+  supplier_name: string;
+  status: "queued_for_official_rfq" | "awaiting_buildr" | "delivery_confirmed";
+  channel: "buildr_official";
+  created_at: string;
+  note: string;
+};
+
+export type LineAvailability = {
+  line_id: string;
+  material_id: string;
+  requested: number;
+  on_hand: number;
+  reserved: number;
+  available: number;
+  shortage: number;
+};
+
 export type MaterialRequest = {
   id: string;
   company_id: string;
@@ -354,6 +401,17 @@ export type MaterialRequest = {
   status: MaterialRequestStatus;
   notes?: string | null;
   created_at: string;
+  request_type?: ProcurementRequestType;
+  purchasing_authorized?: boolean;
+  authorization_id?: string | null;
+  authorization_by?: string | null;
+  converted_from_id?: string | null;
+  event_id?: string | null;
+  buildr_request_id?: string | null;
+  contract_version?: string;
+  observations?: PriceObservation[];
+  rfq_jobs?: RfqJob[];
+  availability?: LineAvailability[];
 };
 
 export type MaterialRequestLine = {

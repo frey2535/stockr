@@ -32,6 +32,15 @@ create table if not exists stockr_tools (
 alter table stockr_tools add column if not exists tool_number text not null default '';
 alter table stockr_tools add column if not exists condition text not null default 'good';
 
+alter table stockr_material_requests add column if not exists request_type text not null default 'PROCUREMENT';
+alter table stockr_material_requests add column if not exists purchasing_authorized boolean not null default false;
+alter table stockr_material_requests add column if not exists authorization_id text;
+alter table stockr_material_requests add column if not exists authorization_by text;
+alter table stockr_material_requests add column if not exists converted_from_id text;
+alter table stockr_material_requests add column if not exists event_id text;
+alter table stockr_material_requests add column if not exists buildr_request_id text;
+alter table stockr_material_requests add column if not exists contract_version text not null default '1.1';
+
 create table if not exists stockr_password_resets (
   id text primary key,
   user_id text not null references stockr_users (id) on delete cascade,

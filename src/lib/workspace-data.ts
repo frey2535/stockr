@@ -9,6 +9,7 @@ import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from ".
 import { opsFromProjects } from "./ops-state";
 import { visibleProjects } from "./persist-state";
 import { listRestockNeeds } from "./replenish";
+import { restockMaterialIds } from "./restock-scope";
 import { WORKSPACE_PAGE_SIZE } from "./types";
 import type {
   AccessCode,
@@ -235,107 +236,67 @@ export async function getDashboard(companyId: string): Promise<DashboardPayload>
   }
 
   const supabase = getSupabaseAdmin();
-  const { selectAllForCompany } = await import("./supabase-page");
-  const [inventory, costRows, alertRes, locationsRes, txRes, materialCountRes, projectsRes] = await Promise.all([
-    selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
-      supabase,
-      "stockr_inventory",
-      companyId,
-      "material_id, location_id, quantity",
-    ),
-    selectAllForCompany<{ id: string; unit_cost: number | null; name: string; unit: string; supplier: string }>(
-      supabase,
-      "stockr_materials",
-      companyId,
-      "id, unit_cost, name, unit, supplier",
-    ),
-    supabase
-      .from("stockr_materials")
-      .select("id, name, unit, unit_cost, reorder_point, min_stock_level")
-      .eq("company_id", companyId)
-      .or("reorder_point.not.is.null,min_stock_level.not.is.null"),
-    supabase.from("stockr_locations").select("*").eq("company_id", companyId),
+  const [summaryRes, txRes, restock] = await Promise.all([
+    supabase.rpc("stockr_dashboard_summary", { p_company_id: companyId }),
     supabase
       .from("stockr_transactions")
       .select("*")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .limit(10),
-    supabase.from("stockr_materials").select("id", { count: "exact", head: true }).eq("company_id", companyId),
-    supabase.from("stockr_projects").select("*").eq("company_id", companyId),
+    listRestock(companyId),
   ]);
 
-  if (alertRes.error) throw new Error(alertRes.error.message);
-  if (locationsRes.error) throw new Error(locationsRes.error.message);
-  if (txRes.error) throw new Error(txRes.error.message);
-  if (materialCountRes.error) throw new Error(materialCountRes.error.message);
-
-  const mappedInventory = inventory.map(mapInventory);
-  const alertMaterials = (alertRes.data || []).map(mapMaterial);
-  const locations = (locationsRes.data || []) as Location[];
-  const costById = new Map(
-    costRows.map((row) => [String(row.id), row.unit_cost == null ? 0 : Number(row.unit_cost)]),
-  );
-
-  const totalItems = mappedInventory.reduce((sum, row) => sum + (row.quantity || 0), 0);
-  const value = mappedInventory.reduce((sum, row) => sum + (row.quantity || 0) * (costById.get(row.material_id) || 0), 0);
-
-  const qtyByMaterial = new Map<string, number>();
-  for (const row of mappedInventory) {
-    qtyByMaterial.set(row.material_id, (qtyByMaterial.get(row.material_id) || 0) + row.quantity);
+  if (summaryRes.error) {
+    if (/stockr_dashboard_summary|does not exist|schema cache/i.test(summaryRes.error.message)) {
+      throw new Error("Production dashboard scale migration is required before loading the dashboard.");
+    }
+    throw new Error(summaryRes.error.message);
   }
+  if (txRes.error) throw new Error(txRes.error.message);
 
-  const alerts = alertMaterials
-    .map((material) => {
-      const totalQty = qtyByMaterial.get(material.id) || 0;
-      let status: "critical" | "reorder" | null = null;
-      if (material.min_stock_level != null && totalQty <= material.min_stock_level) status = "critical";
-      else if (material.reorder_point != null && totalQty <= material.reorder_point) status = "reorder";
-      return { ...material, totalQty, status };
-    })
-    .filter((row) => row.status)
-    .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === "critical" ? -1 : 1))
-    .slice(0, 25) as DashboardPayload["alerts"];
+  const raw = (summaryRes.data || {}) as {
+    totalItems?: number | string;
+    value?: number | string;
+    materialCount?: number | string;
+    vehicles?: number | string;
+    warehouses?: number | string;
+    locations?: Array<Location & { units?: number | string; materialCount?: number | string }>;
+    alerts?: Array<Record<string, unknown> & { totalQty?: number | string; status?: "critical" | "reorder" }>;
+  };
 
   const recent = (txRes.data || []).map(mapTransaction);
-  const recentIds = new Set(recent.map((tx) => tx.material_id));
-  const recentMaterials = alertMaterials.filter((material) => recentIds.has(material.id));
-  if (recentIds.size && recentMaterials.length < recentIds.size) {
-    const missing = Array.from(recentIds).filter((id) => !recentMaterials.some((row) => row.id === id));
-    if (missing.length) {
-      const names = await supabase
+  const recentIds = Array.from(new Set(recent.map((tx) => tx.material_id)));
+  const recentMaterialsRes = recentIds.length
+    ? await supabase
         .from("stockr_materials")
-        .select("id, name, unit, unit_cost, reorder_point, min_stock_level")
+        .select("id, name, unit, unit_cost, reorder_point, min_stock_level, category, manufacturer")
         .eq("company_id", companyId)
-        .in("id", missing);
-      if (names.error) throw new Error(names.error.message);
-      recentMaterials.push(...(names.data || []).map(mapMaterial));
-    }
-  }
+        .in("id", recentIds)
+    : { data: [], error: null };
+  if (recentMaterialsRes.error) throw new Error(recentMaterialsRes.error.message);
+
+  const alerts = (raw.alerts || []).map((row) => ({
+    ...mapMaterial(row),
+    totalQty: Number(row.totalQty || 0),
+    status: row.status === "critical" ? "critical" as const : "reorder" as const,
+  }));
 
   return {
-    totalItems,
-    value,
-    vehicles: locations.filter((row) => row.type === "vehicle").length,
-    warehouses: locations.filter((row) => row.type === "warehouse").length,
-    materialCount: materialCountRes.count || costById.size,
+    totalItems: Number(raw.totalItems || 0),
+    value: Number(raw.value || 0),
+    vehicles: Number(raw.vehicles || 0),
+    warehouses: Number(raw.warehouses || 0),
+    materialCount: Number(raw.materialCount || 0),
     alerts,
-    locations: locations.map((location) => {
-      const rows = mappedInventory.filter((row) => row.location_id === location.id && row.quantity > 0);
-      return {
-        ...location,
-        units: rows.reduce((sum, row) => sum + row.quantity, 0),
-        materialCount: rows.length,
-      };
-    }),
+    locations: (raw.locations || []).map((row) => ({
+      ...row,
+      units: Number(row.units || 0),
+      materialCount: Number(row.materialCount || 0),
+    })),
     recent,
-    recentMaterials,
-    restock: listRestockNeeds({
-      materials: costRows.map(mapMaterial),
-      locations,
-      inventory: mappedInventory,
-      stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
-    }),
+    recentMaterials: (recentMaterialsRes.data || []).map(mapMaterial),
+    restock: restock.rows,
   };
 }
 
@@ -577,18 +538,11 @@ export async function listCatalog(
   if (error) throw new Error(error.message);
   const rows = (data || []).map(mapMaterial);
 
-  const [cats, subs, inv] = await Promise.all([
-    selectAllForCompany<{ category: string | null }>(supabase, "stockr_materials", companyId, "category"),
-    selectAllMatching<{ sub_category: string | null }>(
-      (from, to) =>
-        supabase
-          .from("stockr_materials")
-          .select("sub_category")
-          .eq("company_id", companyId)
-          .not("sub_category", "is", null)
-          .range(from, to),
-      "subcategories",
-    ),
+  const [facetsRes, inv] = await Promise.all([
+    supabase.rpc("stockr_catalog_facets", {
+      p_company_id: companyId,
+      p_category: category || null,
+    }),
     rows.length
       ? supabase
           .from("stockr_inventory")
@@ -600,7 +554,17 @@ export async function listCatalog(
           )
       : Promise.resolve({ data: [], error: null }),
   ]);
+  if (facetsRes.error) {
+    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
+      throw new Error("Production catalog scale migration is required before loading catalog filters.");
+    }
+    throw new Error(facetsRes.error.message);
+  }
 
+  const facets = (facetsRes.data || {}) as {
+    categories?: string[];
+    subcategories?: string[];
+  };
   const onHandMap: Record<string, number> = {};
   for (const row of inv.data || []) {
     onHandMap[row.material_id] = (onHandMap[row.material_id] || 0) + Number(row.quantity);
@@ -609,8 +573,8 @@ export async function listCatalog(
   return {
     rows,
     total: count || 0,
-    categories: Array.from(new Set(cats.map((row) => row.category).filter(Boolean))) as string[],
-    subcategories: Array.from(new Set(subs.map((item) => item.sub_category).filter(Boolean))) as string[],
+    categories: facets.categories || [],
+    subcategories: facets.subcategories || [],
     onHand: onHandMap,
   };
 }
@@ -771,25 +735,43 @@ export async function listRestock(companyId: string) {
   if (!isSupabaseConfigured()) {
     return { rows: listRestockNeeds(await getCompanyState(companyId)) };
   }
+
   const supabase = getSupabaseAdmin();
-  const { selectAllForCompany } = await import("./supabase-page");
-  const [materials, locations, inventory, projectsRes] = await Promise.all([
-    selectAllForCompany<Material>(supabase, "stockr_materials", companyId, "id, name, unit, supplier"),
-    selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
-    selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
-      supabase,
-      "stockr_inventory",
-      companyId,
-      "material_id, location_id, quantity",
-    ),
+  const [projectsRes, locationsRes] = await Promise.all([
     supabase.from("stockr_projects").select("*").eq("company_id", companyId),
+    supabase
+      .from("stockr_locations")
+      .select("id, name, type, description, assigned_to")
+      .eq("company_id", companyId),
   ]);
+  if (projectsRes.error) throw new Error(projectsRes.error.message);
+  if (locationsRes.error) throw new Error(locationsRes.error.message);
+
+  const stockRules = stockRulesFromProjects((projectsRes.data || []) as Project[]);
+  if (!stockRules.length) return { rows: [] };
+
+  const materialIds = restockMaterialIds(stockRules);
+  const [materialsRes, inventoryRes] = await Promise.all([
+    supabase
+      .from("stockr_materials")
+      .select("id, name, unit, supplier")
+      .eq("company_id", companyId)
+      .in("id", materialIds),
+    supabase
+      .from("stockr_inventory")
+      .select("material_id, location_id, quantity")
+      .eq("company_id", companyId)
+      .in("material_id", materialIds),
+  ]);
+  if (materialsRes.error) throw new Error(materialsRes.error.message);
+  if (inventoryRes.error) throw new Error(inventoryRes.error.message);
+
   return {
     rows: listRestockNeeds({
-      materials: materials.map(mapMaterial),
-      locations,
-      inventory: inventory.map(mapInventory),
-      stockRules: stockRulesFromProjects((projectsRes.data || []) as Project[]),
+      materials: (materialsRes.data || []).map((row) => mapMaterial(row as Record<string, unknown>)),
+      locations: (locationsRes.data || []) as Location[],
+      inventory: (inventoryRes.data || []).map((row) => mapInventory(row as Record<string, unknown>)),
+      stockRules,
     }),
   };
 }
@@ -850,77 +832,123 @@ export async function listPurchaseOrders(companyId: string, opts: { status?: str
 }
 
 export async function getReports(companyId: string, opts: { from?: string; to?: string }) {
-  const stateLike = async () => {
-    if (!isSupabaseConfigured()) return getCompanyState(companyId);
-    const supabase = getSupabaseAdmin();
-    const [locations, materials, inventory, transactions] = await Promise.all([
-      selectAllForCompany<Location>(supabase, "stockr_locations", companyId),
-      selectAllForCompany<{ id: string; name: string; unit_cost: number | null }>(
-        supabase,
-        "stockr_materials",
-        companyId,
-        "id, name, unit_cost",
-      ),
-      selectAllForCompany<{ material_id: string; location_id: string; quantity: number }>(
-        supabase,
-        "stockr_inventory",
-        companyId,
-        "material_id, location_id, quantity",
-      ),
-      selectAllMatching<Transaction>(
-        (from, to) =>
-          supabase
-            .from("stockr_transactions")
-            .select("*")
-            .eq("company_id", companyId)
-            .gte("created_at", opts.from ? `${opts.from}T00:00:00` : "1970-01-01")
-            .lte("created_at", opts.to ? `${opts.to}T23:59:59` : "2999-12-31")
-            .range(from, to),
-        "report transactions",
-      ),
-    ]);
+  const fromIso = opts.from ? `${opts.from}T00:00:00.000Z` : "1970-01-01T00:00:00.000Z";
+  const toIso = opts.to ? `${opts.to}T23:59:59.999Z` : "2999-12-31T23:59:59.999Z";
+
+  if (!isSupabaseConfigured()) {
+    const state = await getCompanyState(companyId);
+    const transactions = state.transactions.filter((tx) => tx.created_at >= fromIso && tx.created_at <= toIso);
+    const valuation = state.locations.map((location) => {
+      const rows = state.inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
+      const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
+      const totalValue = rows.reduce((sum, row) => {
+        const material = state.materials.find((item) => item.id === row.material_id);
+        return sum + row.quantity * (material?.unit_cost || 0);
+      }, 0);
+      return { location: location.name, type: location.type, totalQty, totalValue };
+    });
+
+    const usageMap = new Map<string, { qty: number; value: number }>();
+    for (const tx of transactions.filter((row) => row.type === "use")) {
+      const key = tx.project || "Unassigned";
+      const material = state.materials.find((item) => item.id === tx.material_id);
+      const current = usageMap.get(key) || { qty: 0, value: 0 };
+      current.qty += tx.quantity;
+      current.value += tx.quantity * (material?.unit_cost || 0);
+      usageMap.set(key, current);
+    }
+
+    const shrinkage = transactions
+      .filter((tx) => tx.type === "shrink")
+      .map((tx) => ({
+        ...tx,
+        materialName: state.materials.find((row) => row.id === tx.material_id)?.name || "Unknown",
+        locationName: state.locations.find((row) => row.id === tx.from_location_id)?.name || "",
+      }));
+
     return {
-      locations,
-      materials: materials.map(mapMaterial),
-      inventory: inventory.map(mapInventory),
-      transactions: transactions.map((row) => mapTransaction(row as unknown as Record<string, unknown>)),
+      valuation,
+      grand: valuation.reduce((sum, row) => sum + row.totalValue, 0),
+      usage: Array.from(usageMap.entries()).sort((a, b) => b[1].value - a[1].value),
+      shrinkage,
     };
-  };
-
-  const data = await stateLike();
-  const valuation = data.locations.map((location) => {
-    const rows = data.inventory.filter((row) => row.location_id === location.id && row.quantity > 0);
-    const totalQty = rows.reduce((sum, row) => sum + row.quantity, 0);
-    const totalValue = rows.reduce((sum, row) => {
-      const material = data.materials.find((item) => item.id === row.material_id);
-      return sum + row.quantity * (material?.unit_cost || 0);
-    }, 0);
-    return { location: location.name, type: location.type, totalQty, totalValue };
-  });
-
-  const usageMap = new Map<string, { qty: number; value: number }>();
-  for (const tx of data.transactions.filter((row) => row.type === "use")) {
-    const key = tx.project || "Unassigned";
-    const material = data.materials.find((item) => item.id === tx.material_id);
-    const current = usageMap.get(key) || { qty: 0, value: 0 };
-    current.qty += tx.quantity;
-    current.value += tx.quantity * (material?.unit_cost || 0);
-    usageMap.set(key, current);
   }
 
-  const shrinkage = data.transactions
-    .filter((tx) => tx.type === "shrink")
-    .map((tx) => ({
-      ...tx,
-      materialName: data.materials.find((row) => row.id === tx.material_id)?.name || "Unknown",
-      locationName: data.locations.find((row) => row.id === tx.from_location_id)?.name || "",
-    }));
+  const supabase = getSupabaseAdmin();
+  const [summaryRes, shrinkRes] = await Promise.all([
+    supabase.rpc("stockr_reports_summary", {
+      p_company_id: companyId,
+      p_from: fromIso,
+      p_to: toIso,
+    }),
+    supabase
+      .from("stockr_transactions")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("type", "shrink")
+      .gte("created_at", fromIso)
+      .lte("created_at", toIso)
+      .order("created_at", { ascending: false }),
+  ]);
+
+  if (summaryRes.error) {
+    if (/stockr_reports_summary|does not exist|schema cache/i.test(summaryRes.error.message)) {
+      throw new Error("Production reports scale migration is required before loading reports.");
+    }
+    throw new Error(summaryRes.error.message);
+  }
+  if (shrinkRes.error) throw new Error(shrinkRes.error.message);
+
+  const summary = (summaryRes.data || {}) as {
+    valuation?: Array<{ location: string; type: string; totalQty: number | string; totalValue: number | string }>;
+    grand?: number | string;
+    usage?: Array<{ project: string; qty: number | string; value: number | string }>;
+  };
+
+  const shrinkRows = (shrinkRes.data || []).map(mapTransaction);
+  const materialIds = Array.from(new Set(shrinkRows.map((row) => row.material_id)));
+  const locationIds = Array.from(
+    new Set(shrinkRows.map((row) => row.from_location_id).filter((id): id is string => Boolean(id))),
+  );
+  const [materialsRes, locationsRes] = await Promise.all([
+    materialIds.length
+      ? supabase
+          .from("stockr_materials")
+          .select("id, name")
+          .eq("company_id", companyId)
+          .in("id", materialIds)
+      : Promise.resolve({ data: [], error: null }),
+    locationIds.length
+      ? supabase
+          .from("stockr_locations")
+          .select("id, name")
+          .eq("company_id", companyId)
+          .in("id", locationIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (materialsRes.error) throw new Error(materialsRes.error.message);
+  if (locationsRes.error) throw new Error(locationsRes.error.message);
+
+  const materialNames = new Map((materialsRes.data || []).map((row) => [String(row.id), String(row.name || "")]));
+  const locationNames = new Map((locationsRes.data || []).map((row) => [String(row.id), String(row.name || "")]));
 
   return {
-    valuation,
-    grand: valuation.reduce((sum, row) => sum + row.totalValue, 0),
-    usage: Array.from(usageMap.entries()).sort((a, b) => b[1].value - a[1].value),
-    shrinkage,
+    valuation: (summary.valuation || []).map((row) => ({
+      location: row.location,
+      type: row.type,
+      totalQty: Number(row.totalQty || 0),
+      totalValue: Number(row.totalValue || 0),
+    })),
+    grand: Number(summary.grand || 0),
+    usage: (summary.usage || []).map((row) => [
+      row.project,
+      { qty: Number(row.qty || 0), value: Number(row.value || 0) },
+    ] as [string, { qty: number; value: number }]),
+    shrinkage: shrinkRows.map((tx) => ({
+      ...tx,
+      materialName: materialNames.get(tx.material_id) || "Unknown",
+      locationName: tx.from_location_id ? locationNames.get(tx.from_location_id) || "" : "",
+    })),
   };
 }
 

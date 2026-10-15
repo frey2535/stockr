@@ -55,6 +55,7 @@ type StoreApi = {
     poId: string,
     locationId: string,
     receipts: { material_id: string; quantity: number }[],
+    operationId?: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   setPurchaseOrderStatus: (poId: string, status: PurchaseOrder["status"]) => Promise<CommandResult>;
   deletePurchaseOrder: (poId: string) => Promise<CommandResult>;
@@ -187,8 +188,14 @@ export function StoreProvider({
       },
       deleteTransaction: (id) => send({ type: "deleteTransaction", id }),
       createPurchaseOrder: (po) => send({ type: "createPurchaseOrder", po }),
-      receivePurchaseOrder: async (poId, locationId, receipts) => {
-        const result = await send({ type: "receivePurchaseOrder", poId, locationId, receipts });
+      receivePurchaseOrder: async (poId, locationId, receipts, operationId) => {
+        const result = await send({
+          type: "receivePurchaseOrder",
+          poId,
+          locationId,
+          receipts,
+          operationId: operationId || uid("po_recv"),
+        });
         return result.ok ? { ok: true } : { ok: false, error: result.error || "Could not receive purchase order." };
       },
       setPurchaseOrderStatus: (poId, status) => send({ type: "setPurchaseOrderStatus", poId, status }),

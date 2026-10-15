@@ -3,7 +3,7 @@ import { getCurrentAccount } from "@/lib/auth";
 import { getAccount, updateCompanyName } from "@/lib/db";
 import type { StoreCommand } from "@/lib/mutations";
 import { persistStoreCommand } from "@/lib/persist-command";
-import { commandAccessError } from "@/lib/command-access";
+import { commandPayloadAccessError } from "@/lib/command-access";
 import { planLimitError } from "@/lib/plans";
 import { createEmptyState, createSeedState } from "@/lib/seed";
 import { getWorkspaceCounts, getWorkspaceShell } from "@/lib/workspace-data";
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing command." }, { status: 400 });
   }
 
-  const denied = commandAccessError(account.role, command.type);
+  const denied = commandPayloadAccessError(account.role, command);
   if (denied) {
     return NextResponse.json({ error: denied }, { status: 403 });
   }
