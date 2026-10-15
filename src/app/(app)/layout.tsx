@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
+import { UpdateAvailablePrompt } from "@/components/update-available-prompt";
 import { getCurrentAccount } from "@/lib/auth";
 import { StoreProvider } from "@/lib/store";
 import { emptyWorkspaceShell, getWorkspaceShell } from "@/lib/workspace-data";
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <StoreProvider initialWorkspace={workspace} initialAccount={account}>
       <AppShell>{children}</AppShell>
+      <UpdateAvailablePrompt />
     </StoreProvider>
   );
 }

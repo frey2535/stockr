@@ -17,10 +17,9 @@ test("prompts when production has a newer commit than the running app", () => {
   assert.equal(shouldOfferUpdate("abc123", "def456"), true);
 });
 
-test("announces an already-loaded deploy when the last-seen SHA changed", () => {
+test("announces every unseen production build, including when no prior SHA was stored", () => {
   assert.equal(shouldAnnounceAppliedUpdate("abc123", "def456"), true);
   assert.equal(shouldAnnounceAppliedUpdate("abc123", "abc123"), false);
-  assert.equal(shouldAnnounceAppliedUpdate("", "def456", true), true);
-  assert.equal(shouldAnnounceAppliedUpdate("", "def456", false), false);
-  assert.equal(shouldAnnounceAppliedUpdate("abc123", "local", true), false);
+  assert.equal(shouldAnnounceAppliedUpdate("", "def456"), true);
+  assert.equal(shouldAnnounceAppliedUpdate("abc123", "local"), false);
 });

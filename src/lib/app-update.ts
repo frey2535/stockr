@@ -45,14 +45,6 @@ function runningSha() {
   return clientBuildSha() || readSeenSha();
 }
 
-function hasExistingStockrData() {
-  try {
-    return Object.keys(window.localStorage).some((key) => key.startsWith("stockr_"));
-  } catch {
-    return false;
-  }
-}
-
 function isInstalledApp() {
   if (typeof window === "undefined") return false;
   const standalone =
@@ -169,7 +161,7 @@ export async function checkAppUpdate() {
     return { status: "reload" as const, sha: remote };
   }
 
-  if (shouldAnnounceAppliedUpdate(seen, remote, hasExistingStockrData() || native)) {
+  if (shouldAnnounceAppliedUpdate(seen, remote)) {
     dispatchAppUpdate({
       targetSha: remote,
       kind: "applied",

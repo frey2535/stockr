@@ -27,14 +27,8 @@ export function shouldOfferUpdate(currentSha: string, remoteSha: string) {
   return currentSha.trim() !== remoteSha.trim();
 }
 
-export function shouldAnnounceAppliedUpdate(
-  seenSha: string,
-  runningSha: string,
-  hasExistingData = false,
-) {
+export function shouldAnnounceAppliedUpdate(seenSha: string, runningSha: string) {
   if (!isReleaseSha(runningSha)) return false;
   const seen = (seenSha || "").trim();
-  if (seen === runningSha.trim()) return false;
-  if (isReleaseSha(seen)) return true;
-  return hasExistingData;
+  return seen !== runningSha.trim();
 }
