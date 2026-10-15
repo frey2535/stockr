@@ -35,33 +35,42 @@ function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
 }
 
-let dayOneBootstrapPromise: Promise<void> | null = null;
+const dayOneBootstrapPromises = new Map<string, Promise<void>>();
 
 async function ensureDayOneCatalog(companyId: string) {
-  if (!shouldBootstrapDayOneCatalog(companyId) || !isSupabaseConfigured()) return;
-  if (dayOneBootstrapPromise) return dayOneBootstrapPromise;
+  if (!isSupabaseConfigured()) return;
+  const active = dayOneBootstrapPromises.get(companyId);
+  if (active) return active;
 
-  dayOneBootstrapPromise = (async () => {
+  const bootstrap = (async () => {
     const db = getSupabaseAdmin();
-    const expectedIds = dayOneExpectedIds();
+    const { data: company, error: companyError } = await db
+      .from("stockr_companies")
+      .select("id, buildr_company_id")
+      .eq("id", companyId)
+      .single();
+    if (companyError) throw new Error(companyError.message);
+
+    const buildrCompanyId = String(company?.buildr_company_id || "").trim();
+    if (!shouldBootstrapDayOneCatalog(companyId, buildrCompanyId)) return;
 
     const { data, error } = await db
       .from("stockr_materials")
       .select("id, company_id")
-      .in("id", expectedIds);
+      .like("id", "dayone_stk_e_%");
     if (error) throw new Error(error.message);
 
     const existingRows = (data || []).map((row) => ({
       id: String(row.id),
       company_id: String(row.company_id),
     }));
-    const missing = dayOneMissingItems(existingRows);
+    const missing = dayOneMissingItems(existingRows, companyId);
     if (!missing.length) return;
 
     for (const items of chunkRows(missing, 100)) {
       const batch = items.map((item) => ({
         id: dayOneMaterialId(item),
-        company_id: DAY_ONE_COMPANY_ID,
+        company_id: companyId,
         name: item.name,
         description: [
           item.variant ? "Variant: " + item.variant : "",
@@ -102,14 +111,14 @@ async function ensureDayOneCatalog(companyId: string) {
     const { data: verifyRows, error: verifyError } = await db
       .from("stockr_materials")
       .select("id, company_id")
-      .in("id", expectedIds);
+      .like("id", "dayone_stk_e_%");
     if (verifyError) throw new Error(verifyError.message);
 
     const verified = (verifyRows || []).map((row) => ({
       id: String(row.id),
       company_id: String(row.company_id),
     }));
-    const stillMissing = dayOneMissingItems(verified);
+    const stillMissing = dayOneMissingItems(verified, companyId);
     if (stillMissing.length) {
       throw new Error(
         `Day One catalog bootstrap incomplete: ${stillMissing.length} starter items are still missing.`,
@@ -117,10 +126,13 @@ async function ensureDayOneCatalog(companyId: string) {
     }
   })();
 
+  dayOneBootstrapPromises.set(companyId, bootstrap);
   try {
-    await dayOneBootstrapPromise;
+    await bootstrap;
   } finally {
-    dayOneBootstrapPromise = null;
+    if (dayOneBootstrapPromises.get(companyId) === bootstrap) {
+      dayOneBootstrapPromises.delete(companyId);
+    }
   }
 }
 
