@@ -45,5 +45,6 @@ test("omits identity columns when the schema cache error has no column name", ()
     "mpn",
     "upc",
     "supplier_number",
+    "aliases",
   ]);
 });

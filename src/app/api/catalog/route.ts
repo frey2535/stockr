@@ -8,13 +8,18 @@ export async function GET(request: Request) {
   const { account, response } = await requireAccount();
   if (!account) return response;
   const url = new URL(request.url);
-  return NextResponse.json(
-    await listCatalog(account.company.id, {
-      q: url.searchParams.get("q") || "",
-      category: url.searchParams.get("category") || "",
-      sub: url.searchParams.get("sub") || "",
-      limit: Number(url.searchParams.get("limit") || 50),
-      offset: Number(url.searchParams.get("offset") || 0),
-    }),
-  );
+  try {
+    return NextResponse.json(
+      await listCatalog(account.company.id, {
+        q: url.searchParams.get("q") || "",
+        category: url.searchParams.get("category") || "",
+        sub: url.searchParams.get("sub") || "",
+        limit: Number(url.searchParams.get("limit") || 50),
+        offset: Number(url.searchParams.get("offset") || 0),
+      }),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Catalog could not load.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
