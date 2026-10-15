@@ -151,7 +151,7 @@ export async function checkAppUpdate() {
     return { status: "reload" as const, sha: remote };
   }
 
-  if (shouldAnnounceAppliedUpdate(seen, remote, hasExistingStockrData())) {
+  if (shouldAnnounceAppliedUpdate(seen, remote, hasExistingStockrData() || native)) {
     dispatchAppUpdate({
       targetSha: remote,
       kind: "applied",
