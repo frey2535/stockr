@@ -53,13 +53,6 @@ export function UpdateAvailablePrompt() {
     }
   }, [applying, update]);
 
-  useEffect(() => {
-    if (!update?.required || update.kind !== "reload" || applying) return undefined;
-    const timer = window.setTimeout(() => {
-      void applyUpdate();
-    }, 1600);
-    return () => window.clearTimeout(timer);
-  }, [applyUpdate, applying, update]);
 
   if (!update) return null;
 
@@ -80,7 +73,7 @@ export function UpdateAvailablePrompt() {
               {applied
                 ? "A newer version just loaded. You now have the latest scanner, inventory, and catalog fixes."
                 : update.required
-                  ? "A newer version of Stockr is ready. It will install automatically so the app stays current."
+                  ? "A newer version of Stockr is ready. Select Update now to load it."
                   : "A newer version of Stockr is ready. Update to get the latest inventory and scanner fixes."}
             </p>
             <div className="mt-3 flex items-center gap-2">
