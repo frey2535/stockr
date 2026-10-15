@@ -3,9 +3,12 @@ import { requireAccount } from "@/lib/require-account";
 import { commandAccessError } from "@/lib/command-access";
 import { parseMaterialCsv } from "@/lib/csv";
 import { validateCatalogImportRows } from "@/lib/catalog-import";
-import { getPlan } from "@/lib/plans";
+import { shouldBootstrapDayOneCatalog } from "@/lib/dayone-catalog-policy";
+import { getPlan, planLimitError } from "@/lib/plans";
+import { upsertMaterialRows } from "@/lib/material-write";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { uid } from "@/lib/id";
+import type { Material } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -20,6 +23,34 @@ function migrationMissing(error: { message?: string; code?: string } | null) {
     error?.code === "PGRST205" ||
     /stockr_catalog_imports|stockr_import_catalog_batch|schema cache|does not exist/i.test(message)
   );
+}
+
+async function importCatalogWithoutRpc(
+  companyId: string,
+  rows: Array<Partial<Material> & { id: string; name: string }>,
+) {
+  const materials: Material[] = rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    category: row.category || "",
+    sub_category: row.sub_category || "",
+    manufacturer: row.manufacturer || "",
+    supplier: row.supplier || "",
+    unit: row.unit || "each",
+    unit_cost: row.unit_cost ?? null,
+    barcode: row.barcode || "",
+    mpn: row.mpn || "",
+    upc: row.upc || "",
+    supplier_number: row.supplier_number || "",
+    reorder_point: row.reorder_point ?? null,
+    min_stock_level: row.min_stock_level ?? null,
+    image_url: row.image_url || "",
+    aliases: [],
+  }));
+  const saved = await upsertMaterialRows(companyId, materials);
+  if (!saved.ok) return { ok: false as const, error: saved.error, created: 0 };
+  return { ok: true as const, created: materials.length };
 }
 
 export async function GET() {
@@ -119,33 +150,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const createdAt = new Date().toISOString();
-  const history = await db.from("stockr_catalog_imports").insert({
-    id: importId,
-    company_id: account.company.id,
-    file_name: file.name,
-    supplier_id: supplierId,
-    status: "pending",
-    row_count: rows.length,
-    created_count: 0,
-    updated_count: 0,
-    priced_count: 0,
-    error_message: null,
-    created_by: account.user.email,
-    created_at: createdAt,
-    completed_at: null,
-  });
-
-  if (history.error) {
-    if (migrationMissing(history.error)) {
-      return NextResponse.json(
-        { error: "Production catalog import migration is required before uploading catalogs." },
-        { status: 503 },
-      );
-    }
-    return NextResponse.json({ error: history.error.message }, { status: 500 });
-  }
-
   const payload = rows.map((row) => ({
     id: uid("mat"),
     name: row.name.trim(),
@@ -165,7 +169,61 @@ export async function POST(request: Request) {
     image_url: row.image_url || "",
   }));
 
-  const maxMaterials = getPlan(account.company.plan).materials;
+  const dayOneWorkspace = shouldBootstrapDayOneCatalog(account.company.id, "", account.company.name);
+  const maxMaterials = dayOneWorkspace ? 100_000 : getPlan(account.company.plan).materials;
+  if (!dayOneWorkspace && maxMaterials != null) {
+    const existing = await db
+      .from("stockr_materials")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", account.company.id);
+    if (existing.error) {
+      return NextResponse.json({ error: existing.error.message }, { status: 500 });
+    }
+    const blocked = planLimitError(
+      account.company.plan,
+      { materials: Number(existing.count || 0) + payload.length - 1 },
+      "material",
+    );
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 403 });
+    }
+  }
+
+  const createdAt = new Date().toISOString();
+  const history = await db.from("stockr_catalog_imports").insert({
+    id: importId,
+    company_id: account.company.id,
+    file_name: file.name,
+    supplier_id: supplierId,
+    status: "pending",
+    row_count: rows.length,
+    created_count: 0,
+    updated_count: 0,
+    priced_count: 0,
+    error_message: null,
+    created_by: account.user.email,
+    created_at: createdAt,
+    completed_at: null,
+  });
+
+  if (history.error) {
+    if (migrationMissing(history.error)) {
+      const fallback = await importCatalogWithoutRpc(account.company.id, payload as Array<Partial<Material> & { id: string; name: string }>);
+      if (!fallback.ok) {
+        return NextResponse.json({ error: fallback.error }, { status: 400 });
+      }
+      return NextResponse.json({
+        ok: true,
+        importId,
+        processed: payload.length,
+        created: fallback.created,
+        updated: 0,
+        priced: 0,
+      });
+    }
+    return NextResponse.json({ error: history.error.message }, { status: 500 });
+  }
+
   const sourceReference = `Catalog file ${file.name} · import ${importId}`;
   const imported = await db.rpc("stockr_import_catalog_batch", {
     p_company_id: account.company.id,
@@ -177,6 +235,41 @@ export async function POST(request: Request) {
   });
 
   if (imported.error) {
+    if (migrationMissing(imported.error)) {
+      const fallback = await importCatalogWithoutRpc(account.company.id, payload as Array<Partial<Material> & { id: string; name: string }>);
+      if (fallback.ok) {
+        await db
+          .from("stockr_catalog_imports")
+          .update({
+            status: "completed",
+            created_count: fallback.created,
+            updated_count: 0,
+            priced_count: 0,
+            error_message: null,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("company_id", account.company.id)
+          .eq("id", importId);
+        return NextResponse.json({
+          ok: true,
+          importId,
+          processed: payload.length,
+          created: fallback.created,
+          updated: 0,
+          priced: 0,
+        });
+      }
+      await db
+        .from("stockr_catalog_imports")
+        .update({
+          status: "failed",
+          error_message: fallback.error.slice(0, 2000),
+          completed_at: new Date().toISOString(),
+        })
+        .eq("company_id", account.company.id)
+        .eq("id", importId);
+      return NextResponse.json({ error: fallback.error, importId }, { status: 400 });
+    }
     await db
       .from("stockr_catalog_imports")
       .update({
@@ -186,13 +279,6 @@ export async function POST(request: Request) {
       })
       .eq("company_id", account.company.id)
       .eq("id", importId);
-
-    if (migrationMissing(imported.error)) {
-      return NextResponse.json(
-        { error: "Production catalog import migration is required before uploading catalogs." },
-        { status: 503 },
-      );
-    }
     return NextResponse.json(
       { error: imported.error.message, importId },
       { status: 400 },

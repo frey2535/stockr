@@ -62,7 +62,7 @@ export default function CatalogPage() {
   if (query) params.set("q", query);
   if (category !== "all") params.set("category", category);
   if (sub !== "all") params.set("sub", sub);
-  const { data, reload, hasMore, loadMore, loading } = usePagedApi<CatalogListPayload>(
+  const { data, reload, hasMore, loadMore, loading, error } = usePagedApi<CatalogListPayload>(
     `/api/catalog?${params.toString()}`,
   );
   const categories = data?.categories || [];
@@ -171,11 +171,17 @@ export default function CatalogPage() {
         </Select>
       </div>
 
-      {filtered.length === 0 ? (
+      {error ? (
+        <EmptyState
+          icon={<Package className="size-12" />}
+          title="Catalog could not load"
+          description={error}
+        />
+      ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Package className="size-12" />}
           title="No materials found"
-          description="Try adjusting your search or filters"
+          description="Upload a CSV catalog or add materials. Day One Electric workspaces receive the electrical starter catalog automatically when this page loads."
         />
       ) : (
         <>

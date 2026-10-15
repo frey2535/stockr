@@ -28,11 +28,73 @@ import type {
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
 import { mergeToolLists, toolsFromProjects } from "./tools-state";
-import { DAY_ONE_CATALOG, DAY_ONE_COMPANY_ID } from "./dayone-catalog";
-import { chunkRows, dayOneExpectedIds, dayOneMaterialId, dayOneMissingItems, shouldBootstrapDayOneCatalog } from "./dayone-catalog-policy";
+import { DAY_ONE_CATALOG, type DayOneCatalogSeed } from "./dayone-catalog";
+import {
+  chunkRows,
+  claimableDayOneCompanyIds,
+  dayOneMaterialId,
+  dayOneMissingItems,
+  dayOneScopedMaterialId,
+  shouldBootstrapDayOneCatalog,
+} from "./dayone-catalog-policy";
+import { MATERIAL_BASE_COLUMNS, upsertMaterialRows } from "./material-write";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
+}
+
+function dayOneSeedMaterial(companyId: string, item: DayOneCatalogSeed, id: string): Material {
+  return {
+    id,
+    name: item.name,
+    description: [
+      item.variant ? "Variant: " + item.variant : "",
+      "Generic taxonomy entry - verify manufacturer SKU",
+      "Verification: Unverified",
+      item.sku,
+    ]
+      .filter(Boolean)
+      .join(" | "),
+    category: item.category,
+    sub_category: item.subCategory,
+    manufacturer: "",
+    supplier: "",
+    unit:
+      item.unit === "EA"
+        ? "each"
+        : item.unit === "FT"
+          ? "ft"
+          : item.unit === "STICK"
+            ? "stick"
+            : item.unit.toLowerCase(),
+    unit_cost: null,
+    barcode: item.sku,
+    mpn: "",
+    upc: "",
+    supplier_number: "",
+    reorder_point: null,
+    min_stock_level: null,
+    image_url: "",
+    aliases: [item.sku, item.variant].filter(Boolean),
+  };
+}
+
+async function insertDayOneItems(
+  companyId: string,
+  items: DayOneCatalogSeed[],
+  idFor: (item: DayOneCatalogSeed) => string,
+) {
+  for (const batch of chunkRows(items, 100)) {
+    const saved = await upsertMaterialRows(
+      companyId,
+      batch.map((item) => dayOneSeedMaterial(companyId, item, idFor(item))),
+    );
+    if (!saved.ok) {
+      console.error("Day One catalog insert", saved.error);
+      return false;
+    }
+  }
+  return true;
 }
 
 const dayOneBootstrapPromises = new Map<string, Promise<void>>();
@@ -43,86 +105,92 @@ async function ensureDayOneCatalog(companyId: string) {
   if (active) return active;
 
   const bootstrap = (async () => {
+    try {
     const db = getSupabaseAdmin();
-    const { data: company, error: companyError } = await db
+    let companyRes = await db
       .from("stockr_companies")
-      .select("id, buildr_company_id")
+      .select("id, name, buildr_company_id")
       .eq("id", companyId)
-      .single();
-    if (companyError) throw new Error(companyError.message);
+      .maybeSingle();
+    if (companyRes.error && /buildr_company_id|schema cache|does not exist|could not find/i.test(companyRes.error.message)) {
+      companyRes = await db.from("stockr_companies").select("id, name").eq("id", companyId).maybeSingle();
+    }
+    if (companyRes.error) {
+      console.error("Day One catalog company lookup", companyRes.error.message);
+      return;
+    }
+    const company = companyRes.data;
 
-    const buildrCompanyId = String(company?.buildr_company_id || "").trim();
-    if (!shouldBootstrapDayOneCatalog(companyId, buildrCompanyId)) return;
+    const buildrCompanyId = String((company as { buildr_company_id?: string } | null)?.buildr_company_id || "").trim();
+    const companyName = String(company?.name || "").trim();
+    if (!shouldBootstrapDayOneCatalog(companyId, buildrCompanyId, companyName)) return;
 
     const { data, error } = await db
       .from("stockr_materials")
       .select("id, company_id")
       .like("id", "dayone_stk_e_%");
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("Day One catalog lookup", error.message);
+      return;
+    }
 
     const existingRows = (data || []).map((row) => ({
       id: String(row.id),
       company_id: String(row.company_id),
     }));
-    const missing = dayOneMissingItems(existingRows, companyId);
-    if (!missing.length) return;
-
-    for (const items of chunkRows(missing, 100)) {
-      const batch = items.map((item) => ({
-        id: dayOneMaterialId(item),
-        company_id: companyId,
-        name: item.name,
-        description: [
-          item.variant ? "Variant: " + item.variant : "",
-          "Generic taxonomy entry - verify manufacturer SKU",
-          "Verification: Unverified",
-        ]
-          .filter(Boolean)
-          .join(" | "),
-        category: item.category,
-        sub_category: item.subCategory,
-        manufacturer: "",
-        supplier: "",
-        unit:
-          item.unit === "EA"
-            ? "each"
-            : item.unit === "FT"
-              ? "ft"
-              : item.unit === "STICK"
-                ? "stick"
-                : item.unit.toLowerCase(),
-        unit_cost: null,
-        barcode: "",
-        mpn: "",
-        upc: "",
-        supplier_number: "",
-        reorder_point: null,
-        min_stock_level: null,
-        image_url: "",
-        aliases: [item.sku, item.variant].filter(Boolean),
-      }));
-
-      const { error: insertError } = await db
+    let missing;
+    try {
+      missing = dayOneMissingItems(existingRows, companyId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/tenant isolation/i.test(message)) throw error;
+      const collisions = existingRows.filter((row) => row.company_id !== companyId);
+      const { data: owners } = await db
+        .from("stockr_companies")
+        .select("id, name")
+        .in("id", [...new Set(collisions.map((row) => row.company_id))]);
+      const claimFrom = claimableDayOneCompanyIds(collisions, (owners || []) as Array<{ id: string; name?: string | null }>);
+      if (claimFrom.length) {
+        const { error: claimError } = await db
+          .from("stockr_materials")
+          .update({ company_id: companyId })
+          .like("id", "dayone_stk_e_%")
+          .in("company_id", claimFrom);
+        if (!claimError) {
+          const claimed = await db.from("stockr_materials").select("id, company_id").like("id", "dayone_stk_e_%");
+          if (!claimed.error) {
+            missing = dayOneMissingItems(
+              (claimed.data || []).map((row) => ({ id: String(row.id), company_id: String(row.company_id) })),
+              companyId,
+            );
+            if (!missing.length) return;
+            await insertDayOneItems(companyId, missing, dayOneMaterialId);
+            return;
+          }
+        }
+        if (claimError) console.error("Day One catalog claim", claimError.message);
+      }
+      const { data: scopedRows, error: scopedError } = await db
         .from("stockr_materials")
-        .upsert(batch, { onConflict: "id", ignoreDuplicates: true });
-      if (insertError) throw new Error(insertError.message);
-    }
-
-    const { data: verifyRows, error: verifyError } = await db
-      .from("stockr_materials")
-      .select("id, company_id")
-      .like("id", "dayone_stk_e_%");
-    if (verifyError) throw new Error(verifyError.message);
-
-    const verified = (verifyRows || []).map((row) => ({
-      id: String(row.id),
-      company_id: String(row.company_id),
-    }));
-    const stillMissing = dayOneMissingItems(verified, companyId);
-    if (stillMissing.length) {
-      throw new Error(
-        `Day One catalog bootstrap incomplete: ${stillMissing.length} starter items are still missing.`,
+        .select("id")
+        .eq("company_id", companyId)
+        .like("id", "dayone_%");
+      if (scopedError) {
+        console.error("Day One catalog scoped lookup", scopedError.message);
+        return;
+      }
+      const existingScoped = new Set((scopedRows || []).map((row) => String(row.id)));
+      const scopedMissing = DAY_ONE_CATALOG.filter(
+        (item) => !existingScoped.has(dayOneScopedMaterialId(companyId, item)),
       );
+      if (!scopedMissing.length) return;
+      await insertDayOneItems(companyId, scopedMissing, (item) => dayOneScopedMaterialId(companyId, item));
+      return;
+    }
+    if (!missing.length) return;
+    await insertDayOneItems(companyId, missing, dayOneMaterialId);
+    } catch (error) {
+      console.error("Day One catalog bootstrap", error instanceof Error ? error.message : error);
     }
   })();
 
@@ -244,6 +312,7 @@ export async function getWorkspaceShell(companyId: string): Promise<WorkspaceShe
     }
 
     const supabase = getSupabaseAdmin();
+    await ensureDayOneCatalog(companyId);
     const [companyRes, locations, projects, codes, tools, materials, inventory, transactions, purchaseOrders] =
       await Promise.all([
         supabase.from("stockr_companies").select("*").eq("id", companyId).maybeSingle(),
@@ -635,13 +704,20 @@ export async function listCatalog(
   await ensureDayOneCatalog(companyId);
 
   const supabase = getSupabaseAdmin();
-  let query = supabase.from("stockr_materials").select("*", { count: "exact" }).eq("company_id", companyId).order("name");
-  if (category) query = query.eq("category", category);
-  if (sub) query = query.eq("sub_category", sub);
-  if (q) query = query.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
-  const { data, error, count } = await query.range(offset, offset + limit - 1);
-  if (error) throw new Error(error.message);
-  const rows = (data || []).map(mapMaterial);
+  const applyCatalogFilters = (select: string) => {
+    let query = supabase.from("stockr_materials").select(select, { count: "exact" }).eq("company_id", companyId).order("name");
+    if (category) query = query.eq("category", category);
+    if (sub) query = query.eq("sub_category", sub);
+    if (q) query = query.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
+    return query.range(offset, offset + limit - 1);
+  };
+  let listed = await applyCatalogFilters("*");
+  if (listed.error && /schema cache|does not exist|could not find/i.test(listed.error.message)) {
+    listed = await applyCatalogFilters(MATERIAL_BASE_COLUMNS);
+  }
+  if (listed.error) throw new Error(listed.error.message);
+  const rows = (listed.data || []).map((row) => mapMaterial(row as Record<string, unknown>));
+  const count = listed.count;
 
   const [facetsRes, inv] = await Promise.all([
     supabase.rpc("stockr_catalog_facets", {

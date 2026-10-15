@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   chunkRows,
+  claimableDayOneCompanyIds,
   dayOneExpectedIds,
   dayOneMaterialId,
   dayOneMissingItems,
+  dayOneScopedMaterialId,
   shouldBootstrapDayOneCatalog,
 } from "./dayone-catalog-policy.ts";
 import { DAY_ONE_CATALOG, DAY_ONE_COMPANY_ID } from "./dayone-catalog.ts";
@@ -14,6 +16,12 @@ test("runtime bootstrap recognizes Day One by Stockr id or linked Buildr id", ()
   assert.equal(shouldBootstrapDayOneCatalog("stockr_internal_dayone", DAY_ONE_COMPANY_ID), true);
   assert.equal(shouldBootstrapDayOneCatalog("co_other", "co_other_buildr"), false);
   assert.equal(shouldBootstrapDayOneCatalog("", ""), false);
+});
+
+test("runtime bootstrap recognizes Day One by company name without seeding other trades", () => {
+  assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "Day One Electric"), true);
+  assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "Day One Electric LLC"), true);
+  assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "Smith Mechanical"), false);
 });
 
 test("Day One material ids are deterministic and reserved", () => {
@@ -46,6 +54,30 @@ test("reserved Day One ids cannot exist under another company", () => {
         "stockr_internal_dayone",
       ),
     /tenant isolation violation/i,
+  );
+});
+
+test("scoped Day One ids stay inside the requesting workspace", () => {
+  const item = DAY_ONE_CATALOG[0];
+  const scoped = dayOneScopedMaterialId("co_live_dayone", item);
+  assert.equal(scoped.startsWith("dayone_co_live_dayone_"), true);
+  assert.notEqual(scoped, dayOneMaterialId(item));
+  assert.equal(shouldBootstrapDayOneCatalog("co_other", "", "Smith Mechanical"), false);
+});
+
+test("orphaned or Day One reserved rows can be claimed by the live Day One workspace", () => {
+  const collision = { id: dayOneMaterialId(DAY_ONE_CATALOG[0]), company_id: "co_dayoneelectric" };
+  assert.deepEqual(
+    claimableDayOneCompanyIds([collision], [{ id: "co_dayoneelectric", name: "Day One Electric" }]),
+    ["co_dayoneelectric"],
+  );
+  assert.deepEqual(claimableDayOneCompanyIds([collision], []), ["co_dayoneelectric"]);
+  assert.deepEqual(
+    claimableDayOneCompanyIds(
+      [{ id: dayOneMaterialId(DAY_ONE_CATALOG[0]), company_id: "co_smith" }],
+      [{ id: "co_smith", name: "Smith Mechanical" }],
+    ),
+    [],
   );
 });
 

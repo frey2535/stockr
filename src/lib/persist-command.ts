@@ -3,6 +3,7 @@ import { applyCommand, type StoreCommand } from "./mutations";
 import { isSupabaseConfigured } from "./db-config";
 import { encodeStateForPersist } from "./persist-state";
 import { materialColumnsToOmit } from "./material-columns";
+import { materialWriteRow } from "./material-write";
 import { isOpsBlob, OPS_BLOB_ID, OPS_BLOB_MARKER, opsFromProjects } from "./ops-state";
 import { getSupabaseAdmin } from "./supabase-admin";
 import { selectAllForCompany, selectAllForCompanySafe } from "./supabase-page";
@@ -27,27 +28,7 @@ function throwIfError(error: { message: string } | null, action: string) {
 }
 
 function materialRow(companyId: string, material: Material, omit: string[] = []) {
-  const row: Record<string, unknown> = {
-    id: material.id,
-    company_id: companyId,
-    name: material.name,
-    description: material.description || "",
-    category: material.category || "",
-    sub_category: material.sub_category || "",
-    manufacturer: material.manufacturer || "",
-    supplier: material.supplier || "",
-    unit: material.unit || "each",
-    unit_cost: material.unit_cost ?? null,
-    barcode: material.barcode || "",
-    reorder_point: material.reorder_point ?? null,
-    min_stock_level: material.min_stock_level ?? null,
-    image_url: material.image_url || "",
-  };
-  if (!omit.includes("mpn")) row.mpn = material.mpn || "";
-  if (!omit.includes("upc")) row.upc = material.upc || "";
-  if (!omit.includes("supplier_number")) row.supplier_number = material.supplier_number || "";
-  if (!omit.includes("aliases")) row.aliases = material.aliases || [];
-  return row;
+  return materialWriteRow(companyId, material, omit);
 }
 
 async function upsertMaterialRow(companyId: string, material: Material) {
