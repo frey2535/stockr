@@ -21,6 +21,7 @@ import type {
   Material,
   MaterialRequest,
   MaterialRequestLine,
+  MaterialRequestStatus,
   PriceObservation,
   RfqJob,
   Settings,
@@ -356,7 +357,10 @@ export async function authorizeRequestPurchasing(companyId: string, actor: strin
   );
   const saved: MaterialRequest = {
     ...request,
-    ...next,
+    request_type: next.request_type,
+    purchasing_authorized: next.purchasing_authorized,
+    authorization_id: next.authorization_id,
+    status: next.status as MaterialRequestStatus,
     authorization_by: actor,
   };
   await persistRequestRow(companyId, saved);
@@ -372,7 +376,14 @@ export async function convertRequestToProcurement(companyId: string, requestId: 
     authorization_id: request.authorization_id,
     status: request.status,
   });
-  const saved: MaterialRequest = { ...request, ...next };
+  const saved: MaterialRequest = {
+    ...request,
+    request_type: next.request_type,
+    purchasing_authorized: next.purchasing_authorized,
+    authorization_id: next.authorization_id,
+    converted_from_id: next.converted_from_id,
+    status: next.status as MaterialRequestStatus,
+  };
   await persistRequestRow(companyId, saved);
   return saved;
 }
