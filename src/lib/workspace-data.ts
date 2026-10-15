@@ -29,7 +29,7 @@ import type {
 import type { DashboardPayload } from "./workspace-types";
 import { mergeToolLists, toolsFromProjects } from "./tools-state";
 import { DAY_ONE_CATALOG, DAY_ONE_COMPANY_ID } from "./dayone-catalog";
-import { chunkRows, dayOneExpectedIds, dayOneMaterialId, dayOneMissingItems } from "./dayone-catalog-policy";
+import { chunkRows, dayOneExpectedIds, dayOneMaterialId, dayOneMissingItems, shouldBootstrapDayOneCatalog } from "./dayone-catalog-policy";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
@@ -38,7 +38,7 @@ function clampLimit(value: number | undefined) {
 let dayOneBootstrapPromise: Promise<void> | null = null;
 
 async function ensureDayOneCatalog(companyId: string) {
-  if (companyId !== DAY_ONE_COMPANY_ID || !isSupabaseConfigured()) return;
+  if (!shouldBootstrapDayOneCatalog(companyId) || !isSupabaseConfigured()) return;
   if (dayOneBootstrapPromise) return dayOneBootstrapPromise;
 
   dayOneBootstrapPromise = (async () => {
