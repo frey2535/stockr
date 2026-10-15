@@ -611,17 +611,33 @@ export async function listCatalog(
           )
       : Promise.resolve({ data: [], error: null }),
   ]);
-  if (facetsRes.error) {
-    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
-      throw new Error("Production catalog scale migration is required before loading catalog filters.");
-    }
-    throw new Error(facetsRes.error.message);
-  }
-
-  const facets = (facetsRes.data || {}) as {
+  let facets = (facetsRes.data || {}) as {
     categories?: string[];
     subcategories?: string[];
   };
+  if (facetsRes.error) {
+    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
+      const fallback = await selectAllForCompanySafe<{ category: string | null; sub_category: string | null }>(
+        supabase,
+        "stockr_materials",
+        companyId,
+        "category, sub_category",
+      );
+      facets = {
+        categories: Array.from(new Set(fallback.map((row) => row.category).filter(Boolean))) as string[],
+        subcategories: Array.from(
+          new Set(
+            fallback
+              .filter((row) => !category || row.category === category)
+              .map((row) => row.sub_category)
+              .filter(Boolean),
+          ),
+        ) as string[],
+      };
+    } else {
+      throw new Error(facetsRes.error.message);
+    }
+  }
   const onHandMap: Record<string, number> = {};
   for (const row of inv.data || []) {
     onHandMap[row.material_id] = (onHandMap[row.material_id] || 0) + Number(row.quantity);
