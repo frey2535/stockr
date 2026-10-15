@@ -28,7 +28,8 @@ import type {
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
 import { mergeToolLists, toolsFromProjects } from "./tools-state";
-import { DAY_ONE_CATALOG, DAY_ONE_CATALOG_COUNT, DAY_ONE_COMPANY_ID } from "./dayone-catalog";
+import { DAY_ONE_CATALOG, DAY_ONE_COMPANY_ID } from "./dayone-catalog";
+import { chunkRows, dayOneExpectedIds, dayOneMaterialId, dayOneMissingItems } from "./dayone-catalog-policy";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
@@ -42,30 +43,45 @@ async function ensureDayOneCatalog(companyId: string) {
 
   dayOneBootstrapPromise = (async () => {
     const db = getSupabaseAdmin();
+    const expectedIds = dayOneExpectedIds();
+
     const { data, error } = await db
       .from("stockr_materials")
-      .select("id")
-      .eq("company_id", DAY_ONE_COMPANY_ID)
-      .like("id", "dayone_stk_e_%");
+      .select("id, company_id")
+      .in("id", expectedIds);
     if (error) throw new Error(error.message);
 
-    const existing = new Set((data || []).map((row) => String(row.id)));
-    if (existing.size >= DAY_ONE_CATALOG_COUNT) return;
+    const existingRows = (data || []).map((row) => ({
+      id: String(row.id),
+      company_id: String(row.company_id),
+    }));
+    const missing = dayOneMissingItems(existingRows);
+    if (!missing.length) return;
 
-    const missing = DAY_ONE_CATALOG.filter((item) => !existing.has("dayone_" + item.sku.toLowerCase().replace(/-/g, "_")));
-    for (let index = 0; index < missing.length; index += 100) {
-      const batch = missing.slice(index, index + 100).map((item) => ({
-        id: "dayone_" + item.sku.toLowerCase().replace(/-/g, "_"),
+    for (const items of chunkRows(missing, 100)) {
+      const batch = items.map((item) => ({
+        id: dayOneMaterialId(item),
         company_id: DAY_ONE_COMPANY_ID,
         name: item.name,
-        description: [item.variant ? "Variant: " + item.variant : "", "Generic taxonomy entry - verify manufacturer SKU", "Verification: Unverified"]
+        description: [
+          item.variant ? "Variant: " + item.variant : "",
+          "Generic taxonomy entry - verify manufacturer SKU",
+          "Verification: Unverified",
+        ]
           .filter(Boolean)
           .join(" | "),
         category: item.category,
         sub_category: item.subCategory,
         manufacturer: "",
         supplier: "",
-        unit: item.unit === "EA" ? "each" : item.unit === "FT" ? "ft" : item.unit === "STICK" ? "stick" : item.unit.toLowerCase(),
+        unit:
+          item.unit === "EA"
+            ? "each"
+            : item.unit === "FT"
+              ? "ft"
+              : item.unit === "STICK"
+                ? "stick"
+                : item.unit.toLowerCase(),
         unit_cost: null,
         barcode: "",
         mpn: "",
@@ -76,8 +92,28 @@ async function ensureDayOneCatalog(companyId: string) {
         image_url: "",
         aliases: [item.sku, item.variant].filter(Boolean),
       }));
-      const { error: insertError } = await db.from("stockr_materials").insert(batch);
-      if (insertError && !/duplicate key/i.test(insertError.message)) throw new Error(insertError.message);
+
+      const { error: insertError } = await db
+        .from("stockr_materials")
+        .upsert(batch, { onConflict: "id", ignoreDuplicates: true });
+      if (insertError) throw new Error(insertError.message);
+    }
+
+    const { data: verifyRows, error: verifyError } = await db
+      .from("stockr_materials")
+      .select("id, company_id")
+      .in("id", expectedIds);
+    if (verifyError) throw new Error(verifyError.message);
+
+    const verified = (verifyRows || []).map((row) => ({
+      id: String(row.id),
+      company_id: String(row.company_id),
+    }));
+    const stillMissing = dayOneMissingItems(verified);
+    if (stillMissing.length) {
+      throw new Error(
+        `Day One catalog bootstrap incomplete: ${stillMissing.length} starter items are still missing.`,
+      );
     }
   })();
 
