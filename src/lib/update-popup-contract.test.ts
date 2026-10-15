@@ -17,5 +17,5 @@ test("required updates remain visible until the user presses Update now", () => 
   const prompt = source("../components/update-available-prompt.tsx");
   assert.equal(prompt.includes("setTimeout"), false);
   assert.match(prompt, /Select Update now to load it/);
-  assert.match(prompt, />Update now</);
+  assert.equal(prompt.includes('"Update now"'), true);
 });
