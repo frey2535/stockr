@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { checkAppUpdate, clientBuildSha } from "@/lib/app-update";
+import { clientBuildSha, refreshApp } from "@/lib/app-update";
 import { getPlan } from "@/lib/plans";
 import { useStore } from "@/lib/store";
 import type { AccessCodeType, Settings as CompanySettings } from "@/lib/types";
@@ -24,7 +24,7 @@ export default function SettingsPage() {
   const draft = { ...settings, ...overrides };
   const [label, setLabel] = useState("");
   const [codeType, setCodeType] = useState<AccessCodeType>("trial");
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [refreshingApp, setRefreshingApp] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [joining, setJoining] = useState(false);
 
@@ -466,7 +466,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Stockr checks for a new web build when you open the app. Current build{" "}
+            Refresh clears stale errors and loads the latest Stockr build. Current build{" "}
             <span className="font-mono text-foreground">
               {(clientBuildSha() || "local").slice(0, 7)}
             </span>
@@ -474,20 +474,21 @@ export default function SettingsPage() {
           </p>
           <Button
             variant="outline"
-            disabled={checkingUpdate}
+            disabled={refreshingApp}
             onClick={async () => {
-              setCheckingUpdate(true);
+              setRefreshingApp(true);
+              toast.dismiss();
+              toast.message("Refreshing Stockr and applying the latest update…");
               try {
-                const result = await checkAppUpdate();
-                if (result.status === "current") toast.success("You're on the latest version.");
-                else if (result.status === "unknown") toast.error("Could not check for an update.");
-              } finally {
-                setCheckingUpdate(false);
+                await refreshApp();
+              } catch {
+                setRefreshingApp(false);
+                toast.error("Could not refresh. Check the connection and try again.");
               }
             }}
           >
             <RefreshCw className="mr-2 size-4" />
-            {checkingUpdate ? "Checking…" : "Check for updates"}
+            {refreshingApp ? "Refreshing…" : "Refresh app"}
           </Button>
         </CardContent>
       </Card>

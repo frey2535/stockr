@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { refreshApp } from "@/lib/app-update";
 
 export default function Error({
   error,
-  retry,
 }: {
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const [refreshing, setRefreshing] = useState(false);
+
   useEffect(() => {
     void fetch("/api/client-error", {
       method: "POST",
@@ -27,10 +29,14 @@ export default function Error({
       <p className="text-muted-foreground">{error.message || "Reload this page and try again."}</p>
       <button
         type="button"
-        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-        onClick={() => retry()}
+        className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+        disabled={refreshing}
+        onClick={() => {
+          setRefreshing(true);
+          void refreshApp().finally(() => setRefreshing(false));
+        }}
       >
-        Try again
+        {refreshing ? "Refreshing…" : "Refresh app"}
       </button>
     </div>
   );
