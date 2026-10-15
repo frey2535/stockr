@@ -7,9 +7,10 @@ test("syncs by company ID on proxied API paths, never /api/companies", () => {
   assert.deepEqual(paths, [
     "/companies/co_dayoneelectric/projects",
     "/stockr/projects?company_id=co_dayoneelectric",
-    "/projects",
   ]);
   assert.equal(paths.some((path) => path.includes("/api/")), false);
+  assert.equal(paths.includes("/projects"), false);
+  assert.equal(paths.every((path) => path.includes("co_dayoneelectric")), true);
 });
 
 test("keeps an API error instead of a later website HTML miss", () => {
