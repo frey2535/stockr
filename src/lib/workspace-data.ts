@@ -704,20 +704,32 @@ export async function listCatalog(
   await ensureDayOneCatalog(companyId);
 
   const supabase = getSupabaseAdmin();
-  const applyCatalogFilters = (select: string) => {
-    let query = supabase.from("stockr_materials").select(select, { count: "exact" }).eq("company_id", companyId).order("name");
-    if (category) query = query.eq("category", category);
-    if (sub) query = query.eq("sub_category", sub);
-    if (q) query = query.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
-    return query.range(offset, offset + limit - 1);
-  };
-  let listed = await applyCatalogFilters("*");
+  let query = supabase.from("stockr_materials").select("*", { count: "exact" }).eq("company_id", companyId).order("name");
+  if (category) query = query.eq("category", category);
+  if (sub) query = query.eq("sub_category", sub);
+  if (q) query = query.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
+  const listed = await query.range(offset, offset + limit - 1);
+  let rawRows: Record<string, unknown>[] = [];
+  let count = listed.count;
   if (listed.error && /schema cache|does not exist|could not find/i.test(listed.error.message)) {
-    listed = await applyCatalogFilters(MATERIAL_BASE_COLUMNS);
+    let fallbackQuery = supabase
+      .from("stockr_materials")
+      .select(MATERIAL_BASE_COLUMNS, { count: "exact" })
+      .eq("company_id", companyId)
+      .order("name");
+    if (category) fallbackQuery = fallbackQuery.eq("category", category);
+    if (sub) fallbackQuery = fallbackQuery.eq("sub_category", sub);
+    if (q) fallbackQuery = fallbackQuery.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
+    const fallback = await fallbackQuery.range(offset, offset + limit - 1);
+    if (fallback.error) throw new Error(fallback.error.message);
+    rawRows = (fallback.data || []) as unknown as Record<string, unknown>[];
+    count = fallback.count;
+  } else if (listed.error) {
+    throw new Error(listed.error.message);
+  } else {
+    rawRows = (listed.data || []) as Record<string, unknown>[];
   }
-  if (listed.error) throw new Error(listed.error.message);
-  const rows = (listed.data || []).map((row) => mapMaterial(row as Record<string, unknown>));
-  const count = listed.count;
+  const rows = rawRows.map(mapMaterial);
 
   const [facetsRes, inv] = await Promise.all([
     supabase.rpc("stockr_catalog_facets", {
