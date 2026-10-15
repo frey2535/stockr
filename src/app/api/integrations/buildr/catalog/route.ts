@@ -25,13 +25,13 @@ export async function GET(request: Request) {
   }
   try {
     const db = getSupabaseAdmin();
-    const { data: companies, error } = await db.from("stockr_companies")
-      .select("id, buildr_company_id, buildr_linked").eq("buildr_company_id", companyId).limit(2);
+    const { data: companies, error } = await db.from("stockr_buildr_tenant_bindings")
+      .select("stockr_company_id").eq("buildr_company_id", companyId).eq("is_active", true).limit(2);
     if (error) throw new Error(error.message);
-    if (!companies || companies.length !== 1 || companies[0].buildr_linked !== true) {
+    if (!companies || companies.length !== 1 || !companies[0].stockr_company_id) {
       return NextResponse.json({ error: "tenant_binding_not_found" }, { status: 404 });
     }
-    const data = await listCatalog(companies[0].id, {
+    const data = await listCatalog(companies[0].stockr_company_id, {
       q: url.searchParams.get("q") || "",
       category: url.searchParams.get("category") || "",
       limit: Math.min(Math.max(Number(url.searchParams.get("limit") || 50) || 50, 1), 100),
