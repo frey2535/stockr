@@ -35,13 +35,14 @@ function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
 }
 
-let dayOneBootstrapPromise: Promise<void> | null = null;
+const dayOneBootstrapPromises = new Map<string, Promise<void>>();
 
 async function ensureDayOneCatalog(companyId: string) {
   if (!isSupabaseConfigured()) return;
-  if (dayOneBootstrapPromise) return dayOneBootstrapPromise;
+  const active = dayOneBootstrapPromises.get(companyId);
+  if (active) return active;
 
-  dayOneBootstrapPromise = (async () => {
+  const bootstrap = (async () => {
     const db = getSupabaseAdmin();
     const { data: company, error: companyError } = await db
       .from("stockr_companies")
@@ -125,10 +126,13 @@ async function ensureDayOneCatalog(companyId: string) {
     }
   })();
 
+  dayOneBootstrapPromises.set(companyId, bootstrap);
   try {
-    await dayOneBootstrapPromise;
+    await bootstrap;
   } finally {
-    dayOneBootstrapPromise = null;
+    if (dayOneBootstrapPromises.get(companyId) === bootstrap) {
+      dayOneBootstrapPromises.delete(companyId);
+    }
   }
 }
 
