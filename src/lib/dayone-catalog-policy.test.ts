@@ -5,8 +5,15 @@ import {
   dayOneExpectedIds,
   dayOneMaterialId,
   dayOneMissingItems,
+  shouldBootstrapDayOneCatalog,
 } from "./dayone-catalog-policy.ts";
 import { DAY_ONE_CATALOG, DAY_ONE_COMPANY_ID } from "./dayone-catalog.ts";
+
+test("runtime bootstrap is gated to Day One Electric only", () => {
+  assert.equal(shouldBootstrapDayOneCatalog(DAY_ONE_COMPANY_ID), true);
+  assert.equal(shouldBootstrapDayOneCatalog("co_other"), false);
+  assert.equal(shouldBootstrapDayOneCatalog(""), false);
+});
 
 test("Day One material ids are deterministic and reserved", () => {
   assert.equal(dayOneMaterialId(DAY_ONE_CATALOG[0]), "dayone_stk_e_00001");
