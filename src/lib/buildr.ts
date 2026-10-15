@@ -1,6 +1,5 @@
 import { mapProject, scopeProjects, unwrapProjects } from "./buildr-parse";
 import { buildrProjectPaths, preferBuildrError } from "./buildr-paths";
-import { uid } from "./id";
 import type { Project } from "./types";
 
 export { buildrProjectPaths, preferBuildrError } from "./buildr-paths";
@@ -89,11 +88,11 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
           continue;
         }
         if (response.status === 401 || response.status === 403) {
-          lastError = preferBuildrError(
-            lastError,
-            "Buildr asked for a login token. Deploy the company job list route so Stockr can sync by company ID.",
-          );
-          continue;
+          return {
+            projects: [],
+            source: "none",
+            error: "Buildr denied project synchronization. A valid tenant-scoped session or approved service integration is required.",
+          };
         }
         if (!response.ok) {
           const body = payload && typeof payload === "object" ? (payload as { message?: string; error?: string }) : {};
@@ -104,7 +103,8 @@ export async function fetchBuildrProjects(companyId: string): Promise<{
           continue;
         }
         const projects = scopeProjects(unwrapProjects(payload), id)
-          .map((row, index) => mapProject(row, index, () => uid("prj")))
+          .filter((row) => typeof row.id === "string" && row.id.trim().length > 0)
+          .map((row, index) => mapProject(row, index, () => ""))
           .filter((row): row is Project => Boolean(row));
         if (projects.length) return { projects, source: "buildr" };
         lastError = "Buildr returned no projects for that company ID.";
