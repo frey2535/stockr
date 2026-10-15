@@ -28,9 +28,64 @@ import type {
 } from "./types";
 import type { DashboardPayload } from "./workspace-types";
 import { mergeToolLists, toolsFromProjects } from "./tools-state";
+import { DAY_ONE_CATALOG, DAY_ONE_CATALOG_COUNT, DAY_ONE_COMPANY_ID } from "./dayone-catalog";
 
 function clampLimit(value: number | undefined) {
   return Math.min(Math.max(value || WORKSPACE_PAGE_SIZE, 1), 100);
+}
+
+let dayOneBootstrapPromise: Promise<void> | null = null;
+
+async function ensureDayOneCatalog(companyId: string) {
+  if (companyId !== DAY_ONE_COMPANY_ID || !isSupabaseConfigured()) return;
+  if (dayOneBootstrapPromise) return dayOneBootstrapPromise;
+
+  dayOneBootstrapPromise = (async () => {
+    const db = getSupabaseAdmin();
+    const { data, error } = await db
+      .from("stockr_materials")
+      .select("id")
+      .eq("company_id", DAY_ONE_COMPANY_ID)
+      .like("id", "dayone_stk_e_%");
+    if (error) throw new Error(error.message);
+
+    const existing = new Set((data || []).map((row) => String(row.id)));
+    if (existing.size >= DAY_ONE_CATALOG_COUNT) return;
+
+    const missing = DAY_ONE_CATALOG.filter((item) => !existing.has("dayone_" + item.sku.toLowerCase().replace(/-/g, "_")));
+    for (let index = 0; index < missing.length; index += 100) {
+      const batch = missing.slice(index, index + 100).map((item) => ({
+        id: "dayone_" + item.sku.toLowerCase().replace(/-/g, "_"),
+        company_id: DAY_ONE_COMPANY_ID,
+        name: item.name,
+        description: [item.variant ? "Variant: " + item.variant : "", "Generic taxonomy entry - verify manufacturer SKU", "Verification: Unverified"]
+          .filter(Boolean)
+          .join(" | "),
+        category: item.category,
+        sub_category: item.subCategory,
+        manufacturer: "",
+        supplier: "",
+        unit: item.unit === "EA" ? "each" : item.unit === "FT" ? "ft" : item.unit === "STICK" ? "stick" : item.unit.toLowerCase(),
+        unit_cost: null,
+        barcode: "",
+        mpn: "",
+        upc: "",
+        supplier_number: "",
+        reorder_point: null,
+        min_stock_level: null,
+        image_url: "",
+        aliases: [item.sku, item.variant].filter(Boolean),
+      }));
+      const { error: insertError } = await db.from("stockr_materials").insert(batch);
+      if (insertError && !/duplicate key/i.test(insertError.message)) throw new Error(insertError.message);
+    }
+  })();
+
+  try {
+    await dayOneBootstrapPromise;
+  } finally {
+    dayOneBootstrapPromise = null;
+  }
 }
 
 function sanitizeFilter(value: string) {
@@ -528,6 +583,8 @@ export async function listCatalog(
       onHand: Object.fromEntries(rows.slice(offset, offset + limit).map((row) => [row.id, onHand(state, row.id)])),
     };
   }
+
+  await ensureDayOneCatalog(companyId);
 
   const supabase = getSupabaseAdmin();
   let query = supabase.from("stockr_materials").select("*", { count: "exact" }).eq("company_id", companyId).order("name");
