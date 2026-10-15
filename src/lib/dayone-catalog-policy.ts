@@ -5,6 +5,10 @@ export type DayOneCatalogExistingRow = {
   company_id: string;
 };
 
+export function shouldBootstrapDayOneCatalog(companyId: string) {
+  return companyId === DAY_ONE_COMPANY_ID;
+}
+
 export function dayOneMaterialId(item: Pick<DayOneCatalogSeed, "sku">) {
   return "dayone_" + item.sku.toLowerCase().replace(/-/g, "_");
 }
