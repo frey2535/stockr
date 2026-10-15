@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isSupabaseConfigured } from "./db-config";
 import { getCompanyState } from "./db";
 import { getSupabaseAdmin } from "./supabase-admin";
-import { selectAllForCompany, selectAllForCompanySafe, selectAllMatching } from "./supabase-page";
+import { selectAllForCompanySafe, selectAllMatching } from "./supabase-page";
 import { identifyRemoteProduct } from "./barcode-lookup";
 import { barcodeVariants } from "./barcode";
 import { materialMatchesCode, materialMatchesQuery, onHand, totalValue } from "./inventory";
