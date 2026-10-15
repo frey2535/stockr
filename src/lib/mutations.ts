@@ -44,6 +44,7 @@ export type StoreCommand =
       type: "receivePurchaseOrder";
       poId: string;
       locationId: string;
+      operationId?: string;
       receipts: { material_id: string; quantity: number }[];
     }
   | { type: "setPurchaseOrderStatus"; poId: string; status: PurchaseOrder["status"] }

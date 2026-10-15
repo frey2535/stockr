@@ -1324,3 +1324,819 @@ $;
 revoke all on function stockr_set_cycle_count_line(text, text, text, text, numeric) from public;
 grant execute on function stockr_set_cycle_count_line(text, text, text, text, numeric) to service_role;
 
+
+
+-- Purchasing integrity: transaction-safe PO creation and replay-safe receiving.
+-- Safe to run more than once.
+
+create or replace function stockr_create_purchase_order(
+  p_company_id text,
+  p_po_id text,
+  p_po_number text,
+  p_supplier text,
+  p_expected_delivery text,
+  p_lines jsonb,
+  p_created_at timestamptz
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  line_row jsonb;
+  v_material_id text;
+  v_expected numeric;
+  v_received numeric;
+  v_unit_cost numeric;
+begin
+  if nullif(trim(p_po_number), '') is null then
+    raise exception 'PO number is required.';
+  end if;
+
+  if p_lines is null or jsonb_typeof(p_lines) <> 'array' or jsonb_array_length(p_lines) = 0 then
+    raise exception 'At least one purchase-order line is required.';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(p_company_id || ':' || lower(trim(p_po_number))));
+
+  if exists (
+    select 1
+      from stockr_purchase_orders
+      where company_id = p_company_id
+        and lower(trim(po_number)) = lower(trim(p_po_number))
+  ) then
+    raise exception 'A purchase order with this PO number already exists.';
+  end if;
+
+  for line_row in select value from jsonb_array_elements(p_lines)
+  loop
+    v_material_id := line_row->>'material_id';
+    v_expected := coalesce(nullif(line_row->>'expected_quantity', '')::numeric, 0);
+    v_received := coalesce(nullif(line_row->>'received_quantity', '')::numeric, 0);
+    v_unit_cost := nullif(line_row->>'unit_cost', '')::numeric;
+
+    if not exists (
+      select 1 from stockr_materials
+      where id = v_material_id
+        and company_id = p_company_id
+    ) then
+      raise exception 'Purchase-order material does not belong to this company.';
+    end if;
+
+    if v_expected <= 0 then
+      raise exception 'Expected quantity must be greater than zero.';
+    end if;
+
+    if v_received < 0 or v_received > v_expected then
+      raise exception 'Received quantity is invalid.';
+    end if;
+
+    if v_unit_cost is not null and v_unit_cost < 0 then
+      raise exception 'Unit cost cannot be negative.';
+    end if;
+  end loop;
+
+  insert into stockr_purchase_orders (
+    id, company_id, po_number, supplier, expected_delivery, status, created_at
+  ) values (
+    p_po_id,
+    p_company_id,
+    trim(p_po_number),
+    coalesce(p_supplier, ''),
+    nullif(p_expected_delivery, ''),
+    'ordered',
+    coalesce(p_created_at, clock_timestamp())
+  );
+
+  insert into stockr_purchase_order_lines (
+    purchase_order_id,
+    company_id,
+    material_id,
+    expected_quantity,
+    received_quantity,
+    unit_cost
+  )
+  select
+    p_po_id,
+    p_company_id,
+    line_row->>'material_id',
+    (line_row->>'expected_quantity')::numeric,
+    coalesce(nullif(line_row->>'received_quantity', '')::numeric, 0),
+    nullif(line_row->>'unit_cost', '')::numeric
+  from jsonb_array_elements(p_lines) line_row;
+end;
+$$;
+
+revoke all on function stockr_create_purchase_order(
+  text, text, text, text, text, jsonb, timestamptz
+) from public;
+grant execute on function stockr_create_purchase_order(
+  text, text, text, text, text, jsonb, timestamptz
+) to service_role;
+
+create or replace function stockr_receive_purchase_order_once(
+  p_company_id text,
+  p_operation_key text,
+  p_po_id text,
+  p_location_id text,
+  p_receipts jsonb,
+  p_created_by text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  inserted integer;
+begin
+  if nullif(trim(p_operation_key), '') is null then
+    raise exception 'Operation key required.';
+  end if;
+
+  insert into stockr_operation_keys (company_id, operation_key, operation_type)
+  values (p_company_id, p_operation_key, 'purchase_order_receive')
+  on conflict (company_id, operation_key) do nothing;
+
+  get diagnostics inserted = row_count;
+  if inserted = 0 then
+    return jsonb_build_object('applied', false, 'duplicate', true);
+  end if;
+
+  perform stockr_receive_purchase_order(
+    p_company_id,
+    p_po_id,
+    p_location_id,
+    p_receipts,
+    p_created_by
+  );
+
+  return jsonb_build_object('applied', true, 'duplicate', false);
+end;
+$$;
+
+revoke all on function stockr_receive_purchase_order_once(
+  text, text, text, text, jsonb, text
+) from public;
+grant execute on function stockr_receive_purchase_order_once(
+  text, text, text, text, jsonb, text
+) to service_role;
+
+notify pgrst, 'reload schema';
+
+
+-- Large-tenant dashboard aggregation.
+-- Keeps dashboard totals/valuation/location summaries/alerts inside Postgres instead of
+-- loading the entire company catalog and inventory ledger into the application process.
+
+create or replace function stockr_dashboard_summary(p_company_id text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+with inventory_totals as (
+  select
+    coalesce(sum(i.quantity), 0)::numeric as total_items,
+    coalesce(sum(i.quantity * coalesce(m.unit_cost, 0)), 0)::numeric as total_value
+  from stockr_inventory i
+  join stockr_materials m
+    on m.id = i.material_id
+   and m.company_id = p_company_id
+  where i.company_id = p_company_id
+),
+material_count as (
+  select count(*)::integer as count
+  from stockr_materials
+  where company_id = p_company_id
+),
+location_rows as (
+  select
+    l.id,
+    l.name,
+    l.type,
+    l.description,
+    l.assigned_to,
+    coalesce(sum(case when i.quantity > 0 then i.quantity else 0 end), 0)::numeric as units,
+    count(distinct case when i.quantity > 0 then i.material_id end)::integer as material_count
+  from stockr_locations l
+  left join stockr_inventory i
+    on i.company_id = p_company_id
+   and i.location_id = l.id
+  where l.company_id = p_company_id
+  group by l.id, l.name, l.type, l.description, l.assigned_to
+),
+location_summary as (
+  select
+    coalesce(jsonb_agg(
+      jsonb_build_object(
+        'id', id,
+        'name', name,
+        'type', type,
+        'description', description,
+        'assigned_to', assigned_to,
+        'units', units,
+        'materialCount', material_count
+      )
+      order by name
+    ), '[]'::jsonb) as rows,
+    count(*) filter (where type = 'vehicle')::integer as vehicles,
+    count(*) filter (where type = 'warehouse')::integer as warehouses
+  from location_rows
+),
+material_totals as (
+  select
+    m.id,
+    m.name,
+    m.description,
+    m.category,
+    m.sub_category,
+    m.manufacturer,
+    m.supplier,
+    m.unit,
+    m.unit_cost,
+    m.barcode,
+    m.mpn,
+    m.upc,
+    m.supplier_number,
+    m.reorder_point,
+    m.min_stock_level,
+    m.image_url,
+    m.aliases,
+    coalesce(sum(i.quantity), 0)::numeric as total_qty
+  from stockr_materials m
+  left join stockr_inventory i
+    on i.company_id = p_company_id
+   and i.material_id = m.id
+  where m.company_id = p_company_id
+    and (m.reorder_point is not null or m.min_stock_level is not null)
+  group by
+    m.id, m.name, m.description, m.category, m.sub_category, m.manufacturer,
+    m.supplier, m.unit, m.unit_cost, m.barcode, m.mpn, m.upc,
+    m.supplier_number, m.reorder_point, m.min_stock_level, m.image_url, m.aliases
+),
+alert_rows as (
+  select *
+  from (
+    select
+      mt.*,
+      case
+        when mt.min_stock_level is not null and mt.total_qty <= mt.min_stock_level then 'critical'
+        when mt.reorder_point is not null and mt.total_qty <= mt.reorder_point then 'reorder'
+        else null
+      end as status
+    from material_totals mt
+  ) ranked
+  where status is not null
+  order by
+    case status when 'critical' then 0 else 1 end,
+    name
+  limit 25
+),
+alerts as (
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id', id,
+      'name', name,
+      'description', description,
+      'category', category,
+      'sub_category', sub_category,
+      'manufacturer', manufacturer,
+      'supplier', supplier,
+      'unit', unit,
+      'unit_cost', unit_cost,
+      'barcode', barcode,
+      'mpn', mpn,
+      'upc', upc,
+      'supplier_number', supplier_number,
+      'reorder_point', reorder_point,
+      'min_stock_level', min_stock_level,
+      'image_url', image_url,
+      'aliases', aliases,
+      'totalQty', total_qty,
+      'status', status
+    )
+  ), '[]'::jsonb) as rows
+  from alert_rows
+)
+select jsonb_build_object(
+  'totalItems', (select total_items from inventory_totals),
+  'value', (select total_value from inventory_totals),
+  'materialCount', (select count from material_count),
+  'vehicles', (select vehicles from location_summary),
+  'warehouses', (select warehouses from location_summary),
+  'locations', (select rows from location_summary),
+  'alerts', (select rows from alerts)
+);
+$$;
+
+revoke all on function stockr_dashboard_summary(text) from public;
+grant execute on function stockr_dashboard_summary(text) to service_role;
+
+notify pgrst, 'reload schema';
+
+
+-- Large-tenant reporting and catalog facet aggregation.
+-- Safe to run more than once.
+
+create index if not exists stockr_materials_category_idx
+  on stockr_materials (company_id, category);
+
+create index if not exists stockr_materials_category_subcategory_idx
+  on stockr_materials (company_id, category, sub_category);
+
+create or replace function stockr_catalog_facets(
+  p_company_id text,
+  p_category text default null
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+with categories as (
+  select distinct category
+  from stockr_materials
+  where company_id = p_company_id
+    and nullif(trim(coalesce(category, '')), '') is not null
+),
+subcategories as (
+  select distinct sub_category
+  from stockr_materials
+  where company_id = p_company_id
+    and nullif(trim(coalesce(sub_category, '')), '') is not null
+    and (
+      nullif(trim(coalesce(p_category, '')), '') is null
+      or category = p_category
+    )
+)
+select jsonb_build_object(
+  'categories',
+  coalesce(
+    (select jsonb_agg(category order by category) from categories),
+    '[]'::jsonb
+  ),
+  'subcategories',
+  coalesce(
+    (select jsonb_agg(sub_category order by sub_category) from subcategories),
+    '[]'::jsonb
+  )
+);
+$$;
+
+revoke all on function stockr_catalog_facets(text, text) from public;
+grant execute on function stockr_catalog_facets(text, text) to service_role;
+
+create or replace function stockr_reports_summary(
+  p_company_id text,
+  p_from timestamptz,
+  p_to timestamptz
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+with valuation_rows as (
+  select
+    l.name as location,
+    l.type,
+    coalesce(sum(i.quantity), 0)::numeric as total_qty,
+    coalesce(sum(i.quantity * coalesce(m.unit_cost, 0)), 0)::numeric as total_value
+  from stockr_locations l
+  left join stockr_inventory i
+    on i.company_id = p_company_id
+   and i.location_id = l.id
+  left join stockr_materials m
+    on m.company_id = p_company_id
+   and m.id = i.material_id
+  where l.company_id = p_company_id
+  group by l.id, l.name, l.type
+),
+usage_rows as (
+  select
+    coalesce(nullif(trim(t.project), ''), 'Unassigned') as project,
+    coalesce(sum(t.quantity), 0)::numeric as qty,
+    coalesce(sum(t.quantity * coalesce(m.unit_cost, 0)), 0)::numeric as value
+  from stockr_transactions t
+  left join stockr_materials m
+    on m.company_id = p_company_id
+   and m.id = t.material_id
+  where t.company_id = p_company_id
+    and t.type = 'use'
+    and t.created_at >= p_from
+    and t.created_at <= p_to
+  group by coalesce(nullif(trim(t.project), ''), 'Unassigned')
+)
+select jsonb_build_object(
+  'valuation',
+  coalesce(
+    (
+      select jsonb_agg(
+        jsonb_build_object(
+          'location', location,
+          'type', type,
+          'totalQty', total_qty,
+          'totalValue', total_value
+        )
+        order by location
+      )
+      from valuation_rows
+    ),
+    '[]'::jsonb
+  ),
+  'grand',
+  coalesce((select sum(total_value) from valuation_rows), 0),
+  'usage',
+  coalesce(
+    (
+      select jsonb_agg(
+        jsonb_build_object(
+          'project', project,
+          'qty', qty,
+          'value', value
+        )
+        order by value desc, project
+      )
+      from usage_rows
+    ),
+    '[]'::jsonb
+  )
+);
+$$;
+
+revoke all on function stockr_reports_summary(text, timestamptz, timestamptz) from public;
+grant execute on function stockr_reports_summary(text, timestamptz, timestamptz) to service_role;
+
+create index if not exists stockr_transactions_reports_idx
+  on stockr_transactions (company_id, type, created_at desc);
+
+notify pgrst, 'reload schema';
+
+
+-- Enterprise catalog imports with transactional application and verified price provenance.
+-- Depends on supplier-intelligence tables. Safe to run more than once.
+
+create table if not exists stockr_catalog_imports (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  file_name text not null,
+  supplier_id text references stockr_suppliers (id) on delete set null,
+  status text not null default 'pending',
+  row_count integer not null default 0,
+  created_count integer not null default 0,
+  updated_count integer not null default 0,
+  priced_count integer not null default 0,
+  error_message text,
+  created_by text not null,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create index if not exists stockr_catalog_imports_company_idx
+  on stockr_catalog_imports (company_id, created_at desc);
+
+create index if not exists stockr_materials_upc_lookup_idx
+  on stockr_materials (company_id, upc)
+  where nullif(trim(coalesce(upc, '')), '') is not null;
+
+create index if not exists stockr_materials_mpn_mfr_lookup_idx
+  on stockr_materials (company_id, manufacturer, mpn)
+  where nullif(trim(coalesce(mpn, '')), '') is not null;
+
+create index if not exists stockr_materials_supplier_number_lookup_idx
+  on stockr_materials (company_id, supplier, supplier_number)
+  where nullif(trim(coalesce(supplier_number, '')), '') is not null;
+
+alter table stockr_catalog_imports enable row level security;
+drop policy if exists stockr_deny_anon on stockr_catalog_imports;
+create policy stockr_deny_anon on stockr_catalog_imports
+  for all to anon, authenticated using (false) with check (false);
+
+create or replace function stockr_import_catalog_batch(
+  p_company_id text,
+  p_import_id text,
+  p_supplier_id text,
+  p_source_reference text,
+  p_rows jsonb,
+  p_max_materials integer
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  row_data jsonb;
+  row_number integer := 0;
+  current_materials integer := 0;
+  created_count integer := 0;
+  updated_count integer := 0;
+  priced_count integer := 0;
+  v_material_id text;
+  v_matches text[];
+  v_name text;
+  v_unit text;
+  v_category text;
+  v_manufacturer text;
+  v_supplier text;
+  v_supplier_name text;
+  v_barcode text;
+  v_mpn text;
+  v_upc text;
+  v_supplier_number text;
+  v_description text;
+  v_unit_cost numeric;
+  v_new_id text;
+  v_aliases jsonb;
+begin
+  if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) = 0 then
+    raise exception 'Catalog import contains no rows.';
+  end if;
+
+  if not exists (
+    select 1 from stockr_catalog_imports
+    where id = p_import_id and company_id = p_company_id
+  ) then
+    raise exception 'Catalog import record not found in this company.';
+  end if;
+
+  if p_supplier_id is not null then
+    select name
+      into v_supplier_name
+      from stockr_suppliers
+      where id = p_supplier_id
+        and company_id = p_company_id
+        and enabled = true
+        and approved = true;
+    if not found then
+      raise exception 'Selected supplier is not an approved supplier for this company.';
+    end if;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext('stockr-catalog-import:' || p_company_id));
+
+  select count(*)
+    into current_materials
+    from stockr_materials
+    where company_id = p_company_id;
+
+  for row_data in select value from jsonb_array_elements(p_rows)
+  loop
+    row_number := row_number + 1;
+    v_material_id := null;
+    v_matches := null;
+
+    v_name := trim(coalesce(row_data->>'name', ''));
+    v_unit := coalesce(nullif(trim(coalesce(row_data->>'unit', '')), ''), 'each');
+    v_category := trim(coalesce(row_data->>'category', ''));
+    v_manufacturer := trim(coalesce(row_data->>'manufacturer', ''));
+    v_supplier := coalesce(v_supplier_name, trim(coalesce(row_data->>'supplier', '')));
+    v_barcode := trim(coalesce(row_data->>'barcode', ''));
+    v_mpn := trim(coalesce(row_data->>'mpn', ''));
+    v_upc := trim(coalesce(row_data->>'upc', ''));
+    v_supplier_number := trim(coalesce(row_data->>'supplier_number', ''));
+    v_description := trim(coalesce(row_data->>'description', ''));
+    v_new_id := nullif(trim(coalesce(row_data->>'id', '')), '');
+    v_unit_cost := nullif(row_data->>'unit_cost', '')::numeric;
+
+    if v_name = '' then
+      raise exception 'Row %: material name is required.', row_number;
+    end if;
+
+    if v_unit_cost is not null then
+      if v_unit_cost < 0 then
+        raise exception 'Row %: unit cost cannot be negative.', row_number;
+      end if;
+      if p_supplier_id is null then
+        raise exception 'Row %: price requires an approved supplier source.', row_number;
+      end if;
+    end if;
+
+    if v_upc <> '' then
+      select array_agg(id order by id) into v_matches
+      from stockr_materials
+      where company_id = p_company_id and upc = v_upc;
+    elsif v_barcode <> '' then
+      select array_agg(id order by id) into v_matches
+      from stockr_materials
+      where company_id = p_company_id and barcode = v_barcode;
+    elsif v_mpn <> '' and v_manufacturer <> '' then
+      select array_agg(id order by id) into v_matches
+      from stockr_materials
+      where company_id = p_company_id
+        and lower(trim(manufacturer)) = lower(v_manufacturer)
+        and lower(trim(mpn)) = lower(v_mpn);
+    elsif v_supplier_number <> '' and v_supplier <> '' then
+      select array_agg(id order by id) into v_matches
+      from stockr_materials
+      where company_id = p_company_id
+        and lower(trim(supplier)) = lower(v_supplier)
+        and lower(trim(supplier_number)) = lower(v_supplier_number);
+    end if;
+
+    if coalesce(cardinality(v_matches), 0) > 1 then
+      raise exception 'Row %: identifier matches multiple catalog items; resolve duplicates before import.', row_number;
+    end if;
+
+    if coalesce(cardinality(v_matches), 0) = 1 then
+      v_material_id := v_matches[1];
+    end if;
+
+    v_aliases := to_jsonb(array_remove(
+      array[
+        nullif(v_barcode, ''),
+        nullif(v_mpn, ''),
+        nullif(v_upc, ''),
+        nullif(v_supplier_number, '')
+      ],
+      null
+    ));
+
+    if v_material_id is null then
+      if v_new_id is null then
+        raise exception 'Row %: import row is missing its generated material ID.', row_number;
+      end if;
+      if exists (select 1 from stockr_materials where id = v_new_id) then
+        raise exception 'Row %: generated material ID already exists.', row_number;
+      end if;
+      if p_max_materials is not null
+        and current_materials + created_count + 1 > p_max_materials then
+        raise exception 'Catalog import exceeds the company material limit of %.', p_max_materials;
+      end if;
+
+      insert into stockr_materials (
+        id, company_id, name, description, category, sub_category, manufacturer, supplier,
+        unit, unit_cost, barcode, mpn, upc, supplier_number,
+        reorder_point, min_stock_level, image_url, aliases
+      ) values (
+        v_new_id,
+        p_company_id,
+        v_name,
+        v_description,
+        v_category,
+        trim(coalesce(row_data->>'sub_category', '')),
+        v_manufacturer,
+        v_supplier,
+        v_unit,
+        v_unit_cost,
+        v_barcode,
+        v_mpn,
+        v_upc,
+        v_supplier_number,
+        nullif(row_data->>'reorder_point', '')::numeric,
+        nullif(row_data->>'min_stock_level', '')::numeric,
+        trim(coalesce(row_data->>'image_url', '')),
+        coalesce(v_aliases, '[]'::jsonb)
+      );
+      v_material_id := v_new_id;
+      created_count := created_count + 1;
+    else
+      update stockr_materials
+      set
+        name = v_name,
+        description = case when v_description <> '' then v_description else description end,
+        category = case when v_category <> '' then v_category else category end,
+        sub_category = case
+          when nullif(trim(coalesce(row_data->>'sub_category', '')), '') is not null
+            then trim(row_data->>'sub_category')
+          else sub_category
+        end,
+        manufacturer = case when v_manufacturer <> '' then v_manufacturer else manufacturer end,
+        supplier = case when v_supplier <> '' then v_supplier else supplier end,
+        unit = v_unit,
+        unit_cost = coalesce(v_unit_cost, unit_cost),
+        barcode = case when v_barcode <> '' then v_barcode else barcode end,
+        mpn = case when v_mpn <> '' then v_mpn else mpn end,
+        upc = case when v_upc <> '' then v_upc else upc end,
+        supplier_number = case when v_supplier_number <> '' then v_supplier_number else supplier_number end,
+        reorder_point = coalesce(nullif(row_data->>'reorder_point', '')::numeric, reorder_point),
+        min_stock_level = coalesce(nullif(row_data->>'min_stock_level', '')::numeric, min_stock_level),
+        image_url = case
+          when nullif(trim(coalesce(row_data->>'image_url', '')), '') is not null
+            then trim(row_data->>'image_url')
+          else image_url
+        end,
+        aliases = coalesce(aliases, '[]'::jsonb) || coalesce(v_aliases, '[]'::jsonb)
+      where id = v_material_id
+        and company_id = p_company_id;
+      updated_count := updated_count + 1;
+    end if;
+
+    if v_unit_cost is not null then
+      insert into stockr_supplier_offers (
+        id,
+        company_id,
+        supplier_id,
+        material_id,
+        product_name,
+        manufacturer,
+        mpn,
+        upc,
+        supplier_sku,
+        price,
+        currency,
+        unit,
+        product_url,
+        source_type,
+        source_reference,
+        observed_at,
+        expires_at,
+        exact_match
+      ) values (
+        'off_' || substr(md5(random()::text || clock_timestamp()::text || row_number::text), 1, 20),
+        p_company_id,
+        p_supplier_id,
+        v_material_id,
+        v_name,
+        nullif(v_manufacturer, ''),
+        nullif(v_mpn, ''),
+        nullif(coalesce(nullif(v_upc, ''), v_barcode), ''),
+        nullif(v_supplier_number, ''),
+        v_unit_cost,
+        'USD',
+        v_unit,
+        null,
+        'price_file',
+        p_source_reference,
+        clock_timestamp(),
+        null,
+        (v_mpn <> '' or v_upc <> '' or v_barcode <> '')
+      );
+      priced_count := priced_count + 1;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'processed', row_number,
+    'created', created_count,
+    'updated', updated_count,
+    'priced', priced_count
+  );
+end;
+$$;
+
+revoke all on function stockr_import_catalog_batch(
+  text, text, text, text, jsonb, integer
+) from public;
+grant execute on function stockr_import_catalog_batch(
+  text, text, text, text, jsonb, integer
+) to service_role;
+
+alter table stockr_material_requests add column if not exists request_type text not null default 'PROCUREMENT';
+alter table stockr_material_requests add column if not exists purchasing_authorized boolean not null default false;
+alter table stockr_material_requests add column if not exists authorization_id text;
+alter table stockr_material_requests add column if not exists authorization_by text;
+alter table stockr_material_requests add column if not exists converted_from_id text;
+alter table stockr_material_requests add column if not exists event_id text;
+alter table stockr_material_requests add column if not exists buildr_request_id text;
+alter table stockr_material_requests add column if not exists contract_version text not null default '1.1';
+
+create table if not exists stockr_price_observations (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  request_id text not null,
+  line_id text not null,
+  material_id text not null,
+  supplier_id text,
+  supplier_name text not null default '',
+  product_url text,
+  source_reference text,
+  observed_at timestamptz not null default now(),
+  mpn text,
+  upc text,
+  supplier_sku text,
+  unit text,
+  pack_qty numeric,
+  currency text,
+  unit_price numeric,
+  availability text,
+  price_status text not null default 'unavailable',
+  note text
+);
+
+create table if not exists stockr_rfq_jobs (
+  id text primary key,
+  company_id text not null references stockr_companies (id) on delete cascade,
+  request_id text not null,
+  supplier_id text not null,
+  supplier_name text not null default '',
+  status text not null default 'queued_for_official_rfq',
+  channel text not null default 'buildr_official',
+  created_at timestamptz not null default now(),
+  note text
+);
+
+create index if not exists stockr_price_observations_request_idx
+  on stockr_price_observations (company_id, request_id);
+create unique index if not exists stockr_rfq_jobs_once_idx
+  on stockr_rfq_jobs (company_id, request_id, supplier_id);
+
+alter table stockr_price_observations enable row level security;
+alter table stockr_rfq_jobs enable row level security;
+
+notify pgrst, 'reload schema';

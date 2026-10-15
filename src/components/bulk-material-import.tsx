@@ -15,11 +15,13 @@ export function BulkMaterialImport({
   onCreate,
   onResolved,
   label = "Scan or import materials",
+  allowCsv = true,
 }: {
   materials: Material[];
   onCreate: (material: Partial<Material>) => Promise<{ ok: true; material: Material } | { ok: false; error: string }>;
   onResolved: (rows: Array<{ material: Material; quantity: number }>) => void;
   label?: string;
+  allowCsv?: boolean;
 }) {
   const [unknown, setUnknown] = useState<{ barcode: string; name: string } | null>(null);
 
@@ -87,21 +89,23 @@ export function BulkMaterialImport({
     <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
       <p className="text-xs font-medium">{label}</p>
       <BarcodeScanButton onCode={(code) => void handleCode(code)} label="Scan purchased material" />
-      <div className="space-y-1">
-        <Label className="text-xs">Bulk CSV upload</Label>
-        <Input
-          type="file"
-          accept=".csv,text/csv"
-          onChange={(event) => {
-            void handleFile(event.target.files?.[0]);
-            event.target.value = "";
-          }}
-        />
-        <p className="text-xs text-muted-foreground">
-          Columns: name, barcode, qty, unit, category, manufacturer, supplier, unit_cost. Missing catalog
-          items are created automatically.
-        </p>
-      </div>
+      {allowCsv ? (
+        <div className="space-y-1">
+          <Label className="text-xs">Bulk CSV upload</Label>
+          <Input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => {
+              void handleFile(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Columns: name, barcode, qty, unit, category, manufacturer, supplier, unit_cost. Missing catalog
+            items are created automatically.
+          </p>
+        </div>
+      ) : null}
       {unknown ? (
         <div className="space-y-2 rounded-lg border border-primary/40 p-3">
           <p className="text-sm font-medium">Not in catalog: {unknown.barcode}</p>

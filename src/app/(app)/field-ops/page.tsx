@@ -28,6 +28,7 @@ export default function FieldOpsPage() {
   const [requestQty, setRequestQty] = useState("1");
   const [requestPriority, setRequestPriority] = useState<"normal" | "urgent" | "critical">("normal");
   const [requestDestId, setRequestDestId] = useState("");
+  const [requestType, setRequestType] = useState<"QUOTE_ONLY" | "PROCUREMENT" | "">("");
 
   const materialName = (id: string) => data.materials.find((row) => row.id === id)?.name || id;
 
@@ -227,6 +228,13 @@ export default function FieldOpsPage() {
               </Select>
               <Input type="number" min="0" value={requestQty} onChange={(e) => setRequestQty(e.target.value)} />
             </div>
+            <Select value={requestType || undefined} onValueChange={(value) => setRequestType(value as "QUOTE_ONLY" | "PROCUREMENT")}>
+              <SelectTrigger><SelectValue placeholder="Quote only or Procurement" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="QUOTE_ONLY">Quote only — prices + RFQ, no stock or PO</SelectItem>
+                <SelectItem value="PROCUREMENT">Procurement — check stock, authorize before buy</SelectItem>
+              </SelectContent>
+            </Select>
             <div className="grid gap-2 md:grid-cols-[1fr_120px_auto]">
               <Select value={requestDestId} onValueChange={setRequestDestId}>
                 <SelectTrigger><SelectValue placeholder="Send to" /></SelectTrigger>
@@ -246,15 +254,20 @@ export default function FieldOpsPage() {
                 variant="outline"
                 onClick={async () => {
                   if (!requestMaterialId) return;
+                  if (!requestType) {
+                    toast.error("Choose Quote only or Procurement.");
+                    return;
+                  }
                   if (
                     await send({
                       action: "createRequest",
+                      requestType,
                       destinationLocationId: requestDestId || undefined,
                       priority: requestPriority,
                       lines: [{ materialId: requestMaterialId, quantity: Number(requestQty) }],
                     })
                   ) {
-                    toast.success("Request sent");
+                    toast.success(requestType === "QUOTE_ONLY" ? "Quote request saved" : "Procurement request saved");
                   }
                 }}
               >
@@ -263,14 +276,19 @@ export default function FieldOpsPage() {
             </div>
             {!openRequests.length ? <p className="text-sm text-muted-foreground">No open material requests.</p> : null}
             {openRequests.map((request) => (
-              <div key={request.id} className="rounded-xl border p-3">
+              <div key={request.id} className="space-y-2 rounded-xl border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-medium">{request.lines.length} line{request.lines.length === 1 ? "" : "s"} · {request.priority}</p>
+                    <p className="font-medium">
+                      {request.request_type === "QUOTE_ONLY" ? "Quote only" : "Procurement"} · {request.lines.length} line{request.lines.length === 1 ? "" : "s"} · {request.priority}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {request.lines.map((line) => `${materialName(line.material_id)} × ${line.quantity_requested}`).join(", ") || "No lines"}
                     </p>
-                    <p className="text-xs text-muted-foreground">{request.requested_by} · {new Date(request.created_at).toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {request.requested_by} · {new Date(request.created_at).toLocaleString()}
+                      {request.purchasing_authorized ? " · purchasing authorized" : " · not authorized to buy"}
+                    </p>
                   </div>
                   <Select
                     value={request.status}
@@ -283,6 +301,38 @@ export default function FieldOpsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                {(request.observations || []).map((obs) => (
+                  <p key={obs.id} className="text-xs text-muted-foreground">
+                    {obs.supplier_name || "Supplier"}: {obs.price_status === "verified" && obs.unit_price != null
+                      ? `${obs.currency || "USD"} ${obs.unit_price}`
+                      : "Price unavailable"}
+                    {obs.product_url ? ` · ${obs.product_url}` : ""}
+                  </p>
+                ))}
+                {(request.rfq_jobs || []).map((job) => (
+                  <p key={job.id} className="text-xs text-muted-foreground">{job.supplier_name}: {job.note}</p>
+                ))}
+                {request.request_type === "PROCUREMENT"
+                  ? (request.availability || []).map((row) => (
+                    <p key={row.line_id} className="text-xs text-muted-foreground">
+                      {materialName(row.material_id)} · on hand {row.on_hand} · available {row.available} · shortage {row.shortage}
+                    </p>
+                  ))
+                  : null}
+                <div className="flex flex-wrap gap-2">
+                  {request.request_type === "QUOTE_ONLY" ? (
+                    <Button size="sm" variant="outline" onClick={() => void send({ action: "convertToProcurement", requestId: request.id })}>
+                      Convert to procurement
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => void send({ action: "authorizePurchasing", requestId: request.id })}>
+                      Authorize purchasing
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => void send({ action: "collectPrices", requestId: request.id })}>
+                    Refresh prices
+                  </Button>
                 </div>
               </div>
             ))}

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { qty } from "@/lib/format";
+import { canManagePurchasing } from "@/lib/command-access";
 import { useStore } from "@/lib/store";
 import type { RestockNeed } from "@/lib/types";
 
@@ -19,7 +20,8 @@ export function RestockBoard({
   onDone?: () => Promise<void> | void;
   compact?: boolean;
 }) {
-  const { applyRestock } = useStore();
+  const { applyRestock, account } = useStore();
+  const canDraftPo = canManagePurchasing(account?.role);
 
   const apply = async (row: RestockNeed) => {
     const result = await applyRestock(
@@ -102,22 +104,26 @@ export function RestockBoard({
                   : `Draft PO ${qty(row.suggestion.quantity)} from ${row.suggestion.supplier}`}
               </p>
             </div>
-            <Button
-              size="sm"
-              onClick={() => apply(row)}
-            >
-              {row.suggestion.kind === "transfer" ? (
-                <>
-                  <ArrowRightLeft className="mr-2 size-4" />
-                  Transfer
-                </>
-              ) : (
-                <>
-                  <PackagePlus className="mr-2 size-4" />
-                  Draft PO
-                </>
-              )}
-            </Button>
+            {row.suggestion.kind === "transfer" || canDraftPo ? (
+              <Button
+                size="sm"
+                onClick={() => apply(row)}
+              >
+                {row.suggestion.kind === "transfer" ? (
+                  <>
+                    <ArrowRightLeft className="mr-2 size-4" />
+                    Transfer
+                  </>
+                ) : (
+                  <>
+                    <PackagePlus className="mr-2 size-4" />
+                    Draft PO
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Badge variant="outline">Purchasing authorization required</Badge>
+            )}
           </div>
         ))}
       </CardContent>
