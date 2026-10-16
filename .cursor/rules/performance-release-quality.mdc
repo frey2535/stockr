@@ -1,5 +1,5 @@
 ---
-description: Mandatory Buildr performance, stability, crash prevention, PWA reliability, and release-quality verification
+description: Mandatory Stockr performance, stability, crash prevention, PWA reliability, and release-quality verification
 alwaysApply: true
 ---
 
@@ -7,7 +7,7 @@ alwaysApply: true
 
 ## Primary directive
 
-Buildr must remain fast, stable, responsive, and reliable as companies, users, projects, materials, and records increase.
+Stockr must remain fast, stable, responsive, and reliable as companies, users, projects, materials, and records increase.
 
 Every significant upgrade must consider its performance and stability impact.
 
