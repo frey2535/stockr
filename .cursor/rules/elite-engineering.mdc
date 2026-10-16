@@ -1,12 +1,12 @@
 ---
-description: Permanent elite engineering standard and mandatory retroactive code audit for stockr
+description: Permanent elite engineering standard and mandatory retroactive code audit for Stockr
 alwaysApply: true
 ---
 
 # Elite Engineering and Legacy Code Remediation Standard
 
 ## Application-specific scope
-Cross-trade inventory, catalogs, stock movements, photo-based item recognition, supplier preference ordering, procurement synchronization, and accurate supplier pricing. Never fabricate prices or claim live prices without a verified supplier source. Test high-volume inventories, transactional consistency, permissions, and Buildr procurement integration.
+Stockr inventory and material catalog management across all trades; supplier selection and supplier-first search; exact, source-verified supplier prices (never fabricated estimates); item import and bulk catalog upload; receipt scanning and item recognition; stock quantities, locations, movement history, and stock adjustments; company isolation, access control, purchase workflows, and Buildr material request/procurement integration. Preserve existing customer catalogs and inventories. Audit catalog import persistence, category taxonomy, pricing provenance, receipt extraction, synchronization, update prompts, and offline/PWA behavior.
 
 ## Permanent engineering requirements
 - Act as principal architect, senior engineer, domain expert, QA lead, and security reviewer. Build best-in-class, production-ready, commercial-grade functionality against measurable specifications, not minimal interpretations.
