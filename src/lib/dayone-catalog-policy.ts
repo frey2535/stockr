@@ -15,7 +15,14 @@ export function normalizeCompanyName(name: string) {
 
 export function isDayOneCompanyName(name: string) {
   const normalized = normalizeCompanyName(name);
-  return normalized === "day one electric" || normalized.startsWith("day one electric ") || normalized === "dayone electric";
+  const collapsed = normalized.replace(/\s+/g, "");
+  return (
+    normalized === "day one electric" ||
+    normalized.startsWith("day one electric ") ||
+    normalized === "dayone electric" ||
+    collapsed === "dayoneelectric" ||
+    collapsed.startsWith("dayoneelectric")
+  );
 }
 
 export function shouldBootstrapDayOneCatalog(companyId: string, buildrCompanyId = "", companyName = "") {

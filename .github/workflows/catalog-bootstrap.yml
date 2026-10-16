@@ -1,0 +1,27 @@
+name: Day One catalog bootstrap
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/bootstrap-dayone-catalog.ts"
+      - "src/lib/dayone-catalog-bootstrap.ts"
+      - "src/lib/dayone-catalog-policy.ts"
+      - ".github/workflows/catalog-bootstrap.yml"
+
+jobs:
+  seed:
+    name: Seed Day One catalog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Inspect and seed the Day One Electric catalog
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node --experimental-strip-types scripts/bootstrap-dayone-catalog.ts
