@@ -1,5 +1,5 @@
 ---
-description: Mandatory regression testing and evidence-based verification for every Buildr code change
+description: Mandatory regression testing and evidence-based verification for every Stockr code change
 alwaysApply: true
 ---
 
@@ -26,7 +26,7 @@ A successful compilation or production build is not sufficient proof of correctn
 11. Investigate every newly introduced failure.
 12. Repeat testing until all applicable acceptance criteria are satisfied.
 
-## Mandatory Buildr regression coverage
+## Mandatory Stockr regression coverage
 
 Where affected by a change, verify:
 
