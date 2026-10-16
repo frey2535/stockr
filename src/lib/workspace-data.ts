@@ -542,7 +542,7 @@ export async function listCatalog(
   const listed = await query.range(offset, offset + limit - 1);
   let rawRows: Record<string, unknown>[] = [];
   let count = listed.count;
-  if (listed.error && /schema cache|does not exist|could not find/i.test(listed.error.message)) {
+  if (listed.error) {
     let fallbackQuery = supabase
       .from("stockr_materials")
       .select(MATERIAL_BASE_COLUMNS, { count: "exact" })
@@ -552,11 +552,9 @@ export async function listCatalog(
     if (sub) fallbackQuery = fallbackQuery.eq("sub_category", sub);
     if (q) fallbackQuery = fallbackQuery.or(`name.ilike.%${q}%,manufacturer.ilike.%${q}%,supplier.ilike.%${q}%,barcode.ilike.%${q}%`);
     const fallback = await fallbackQuery.range(offset, offset + limit - 1);
-    if (fallback.error) throw new Error(fallback.error.message);
+    if (fallback.error) throw new Error(listed.error.message);
     rawRows = (fallback.data || []) as unknown as Record<string, unknown>[];
     count = fallback.count;
-  } else if (listed.error) {
-    throw new Error(listed.error.message);
   } else {
     rawRows = (listed.data || []) as Record<string, unknown>[];
   }
@@ -583,27 +581,23 @@ export async function listCatalog(
     subcategories?: string[];
   };
   if (facetsRes.error) {
-    if (/stockr_catalog_facets|does not exist|schema cache/i.test(facetsRes.error.message)) {
-      const fallback = await selectAllForCompanySafe<{ category: string | null; sub_category: string | null }>(
-        supabase,
-        "stockr_materials",
-        companyId,
-        "category, sub_category",
-      );
-      facets = {
-        categories: Array.from(new Set(fallback.map((row) => row.category).filter(Boolean))) as string[],
-        subcategories: Array.from(
-          new Set(
-            fallback
-              .filter((row) => !category || row.category === category)
-              .map((row) => row.sub_category)
-              .filter(Boolean),
-          ),
-        ) as string[],
-      };
-    } else {
-      throw new Error(facetsRes.error.message);
-    }
+    const fallback = await selectAllForCompanySafe<{ category: string | null; sub_category: string | null }>(
+      supabase,
+      "stockr_materials",
+      companyId,
+      "category, sub_category",
+    );
+    facets = {
+      categories: Array.from(new Set(fallback.map((row) => row.category).filter(Boolean))) as string[],
+      subcategories: Array.from(
+        new Set(
+          fallback
+            .filter((row) => !category || row.category === category)
+            .map((row) => row.sub_category)
+            .filter(Boolean),
+        ),
+      ) as string[],
+    };
   }
   const onHandMap: Record<string, number> = {};
   for (const row of inv.data || []) {

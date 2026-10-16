@@ -22,6 +22,14 @@ export type DayOneBootstrapReport = {
   companies: Array<{ id: string; name: string; materials: number; matched: boolean }>;
   reservedRows: number;
   seeded: Array<{ companyId: string; name: string; inserted: boolean }>;
+  catalogRead?: {
+    companyId: string;
+    starError: string | null;
+    baseError: string | null;
+    facetError: string | null;
+    names: string[];
+    members: number;
+  };
 };
 
 function dayOneSeedMaterial(companyId: string, item: DayOneCatalogSeed, id: string): Material {
@@ -233,6 +241,26 @@ export async function bootstrapDayOneCatalogs(): Promise<DayOneBootstrapReport> 
       .eq("company_id", company.id);
     const row = report.companies.find((item) => item.id === company.id);
     if (row) row.materials = Number(after.count || 0);
+    const star = await db.from("stockr_materials").select("*").eq("company_id", company.id).order("name").range(0, 4);
+    const base = await db
+      .from("stockr_materials")
+      .select("id, name, category, sub_category, unit, barcode")
+      .eq("company_id", company.id)
+      .order("name")
+      .range(0, 4);
+    const facets = await db.rpc("stockr_catalog_facets", { p_company_id: company.id, p_category: null });
+    const members = await db
+      .from("stockr_memberships")
+      .select("user_id", { count: "exact", head: true })
+      .eq("company_id", company.id);
+    report.catalogRead = {
+      companyId: company.id,
+      starError: star.error?.message || null,
+      baseError: base.error?.message || null,
+      facetError: facets.error?.message || null,
+      names: ((base.data || star.data || []) as Array<{ name?: string }>).map((item) => String(item.name || "")).filter(Boolean),
+      members: Number(members.count || 0),
+    };
   }
 
   return report;
