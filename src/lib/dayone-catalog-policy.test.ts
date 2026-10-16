@@ -21,6 +21,7 @@ test("runtime bootstrap recognizes Day One by Stockr id or linked Buildr id", ()
 test("runtime bootstrap recognizes Day One by company name without seeding other trades", () => {
   assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "Day One Electric"), true);
   assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "Day One Electric LLC"), true);
+  assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "DayOneElectric"), true);
   assert.equal(shouldBootstrapDayOneCatalog("co_abc", "", "Smith Mechanical"), false);
 });
 
