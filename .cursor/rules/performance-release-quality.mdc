@@ -1,0 +1,82 @@
+---
+description: Mandatory Buildr performance, stability, crash prevention, PWA reliability, and release-quality verification
+alwaysApply: true
+---
+
+# PERMANENT RULE 7 — PERFORMANCE, STABILITY AND RELEASE QUALITY
+
+## Primary directive
+
+Buildr must remain fast, stable, responsive, and reliable as companies, users, projects, materials, and records increase.
+
+Every significant upgrade must consider its performance and stability impact.
+
+## Performance engineering
+
+- Measure relevant performance before major modifications.
+- Identify unnecessary renders, duplicate requests, and inefficient calculations.
+- Investigate slow database queries and missing indexes.
+- Use pagination or virtualization for large datasets when appropriate.
+- Avoid loading unnecessary records into memory.
+- Prevent excessive network polling and repeated API requests.
+- Use caching with correct invalidation.
+- Avoid introducing unnecessary dependencies.
+- Keep expensive operations away from latency-sensitive UI interactions.
+
+Do not claim performance improvements without measurements.
+
+## Stability and crash prevention
+
+Investigate and prevent:
+
+- Unresponsive pages.
+- Memory leaks.
+- Infinite rendering loops.
+- Repeated network requests.
+- Unhandled promise rejections.
+- Race conditions.
+- Duplicate submissions.
+- Stale application state.
+- Broken navigation.
+- Failed data persistence.
+- Inconsistent offline behavior.
+
+Provide meaningful error handling and recovery where appropriate.
+
+## PWA and update reliability
+
+- Verify service worker registration and update behavior.
+- Prevent repeated update popups after successful updates.
+- Avoid unnecessary update prompts when the application version has not changed.
+- Prevent stale asset references after deployments.
+- Preserve unsaved user work during updates.
+- Test installation, reload, and navigation behavior.
+- Verify compatibility between cached application versions and current APIs.
+
+## Production readiness
+
+Before recommending a release:
+
+1. Verify acceptance criteria.
+2. Run relevant automated tests.
+3. Run production build and applicable static checks.
+4. Review security and data integrity risks.
+5. Verify affected user workflows.
+6. Evaluate performance regressions.
+7. Check integration compatibility.
+8. Confirm migration readiness if applicable.
+9. Document known defects and limitations.
+10. Prepare a release and recovery plan.
+
+## Deployment boundaries
+
+The agent may prepare branches, commits, tests, and pull requests autonomously.
+
+Do not merge protected branches, deploy to production, alter production data, or perform irreversible external actions without explicit owner approval.
+
+## Completion standard
+
+A feature is release-ready only when applicable quality gates pass, critical risks are resolved, and verification evidence is documented.
+
+If production conditions cannot be reproduced in the available environment, identify the remaining validation requirements.
+
