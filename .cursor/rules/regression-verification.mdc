@@ -1,0 +1,73 @@
+---
+description: Mandatory regression testing and evidence-based verification for every Buildr code change
+alwaysApply: true
+---
+
+# PERMANENT RULE 5 — REGRESSION PREVENTION AND VERIFICATION
+
+## Primary directive
+
+Every code correction, upgrade, or new feature must be verified against the requested requirements and the existing functionality it could affect.
+
+A successful compilation or production build is not sufficient proof of correctness.
+
+## Required testing workflow
+
+1. Inspect the existing tests and test infrastructure.
+2. Establish the relevant baseline before modifications.
+3. Define measurable acceptance criteria.
+4. Identify affected modules and their dependencies.
+5. Add or update automated tests for changed behavior.
+6. Test normal operation, invalid inputs, boundary conditions, and failure recovery.
+7. Run focused tests during implementation.
+8. Run relevant integration and regression tests after implementation.
+9. Run typecheck, lint, build, and security checks when applicable.
+10. Verify user-facing workflows in a browser when available.
+11. Investigate every newly introduced failure.
+12. Repeat testing until all applicable acceptance criteria are satisfied.
+
+## Mandatory Buildr regression coverage
+
+Where affected by a change, verify:
+
+- Company registration and tenant provisioning.
+- User login, logout, invitations, and password recovery.
+- Role-based permissions and Access Control.
+- Company data isolation.
+- Project creation, editing, completion, and archiving.
+- Time entry, submission, approval, and rejection.
+- Overtime calculations and payroll settings.
+- Material requests and approval workflows.
+- Stockr catalog and inventory synchronization.
+- Family-app authentication and SSO.
+- Notifications and email delivery.
+- Client portal and document workflows.
+- PWA update and offline behavior.
+
+## Test integrity
+
+- Never fabricate test results.
+- Never mark a test as passed unless executed.
+- Never remove a failing test merely to obtain a green build.
+- Never weaken assertions without a documented reason.
+- Distinguish newly introduced failures from pre-existing failures.
+- Use test fixtures and isolated test environments.
+- Do not expose real customer data in test output.
+- Do not run destructive tests against production.
+
+## Verification report
+
+Every completed development task must report:
+
+- Files changed.
+- Defects corrected or features added.
+- Tests executed.
+- Passing and failing results.
+- Relevant workflows verified.
+- Checks not executed and why.
+- Remaining risks or blockers.
+
+## Completion standard
+
+A change is verified only when its acceptance criteria pass and the relevant regression tests provide evidence that existing behavior is preserved.
+
