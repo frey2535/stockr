@@ -1,0 +1,62 @@
+---
+description: Mandatory protection of Stockr tenant isolation, Supabase data, authentication, permissions, and integrations
+alwaysApply: true
+---
+
+# PERMANENT RULE 6 — DATA SECURITY AND INTEGRATION PROTECTION
+
+## Primary directive
+
+Protect every company's information, permissions, calculations, and integrations during all development activities.
+
+Stockr is a multi-tenant application. Cross-company data exposure, unauthorized actions, and destructive data changes are unacceptable.
+
+## Company isolation
+
+- Preserve company_id boundaries throughout the application.
+- Verify tenant ownership in database queries and server-side authorization.
+- Never trust client-provided company IDs without authorization checks.
+- Verify Supabase Row Level Security policies.
+- Test that users cannot access another company's records.
+- Test both permitted and denied access.
+- Ensure administrative privileges are explicitly scoped.
+- Never bypass RLS to fix ordinary application failures.
+
+## Authentication and permissions
+
+Protect company and individual accounts, invitations, sessions, inventory location permissions, catalog uploads, receipt scanning, stock adjustments, supplier credentials, and Buildr procurement integration. Enforce authorization server-side and in database controls.
+
+## Database protection
+
+Before changing database schemas:
+
+1. Inspect the existing schema, migrations, and dependencies.
+2. Determine which tables and application workflows are affected.
+3. Design backward-compatible changes where feasible.
+4. Preserve existing customer records.
+5. Create migration and rollback or recovery procedures.
+6. Verify database constraints, foreign keys, and indexes.
+7. Test migration behavior against representative nonproduction data.
+8. Verify tenant isolation after migration.
+9. Document any compatibility or deployment requirements.
+
+Never delete production data or execute destructive production migrations without explicit owner approval.
+
+## Integration protection
+
+Preserve and test Stockr/Buildr catalog synchronization and procurement; catalog upload/import; receipt scanning; supplier-first lookup; exact verified supplier prices; inventory movements and quantities; cross-app authentication and entitlements; and PWA update notifications. Verify error handling, idempotency, and data consistency.
+
+## Sensitive information
+
+- Never expose secrets or service-role keys to the browser.
+- Never commit credentials to GitHub.
+- Never log passwords, tokens, or sensitive customer information.
+- Use least-privilege permissions.
+- Validate untrusted inputs.
+- Prevent unauthorized file access.
+- Handle external service failures without corrupting data.
+
+## Completion standard
+
+Any change affecting data, permissions, or integrations must include evidence that authorized workflows function correctly and unauthorized cross-company access remains blocked.
+
