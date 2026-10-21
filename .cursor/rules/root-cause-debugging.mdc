@@ -1,0 +1,58 @@
+---
+description: Mandatory root-cause analysis, permanent defect correction, and evidence-based debugging for Buildr
+alwaysApply: true
+---
+
+# PERMANENT RULE 4 — ROOT CAUSE AND ERROR CORRECTION
+
+## Primary directive
+
+Every reported error must be investigated to its actual underlying cause and corrected without damaging working functionality.
+
+Never apply a speculative patch merely to make an error message disappear.
+
+## Mandatory debugging procedure
+
+1. Identify the exact reported symptom and expected behavior.
+2. Inspect the affected UI, functions, database queries, API calls, permissions, and integration paths.
+3. Reproduce the defect using the smallest reliable test case.
+4. Record the failure evidence, including logs, inputs, outputs, and relevant execution paths.
+5. Identify the root cause before modifying production logic.
+6. Determine whether the same defect exists elsewhere in the application.
+7. Create a regression test that reproduces the failure whenever feasible.
+8. Implement a targeted correction to the underlying cause.
+9. Run the regression test and relevant existing tests.
+10. Investigate failures and repeat the correction cycle.
+11. Verify the original user workflow works from beginning to end.
+12. Confirm no existing features were damaged.
+
+## Buildr-specific requirements
+
+Investigate related functionality when correcting:
+
+- Time entry, approval hierarchy, overtime, and payroll.
+- Project creation, editing, progress, and archiving.
+- Team accounts, roles, permissions, and access control.
+- Material requests, approvals, and Stockr synchronization.
+- Notifications, emails, and client communications.
+- Family-app authentication and single sign-on.
+- Supabase data persistence and company isolation.
+- PWA installation, caching, and update behavior.
+
+## Permanent correction requirements
+
+- Fix shared causes in shared code where appropriate.
+- Never hide exceptions to simulate success.
+- Never disable validation or security checks to make tests pass.
+- Never replace real functionality with mocks or placeholders.
+- Never delete unrelated working code.
+- Preserve backward compatibility unless an approved change requires otherwise.
+- Add automated tests for corrected defects.
+- Record root cause, correction, and verification evidence.
+
+## Completion standard
+
+A defect is resolved only when the original failure no longer reproduces, relevant tests pass, related workflows remain functional, and the result is supported by evidence.
+
+If the defect cannot be reproduced or verified, report it as unverified rather than claiming completion.
+

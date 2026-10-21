@@ -1,0 +1,185 @@
+---
+description: Permanent mandatory engineering rule for all development tasks
+alwaysApply: true
+---
+# PERMANENT RULE 2 — ADVANCED ENGINEERING AND ELITE FEATURE IMPLEMENTATION
+
+**Application:** All new features, application upgrades, integrations, repairs, user interfaces, calculations, automation, and system architecture.
+
+**Priority:** Mandatory. Automatically apply to every development request.
+
+## PRIMARY DIRECTIVE
+
+Every implementation must target professional, commercially competitive software quality.
+
+Do not automatically choose the simplest, cheapest, quickest, or minimum viable implementation.
+
+Select the most capable, reliable, accurate, maintainable, and efficient architecture appropriate to the requested functionality.
+
+The objective is to deliver advanced production-quality software, not a basic demonstration.
+
+## REQUIRED ENGINEERING STANDARDS
+
+### 1. Advanced technology selection
+
+Before implementing a significant feature:
+
+- Inspect the existing architecture.
+- Identify the strongest technically appropriate implementation approaches.
+- Evaluate relevant modern frameworks, algorithms, and libraries.
+- Consider performance, accuracy, scalability, security, and long-term maintenance.
+- Select an advanced, proven solution supported by engineering evidence.
+
+Do not introduce complexity merely because a technology is newer or marketed as AI.
+
+### 2. Complete feature development
+
+Implement the complete professional workflow.
+
+Include, where applicable:
+
+- Full functionality
+- Advanced configuration
+- User controls
+- Input validation
+- Error handling
+- Recovery mechanisms
+- Progress indicators
+- Data persistence
+- Responsive layouts
+- Accessibility
+- Search and filtering
+- Undo and redo
+- Bulk operations
+- Import and export
+- Reporting and verification
+- Integration with existing features
+
+Include capabilities when they materially improve the requested workflow. Do not add unrelated features simply to increase feature count.
+
+### 3. Accuracy and reliability
+
+Use validated calculations, documented algorithms, authoritative technical references, and measurable acceptance criteria.
+
+For AI and automated recognition:
+
+- Use appropriate modern detection and classification methods.
+- Combine complementary methods where beneficial.
+- Measure precision, recall, and classification accuracy.
+- Provide uncertainty handling and human review.
+- Validate performance against representative real-world data.
+- Never fabricate accuracy measurements or claim unverified performance.
+
+### 4. Performance and scalability
+
+Design for professional workloads.
+
+Consider:
+
+- Large datasets
+- Thousands of records
+- Large documents
+- Background processing
+- Incremental updates
+- Efficient caching
+- Memory management
+- Database indexing
+- Responsive interactions
+- Concurrency
+- Graceful failure recovery
+
+Do not sacrifice stability for unnecessary complexity.
+
+### 5. Professional user experience
+
+Deliver polished, intuitive interfaces suitable for commercial customers.
+
+Requirements include:
+
+- Clear navigation
+- Consistent design
+- Responsive mobile and desktop layouts
+- Accessible controls
+- Useful feedback
+- Contextual instructions
+- Minimal unnecessary user actions
+- Accurate visual representations
+- Advanced editing controls when appropriate
+
+Avoid generic placeholder interfaces and unfinished workflows.
+
+### 6. Architecture and code quality
+
+- Preserve functioning code and existing integrations.
+- Prefer modular, testable architecture.
+- Avoid unnecessary rewrites.
+- Use well-supported dependencies.
+- Eliminate duplicated business logic.
+- Maintain backward compatibility where required.
+- Protect authentication and authorization.
+- Preserve company and organization data isolation.
+- Document important engineering decisions.
+- Build features that can be maintained and expanded.
+
+### 7. Competitive quality
+
+For major features, evaluate relevant leading commercial software and established industry practices when reliable information is available.
+
+Identify capabilities that materially improve the requested workflow.
+
+Implement the strongest appropriate solution within the application's actual technical, licensing, and operational constraints.
+
+Do not copy proprietary source code or make unsupported claims of feature parity.
+
+### 8. No minimum-effort shortcuts
+
+The following are unacceptable substitutes for complete engineering:
+
+- Placeholder buttons
+- Mock functionality presented as working
+- Hardcoded results instead of real calculations
+- Generic AI responses instead of implemented features
+- Static demonstrations when dynamic functionality is required
+- Incomplete data persistence
+- Silent failures
+- Fake integrations
+- Untested features
+- Removing existing functionality to simplify implementation
+- Unnecessary dependencies that create instability
+
+### 9. Verification of advanced functionality
+
+Test the feature under realistic operating conditions.
+
+Verify:
+
+- Correctness
+- Accuracy
+- Performance
+- Scalability
+- Reliability
+- Security
+- Usability
+- Compatibility
+- Regression safety
+- Complete end-to-end workflows
+
+Compare actual results against measurable requirements.
+
+### 10. Final engineering standard
+
+Before declaring completion, ask:
+
+- Is this a complete professional implementation?
+- Does it solve the owner's actual problem?
+- Is it reliable under real-world conditions?
+- Is the technology appropriate and technically sound?
+- Are important edge cases handled?
+- Is the user experience commercially competitive?
+- Has performance been measured where relevant?
+- Have all acceptance criteria been verified?
+- Does it preserve the application's existing functionality?
+
+If the implementation does not satisfy these requirements, continue improving it within the authorized task scope.
+
+**PERMANENT ENGINEERING RULE: BUILD THE BEST APPROPRIATE PRODUCTION SOLUTION — NOT THE BARE MINIMUM.**
