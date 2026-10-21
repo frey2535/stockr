@@ -1,4 +1,6 @@
-import type { Project, StoreState, Tool, ToolCondition } from "./types";
+import type { Location, Project, StoreState, Tool, ToolCondition } from "./types";
+
+export type ToolListView = "employee" | "location";
 
 export const TOOL_CONDITIONS: { id: ToolCondition; label: string }[] = [
   { id: "good", label: "Good" },
@@ -23,6 +25,61 @@ export function nextToolNumber(tools: Tool[]) {
     });
   const next = (used.length ? Math.max(...used) : 0) + 1;
   return `T-${String(next).padStart(3, "0")}`;
+}
+
+export function toolLocation(tool: Pick<Tool, "assigned_location_id">, locations: Location[]) {
+  const id = String(tool.assigned_location_id || "").trim();
+  return id ? locations.find((location) => location.id === id) || null : null;
+}
+
+export function toolHasAssignedLocation(tool: Pick<Tool, "assigned_location_id">, locations: Location[]) {
+  return Boolean(toolLocation(tool, locations));
+}
+
+export function toolEmployeeName(tool: Pick<Tool, "assigned_to">) {
+  return String(tool.assigned_to || "").trim();
+}
+
+function employeeGroupsFrom(tools: Tool[]) {
+  const groups = new Map<string, Tool[]>();
+  for (const tool of tools) {
+    const employee = toolEmployeeName(tool);
+    if (!employee) continue;
+    groups.set(employee, [...(groups.get(employee) || []), tool]);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, rows]) => ({ name, tools: rows }));
+}
+
+export function groupToolsForView(tools: Tool[], locations: Location[], view: ToolListView) {
+  if (view === "employee") {
+    return {
+      employeeGroups: employeeGroupsFrom(tools),
+      locationGroups: [] as Array<{ location: Location; tools: Tool[] }>,
+      employeeOnly: [] as Tool[],
+      unassigned: tools.filter((tool) => !toolEmployeeName(tool)),
+    };
+  }
+
+  const employeeOnly = tools.filter((tool) => toolEmployeeName(tool) && !toolHasAssignedLocation(tool, locations));
+  return {
+    employeeGroups: employeeGroupsFrom(employeeOnly),
+    locationGroups: locations.map((location) => ({
+      location,
+      tools: tools.filter((tool) => tool.assigned_location_id === location.id),
+    })),
+    employeeOnly,
+    unassigned: tools.filter((tool) => !toolEmployeeName(tool) && !toolHasAssignedLocation(tool, locations)),
+  };
+}
+
+export function toolsVisibleInView(grouped: ReturnType<typeof groupToolsForView>) {
+  return [
+    ...grouped.employeeGroups.flatMap((group) => group.tools),
+    ...grouped.locationGroups.flatMap((group) => group.tools),
+    ...grouped.unassigned,
+  ];
 }
 
 export function mergeToolLists(tableTools: Tool[], blobTools: Tool[]) {
