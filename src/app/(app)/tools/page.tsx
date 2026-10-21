@@ -25,7 +25,14 @@ import {
 } from "@/components/ui/select";
 import { commandAccessError } from "@/lib/command-access";
 import { useStore } from "@/lib/store";
-import { nextToolNumber, TOOL_CONDITIONS, toolConditionLabel } from "@/lib/tools-state";
+import {
+  groupToolsForView,
+  nextToolNumber,
+  TOOL_CONDITIONS,
+  toolConditionLabel,
+  toolLocation,
+  type ToolListView,
+} from "@/lib/tools-state";
 import type { Location, Tool, ToolCondition, ToolStatus } from "@/lib/types";
 
 const STATUS: Record<ToolStatus, string> = {
@@ -59,13 +66,29 @@ function locationLabel(location: Location) {
   return location.assigned_to ? `${kind} · ${location.name} · ${location.assigned_to}` : `${kind} · ${location.name}`;
 }
 
+function assignmentLine(tool: Tool, locations: Location[]) {
+  const location = toolLocation(tool, locations);
+  const employee = tool.assigned_to?.trim() || "";
+  const parts: string[] = [];
+  if (employee) parts.push(`Assigned to ${employee}`);
+  if (location) {
+    const kind = location.type === "vehicle" ? "Vehicle" : "Warehouse";
+    parts.push(`${kind} ${location.name}`);
+  }
+  if (!parts.length) parts.push("No employee or location assigned");
+  if (tool.category) parts.push(tool.category);
+  return parts.join(" · ");
+}
+
 function ToolCard({
   tool,
+  locations,
   onEdit,
   onDelete,
   canDelete,
 }: {
   tool: Tool;
+  locations: Location[];
   onEdit: () => void;
   onDelete: () => void;
   canDelete: boolean;
@@ -84,10 +107,7 @@ function ToolCard({
           <Badge className={CONDITION[condition] || CONDITION.good}>{toolConditionLabel(condition)}</Badge>
           <Badge className={STATUS[tool.status]}>{tool.status.replace("_", " ")}</Badge>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {tool.assigned_to ? `Assigned to ${tool.assigned_to}` : "No employee assigned"}
-          {tool.category ? ` · ${tool.category}` : ""}
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{assignmentLine(tool, locations)}</p>
         {tool.barcode ? <p className="mt-1 font-mono text-xs text-muted-foreground">{tool.barcode}</p> : null}
       </div>
       <div className="flex flex-col gap-2">
@@ -112,15 +132,9 @@ export default function ToolsPage() {
   const [editing, setEditing] = useState<Partial<Tool> | null>(null);
   const [defaultLocationId, setDefaultLocationId] = useState(locations[0]?.id || "");
   const [customEmployee, setCustomEmployee] = useState(false);
+  const [view, setView] = useState<ToolListView>("location");
 
   const grouped = useMemo(() => {
-    const byLocation = locations.map((location) => ({
-      location,
-      tools: tools.filter((tool) => tool.assigned_location_id === location.id),
-    }));
-    const unassigned = tools.filter(
-      (tool) => !locations.some((location) => location.id === tool.assigned_location_id),
-    );
     const employees = Array.from(
       new Set(
         [
@@ -133,8 +147,8 @@ export default function ToolsPage() {
     const toolNumbers = Array.from(
       new Set(tools.map((tool) => String(tool.tool_number || "").trim()).filter(Boolean)),
     ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    return { byLocation, unassigned, employees, toolNumbers };
-  }, [account?.members, locations, tools]);
+    return { ...groupToolsForView(tools, locations, view), employees, toolNumbers };
+  }, [account?.members, locations, tools, view]);
 
   const save = async () => {
     if (!editing?.name?.trim()) {
@@ -187,13 +201,23 @@ export default function ToolsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Tools"
-        description="Every warehouse, vehicle, and assigned employee with the tools on that assignment"
+        description="One tool is one entry. Group by location or by employee — never both at once."
         icon={<Wrench className="size-7 text-primary" />}
         actions={
-          <Button onClick={() => startAdd()}>
-            <Plus className="mr-2 size-4" />
-            Add tool
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <div className="flex rounded-lg border p-0.5">
+              <Button size="sm" variant={view === "location" ? "default" : "ghost"} onClick={() => setView("location")}>
+                By location
+              </Button>
+              <Button size="sm" variant={view === "employee" ? "default" : "ghost"} onClick={() => setView("employee")}>
+                By employee
+              </Button>
+            </div>
+            <Button onClick={() => startAdd()}>
+              <Plus className="mr-2 size-4" />
+              Add tool
+            </Button>
+          </div>
         }
       />
 
@@ -207,91 +231,95 @@ export default function ToolsPage() {
         <div className="space-y-6">
           {grouped.employees.length ? (
             <div className="flex flex-wrap gap-2">
-              {grouped.employees.map((name) => (
-                <Badge key={name} variant="outline" className="gap-1">
-                  <UserRound className="size-3.5" />
-                  {name}
-                  <span className="text-muted-foreground">
-                    {tools.filter((tool) => tool.assigned_to === name).length} tool
-                    {tools.filter((tool) => tool.assigned_to === name).length === 1 ? "" : "s"}
-                  </span>
-                </Badge>
-              ))}
+              {grouped.employees.map((name) => {
+                const count = tools.filter((tool) => tool.assigned_to === name).length;
+                return (
+                  <Badge key={name} variant="outline" className="gap-1">
+                    <UserRound className="size-3.5" />
+                    {name}
+                    <span className="text-muted-foreground">
+                      {count} tool{count === 1 ? "" : "s"}
+                    </span>
+                  </Badge>
+                );
+              })}
             </div>
           ) : null}
 
-          {grouped.employees.map((name) => {
-            const assigned = tools.filter((tool) => tool.assigned_to === name);
-            if (!assigned.length) return null;
-            return (
-              <Card key={`emp-${name}`}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <UserRound className="size-4 text-primary" />
-                    {name}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {assigned.length} assigned tool{assigned.length === 1 ? "" : "s"}
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {assigned.map((tool) => (
-                    <ToolCard
-                      key={tool.id}
-                      tool={tool}
-                      onEdit={() => {
-                        setCustomEmployee(false);
-                        setEditing(tool);
-                      }}
-                      onDelete={() => void remove(tool.id)}
-                      canDelete={canDeleteTools}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
-            );
-          })}
-
-          {grouped.byLocation.map(({ location, tools: assigned }) => (
-            <Card key={location.id}>
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    {location.type === "vehicle" ? (
-                      <Truck className="size-4 text-primary" />
+          {view === "location"
+            ? grouped.locationGroups.map(({ location, tools: assigned }) => (
+                <Card key={location.id}>
+                  <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        {location.type === "vehicle" ? (
+                          <Truck className="size-4 text-primary" />
+                        ) : (
+                          <Warehouse className="size-4 text-primary" />
+                        )}
+                        {location.name}
+                      </CardTitle>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {location.type === "vehicle" ? "Vehicle" : "Warehouse"}
+                        {location.assigned_to ? ` · Employee ${location.assigned_to}` : ""}
+                        {` · ${assigned.length} tool${assigned.length === 1 ? "" : "s"}`}
+                      </p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => startAdd(location.id)}>
+                      <Plus className="mr-1 size-3.5" />
+                      Add tool
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {assigned.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No tools assigned to this location.</p>
                     ) : (
-                      <Warehouse className="size-4 text-primary" />
+                      assigned.map((tool) => (
+                        <ToolCard
+                          key={tool.id}
+                          tool={tool}
+                          locations={locations}
+                          onEdit={() => {
+                            setCustomEmployee(false);
+                            setEditing(tool);
+                          }}
+                          onDelete={() => void remove(tool.id)}
+                          canDelete={canDeleteTools}
+                        />
+                      ))
                     )}
-                    {location.name}
-                  </CardTitle>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {location.type === "vehicle" ? "Vehicle" : "Warehouse"}
-                    {location.assigned_to ? ` · Employee ${location.assigned_to}` : ""}
-                    {` · ${assigned.length} tool${assigned.length === 1 ? "" : "s"}`}
-                  </p>
-                </div>
-                <Button size="sm" variant="outline" onClick={() => startAdd(location.id)}>
-                  <Plus className="mr-1 size-3.5" />
-                  Add tool
-                </Button>
+                  </CardContent>
+                </Card>
+              ))
+            : null}
+
+          {grouped.employeeGroups.map(({ name, tools: assigned }) => (
+            <Card key={`emp-${name}`}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <UserRound className="size-4 text-primary" />
+                  {view === "location" ? `Assigned to ${name}` : name}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  {view === "location"
+                    ? "No warehouse or vehicle assigned"
+                    : `${assigned.length} assigned tool${assigned.length === 1 ? "" : "s"}`}
+                </p>
               </CardHeader>
               <CardContent className="space-y-2">
-                {assigned.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No tools assigned to this location.</p>
-                ) : (
-                  assigned.map((tool) => (
-                    <ToolCard
-                      key={tool.id}
-                      tool={tool}
-                      onEdit={() => {
-                        setCustomEmployee(false);
-                        setEditing(tool);
-                      }}
-                      onDelete={() => void remove(tool.id)}
-                      canDelete={canDeleteTools}
-                    />
-                  ))
-                )}
+                {assigned.map((tool) => (
+                  <ToolCard
+                    key={tool.id}
+                    tool={tool}
+                    locations={locations}
+                    onEdit={() => {
+                      setCustomEmployee(false);
+                      setEditing(tool);
+                    }}
+                    onDelete={() => void remove(tool.id)}
+                    canDelete={canDeleteTools}
+                  />
+                ))}
               </CardContent>
             </Card>
           ))}
@@ -299,13 +327,16 @@ export default function ToolsPage() {
           {grouped.unassigned.length ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Unassigned location</CardTitle>
+                <CardTitle className="text-base">
+                  {view === "employee" ? "No employee assigned" : "Unassigned"}
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {grouped.unassigned.map((tool) => (
                   <ToolCard
                     key={tool.id}
                     tool={tool}
+                    locations={locations}
                     onEdit={() => {
                       setCustomEmployee(false);
                       setEditing(tool);
