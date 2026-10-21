@@ -6,6 +6,8 @@ test("legacy members and technicians can change field inventory but not company 
   for (const role of ["member", "technician"] as const) {
     assert.equal(commandAccessError(role, "applyAction"), "");
     assert.equal(commandAccessError(role, "applyBulkActions"), "");
+    assert.equal(commandAccessError(role, "upsertTool"), "");
+    assert.equal(commandAccessError(role, "deleteTool").length > 0, true);
     assert.equal(commandAccessError(role, "updateSettings").length > 0, true);
     assert.equal(commandAccessError(role, "createPurchaseOrder").length > 0, true);
   }
@@ -19,6 +21,8 @@ test("specialized inventory roles are enforced server side", () => {
   assert.equal(commandAccessError("warehouse_manager", "upsertLocation"), "");
   assert.equal(commandAccessError("foreman", "receivePurchaseOrder").length > 0, true);
   assert.equal(commandAccessError("foreman", "applyRestock"), "");
+  assert.equal(commandAccessError("foreman", "upsertTool"), "");
+  assert.equal(commandAccessError("foreman", "deleteTool").length > 0, true);
   assert.equal(commandAccessError("foreman", "upsertMaterial").length > 0, true);
   assert.equal(commandAccessError("viewer", "applyAction").length > 0, true);
 });

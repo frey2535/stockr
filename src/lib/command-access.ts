@@ -38,6 +38,7 @@ const WAREHOUSE = new Set<StoreCommand["type"]>([
 const FIELD = new Set<StoreCommand["type"]>([
   "applyAction",
   "applyBulkActions",
+  "upsertTool",
 ]);
 
 export type FieldOpsAction =

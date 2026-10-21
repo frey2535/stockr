@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { commandAccessError } from "@/lib/command-access";
 import { useStore } from "@/lib/store";
 import { nextToolNumber, TOOL_CONDITIONS, toolConditionLabel } from "@/lib/tools-state";
 import type { Location, Tool, ToolCondition, ToolStatus } from "@/lib/types";
@@ -62,10 +63,12 @@ function ToolCard({
   tool,
   onEdit,
   onDelete,
+  canDelete,
 }: {
   tool: Tool;
   onEdit: () => void;
   onDelete: () => void;
+  canDelete: boolean;
 }) {
   const condition = (tool.condition || "good") as ToolCondition;
   return (
@@ -91,9 +94,11 @@ function ToolCard({
         <Button size="sm" variant="outline" onClick={onEdit}>
           Edit
         </Button>
-        <Button size="sm" variant="ghost" className="text-destructive" onClick={onDelete}>
-          Delete
-        </Button>
+        {canDelete ? (
+          <Button size="sm" variant="ghost" className="text-destructive" onClick={onDelete}>
+            Delete
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -103,6 +108,7 @@ export default function ToolsPage() {
   const { workspace, account, upsertTool, deleteTool } = useStore();
   const tools = workspace.tools;
   const locations = workspace.locations;
+  const canDeleteTools = !commandAccessError(account?.role, "deleteTool");
   const [editing, setEditing] = useState<Partial<Tool> | null>(null);
   const [defaultLocationId, setDefaultLocationId] = useState(locations[0]?.id || "");
   const [customEmployee, setCustomEmployee] = useState(false);
@@ -238,6 +244,7 @@ export default function ToolsPage() {
                         setEditing(tool);
                       }}
                       onDelete={() => void remove(tool.id)}
+                      canDelete={canDeleteTools}
                     />
                   ))}
                 </CardContent>
@@ -281,6 +288,7 @@ export default function ToolsPage() {
                         setEditing(tool);
                       }}
                       onDelete={() => void remove(tool.id)}
+                      canDelete={canDeleteTools}
                     />
                   ))
                 )}
@@ -303,6 +311,7 @@ export default function ToolsPage() {
                       setEditing(tool);
                     }}
                     onDelete={() => void remove(tool.id)}
+                    canDelete={canDeleteTools}
                   />
                 ))}
               </CardContent>
