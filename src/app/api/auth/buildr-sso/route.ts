@@ -3,6 +3,7 @@ import { applySessionCookie } from "@/lib/auth";
 import { bootstrapBuildrFamilyAppSso } from "@/lib/buildr";
 import { familySsoTokenFromSearch, verifyFamilySsoToken } from "@/lib/buildr-sso";
 import { createSession, ensureBuildrSsoIdentity } from "@/lib/db";
+import { applyFamilyLaunchCookies, familyLaunchLandingPath } from "@/lib/family-launch";
 import { requestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -43,10 +44,12 @@ export async function GET(request: Request) {
     });
     if (!identity) return errorRedirect(request, bootstrap.error || "stockr_account_not_linked");
     const session = await createSession(identity.userId, identity.companyId);
-    const next = url.searchParams.get("next");
-    const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
-    const response = NextResponse.redirect(new URL(safeNext, requestOrigin(request)), 303);
+    const response = NextResponse.redirect(
+      new URL(familyLaunchLandingPath(url.searchParams.get("next")), requestOrigin(request)),
+      303,
+    );
     await applySessionCookie(response, session.id, session.expiresAt);
+    applyFamilyLaunchCookies(response.cookies, request.headers.get("referer") || "");
     return response;
   }
 
@@ -61,9 +64,11 @@ export async function GET(request: Request) {
   if (!identity) return errorRedirect(request, "stockr_account_not_linked");
 
   const session = await createSession(identity.userId, identity.companyId);
-  const next = url.searchParams.get("next");
-  const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
-  const response = NextResponse.redirect(new URL(safeNext, requestOrigin(request)), 303);
+  const response = NextResponse.redirect(
+    new URL(familyLaunchLandingPath(url.searchParams.get("next")), requestOrigin(request)),
+    303,
+  );
   await applySessionCookie(response, session.id, session.expiresAt);
+  applyFamilyLaunchCookies(response.cookies, request.headers.get("referer") || "");
   return response;
 }

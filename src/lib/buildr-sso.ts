@@ -37,6 +37,7 @@ export function familySsoSearch(search: URLSearchParams) {
     "name",
     "next",
     "source",
+    "from",
     "app_id",
     "tenant_binding_id",
   ]) {

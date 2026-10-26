@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { applyFamilyLaunchCookies } from "@/lib/family-launch";
 import { getSession } from "@/lib/db";
 import { SITE_HOST } from "@/lib/site";
 
@@ -49,7 +50,9 @@ export async function proxy(request: NextRequest) {
   if (ssoToken && pathname !== "/api/auth/buildr-sso") {
     const url = request.nextUrl.clone();
     url.pathname = "/api/auth/buildr-sso";
-    return NextResponse.redirect(url);
+    const response = NextResponse.redirect(url);
+    applyFamilyLaunchCookies(response.cookies, request.headers.get("referer") || "");
+    return response;
   }
 
   if (request.method === "POST" && SIGN_IN_PAGES.has(pathname)) {

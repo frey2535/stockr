@@ -11,13 +11,14 @@ const nextConfig: NextConfig = {
     "0.0.0.0",
     "stockr.currentflowconsulting.org",
   ],
-  async redirects() {
+  async headers() {
     return [
       {
-        source: "/",
-        has: [{ type: "query", key: "sso_token", value: "(?<sso_token>.+)" }],
-        destination: "/api/auth/buildr-sso?sso_token=:sso_token",
-        permanent: false,
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+        ],
       },
     ];
   },

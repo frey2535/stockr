@@ -32,6 +32,7 @@ describe("family SSO search helpers", () => {
     assert.equal(familySsoSearch(search).get("sso_token"), "abc.def");
     assert.equal(familySsoSearch(search).get("company_id"), "co_smithcomech");
     assert.equal(familySsoSearch(search).get("extra"), null);
+    assert.equal(familySsoSearch(new URLSearchParams({ from: "buildr", sso_token: "x" })).get("from"), "buildr");
   });
 });
 
