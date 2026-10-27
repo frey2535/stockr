@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
+import { FamilyLaunchGuard } from "@/components/family-launch-guard";
 import { UpdateAvailablePrompt } from "@/components/update-available-prompt";
 import { getCurrentAccount } from "@/lib/auth";
 import { StoreProvider } from "@/lib/store";
@@ -25,8 +26,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <StoreProvider initialWorkspace={workspace} initialAccount={account}>
-      <AppShell>{children}</AppShell>
-      <UpdateAvailablePrompt />
+      <FamilyLaunchGuard>
+        <AppShell>{children}</AppShell>
+        <UpdateAvailablePrompt />
+      </FamilyLaunchGuard>
     </StoreProvider>
   );
 }
