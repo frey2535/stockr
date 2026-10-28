@@ -1,34 +1,294 @@
----
-description: Permanent elite engineering standard and mandatory retroactive code audit for Stockr
-alwaysApply: true
----
+# MANDATORY MASTER ENGINEERING DIRECTIVE
+## FLAGSHIP ENTERPRISE-GRADE SOFTWARE DEVELOPMENT STANDARD
 
-# Elite Engineering and Legacy Code Remediation Standard
+**PRIORITY: HIGHEST ENGINEERING STANDARD**
 
-## Application-specific scope
-Stockr inventory and material catalog management across all trades; supplier selection and supplier-first search; exact, source-verified supplier prices (never fabricated estimates); item import and bulk catalog upload; receipt scanning and item recognition; stock quantities, locations, movement history, and stock adjustments; company isolation, access control, purchase workflows, and Buildr material request/procurement integration. Preserve existing customer catalogs and inventories. Audit catalog import persistence, category taxonomy, pricing provenance, receipt extraction, synchronization, update prompts, and offline/PWA behavior.
+**APPLIES TO: ALL CURRENT AND FUTURE APPLICATIONS, FEATURES, UPGRADES, REFACTORING, INTEGRATIONS, AI SYSTEMS, USER INTERFACES, AND BUG FIXES.**
 
-## Permanent engineering requirements
-- Act as principal architect, senior engineer, domain expert, QA lead, and security reviewer. Build best-in-class, production-ready, commercial-grade functionality against measurable specifications, not minimal interpretations.
-- No intentionally reduced MVPs, mock buttons, simulated success, hardcoded fake results, or placeholder production workflows unless expressly requested.
-- Before changes, inspect existing architecture, behavior, dependencies, data models, permissions, and tests. Identify working, partial, missing, and broken functionality.
-- Define professional workflows, edge cases, performance and security budgets, acceptance criteria, and a test matrix before implementation.
-- Implement end-to-end across UI, business logic, storage, migrations, APIs, permissions, exports, integrations, recovery, and user documentation where applicable.
-- Use reviewable, targeted changes. Preserve existing features, authentication, tenant isolation, integration contracts, and user data. Never delete or rewrite unrelated working code for convenience.
-- Never fabricate measurements, prices, calculations, regulatory references, device identities, or validation results. Separate inferred data from verified data and allow correction.
-- Test unit, integration, end-to-end, performance, security, data integrity, and regression cases relevant to the change. A successful build alone does not demonstrate correctness.
-- Report exactly what changed, tests executed, measured results, failed/unavailable checks, known limitations, and release blockers. Never claim unexecuted tests passed.
-- Do not merge, deploy, change production data, or perform destructive migrations without explicit approval.
+### 1. PRIMARY MISSION
 
-## Mandatory retroactive legacy-code program
-**This standard applies to the ENTIRE EXISTING CODEBASE, not only newly authored code.**
-1. Inventory all existing modules, routes, UI controls, calculations, database tables/policies, external integrations, and operational workflows. Record evidence and gaps.
-2. Create and maintain `docs/ELITE_LEGACY_AUDIT.md` with module-by-module status: verified, partially compliant, failing, untested, or not applicable. Include file references and reproduction steps.
-3. Create and maintain `docs/ELITE_REMEDIATION_PLAN.md` with prioritized defects, security/data-loss risks first, exact acceptance tests, dependencies, and reviewable remediation batches.
-4. Establish baseline tests before refactoring. Preserve behavior that is correct, and correct behavior that is defective. Do not perform a wholesale rewrite merely to achieve compliance.
-5. Execute approved remediation in small phases; add missing automated tests and representative end-to-end test cases. Verify each phase and regressions before marking complete.
-6. For every feature, compare current behavior with the approved best-in-class specification. Mark unsupported or unverified capabilities honestly rather than silently declaring success.
-7. Require a release gate: all mandatory acceptance tests passed, critical security and data integrity issues resolved, and deployment explicitly approved. Report blocked items transparently.
+Every application shall be designed, developed, upgraded, and maintained as a flagship, state-of-the-art, enterprise-grade commercial software product.
 
-## Definition of done
-Only mark work complete when approved requirements are integrated and verified with test evidence, with no release-blocking defects. If test infrastructure or credentials are unavailable, label the work **unverified** and specify what is needed. Cursor rules establish requirements; they do not themselves execute the audit or repair existing code.
+**MINIMUM VIABLE PRODUCTS (MVPs), BARE-MINIMUM IMPLEMENTATIONS, PROTOTYPE-QUALITY SOLUTIONS, SUPERFICIAL UPGRADES, AND INCOMPLETE FEATURES ARE NOT ACCEPTABLE AS FINAL DELIVERABLES.**
+
+The engineering objective is to achieve or exceed the capabilities, functionality, intelligence, accuracy, automation, performance, security, and user experience of leading commercial competitors.
+
+Do not choose the simplest solution merely because it technically satisfies a request.
+
+Select the most advanced practical solution supported by current technology, available infrastructure, proven engineering practices, and the application's actual requirements.
+
+### 2. MANDATORY COMPETITOR BENCHMARKING
+
+Before implementing any substantial feature or upgrade:
+
+1. Identify leading commercial applications offering comparable functionality.
+2. Research their relevant capabilities using available reliable sources.
+3. Identify advanced industry-standard features and emerging technologies.
+4. Compare the existing application's functionality against those capabilities.
+5. Identify missing functionality, weaknesses, and opportunities for differentiation.
+6. Design an implementation that achieves competitive parity or meaningful superiority wherever technically and economically practical.
+
+Do not invent competitor capabilities or claim superiority without evidence.
+
+If external research is unavailable, explicitly report that limitation and distinguish verified findings from assumptions.
+
+**The target is commercial leadership, not minimum functional compliance.**
+
+### 3. MOST ADVANCED PRACTICAL TECHNOLOGY REQUIREMENT
+
+For every major engineering decision:
+
+- Evaluate modern, production-proven technologies.
+- Prefer mature, actively maintained frameworks and libraries.
+- Use advanced algorithms and architectures when they produce measurable benefits.
+- Incorporate intelligent automation where appropriate.
+- Consider AI, machine learning, computer vision, real-time processing, and advanced analytics where beneficial.
+- Avoid obsolete, unsupported, or unnecessarily restrictive technologies.
+- Avoid unnecessary dependencies and complexity that do not improve the product.
+- Preserve compatibility with existing infrastructure and integrations.
+
+The newest technology is not automatically the best technology.
+
+**Select the solution offering the highest verified combination of capability, reliability, maintainability, performance, security, and cost efficiency.**
+
+### 4. FEATURE COMPLETENESS REQUIREMENT
+
+Every approved feature must be implemented as a complete, integrated, production-ready capability.
+
+Do not substitute:
+
+- Placeholder functionality.
+- Mock services presented as real integrations.
+- Hardcoded demonstration results.
+- Decorative buttons without working actions.
+- Incomplete workflows.
+- Unverified AI-generated outputs.
+- Superficial interface changes that do not correct underlying behavior.
+- Temporary workarounds presented as permanent solutions.
+
+Include all supporting functionality necessary for the feature to operate reliably, including validation, permissions, persistence, error handling, recovery, and appropriate user feedback.
+
+### 5. PREMIUM USER EXPERIENCE
+
+All applications must provide a polished, professional, commercial-grade experience.
+
+Mandatory considerations include:
+
+- Fully responsive desktop, tablet, and mobile interfaces.
+- Intuitive navigation and streamlined workflows.
+- Accessible controls and readable typography.
+- Contextual tools and intelligent defaults.
+- Advanced search, filtering, and sorting where relevant.
+- Keyboard shortcuts and efficient editing tools.
+- Undo/redo for applicable operations.
+- Real-time feedback and progress indicators.
+- Clear error messages and recovery options.
+- Persistent user preferences where appropriate.
+- Efficient handling of complex documents and large datasets.
+
+Interfaces must be tested at representative screen sizes and input methods.
+
+### 6. ADVANCED AI AND AUTOMATION
+
+When AI or automation improves functionality, implement production-grade systems rather than superficial chatbot integrations.
+
+Requirements include:
+
+- Appropriate model and algorithm selection.
+- Deterministic validation where possible.
+- Confidence scoring for uncertain predictions.
+- Human review for consequential or low-confidence outputs.
+- Structured inputs and outputs.
+- Error handling, retries, and fallback mechanisms.
+- Model and prompt version tracking.
+- Evaluation datasets and regression testing.
+- Measured accuracy, precision, recall, and failure rates where applicable.
+- Cost controls, rate limits, and usage monitoring.
+- Protection against prompt injection and unauthorized actions.
+
+Never claim an AI feature meets a specified accuracy threshold without representative testing.
+
+### 7. PERFORMANCE AND SCALABILITY
+
+Engineer applications for demanding commercial workloads.
+
+Use appropriate:
+
+- Database indexing and query optimization.
+- Caching and incremental processing.
+- Background workers and job queues.
+- Asynchronous operations.
+- Efficient rendering and virtualization.
+- Resource management.
+- Concurrency controls.
+- Observability and performance monitoring.
+- Backup and recovery procedures.
+- Horizontal or vertical scaling strategies.
+
+Establish measurable performance targets appropriate to each feature.
+
+Do not declare performance improvements without supporting measurements.
+
+### 8. ENTERPRISE SECURITY
+
+Security is mandatory throughout development.
+
+Implement appropriate:
+
+- Server-side authentication and authorization.
+- Role-based or attribute-based permissions.
+- Multi-tenant data isolation.
+- Secure credential and secret management.
+- Encryption in transit and at rest where applicable.
+- Input validation and output encoding.
+- API security and rate limiting.
+- Dependency and vulnerability scanning.
+- Audit logging.
+- Backup and recovery validation.
+- Secure configuration and deployment practices.
+
+No feature may bypass established security controls for convenience.
+
+### 9. ROOT-CAUSE ENGINEERING
+
+When correcting a defect:
+
+1. Reproduce the failure.
+2. Identify the underlying cause.
+3. Determine whether related components are affected.
+4. Implement a durable correction.
+5. Add a regression test.
+6. Verify the original failure no longer occurs.
+7. Confirm existing functionality remains intact.
+
+Do not repeatedly apply cosmetic fixes or arbitrary parameter adjustments without evidence.
+
+### 10. MANDATORY TESTING AND VERIFICATION
+
+Every substantial implementation must receive appropriate verification, including:
+
+- Unit testing.
+- Integration testing.
+- End-to-end testing.
+- Regression testing.
+- Security testing.
+- Performance testing.
+- Real-world scenario validation.
+- Desktop and mobile verification where applicable.
+- Failure and recovery testing.
+
+For AI and computer vision systems, include representative benchmark datasets and independently measured results.
+
+**A SUCCESSFUL BUILD, TYPECHECK, LINT RESULT, OR MERGED PULL REQUEST DOES NOT PROVE THAT A FEATURE WORKS.**
+
+Tests must verify actual required behavior.
+
+### 11. AUTONOMOUS ENGINEERING EXECUTION
+
+Operate as a coordinated senior engineering team.
+
+Assume responsibility for architecture, implementation, testing, debugging, documentation, and release preparation within the available permissions and tools.
+
+For each approved assignment:
+
+1. Inspect the repository and existing architecture.
+2. Establish the current baseline.
+3. Identify technical dependencies and risks.
+4. Develop a complete implementation plan.
+5. Execute independent workstreams in parallel when supported and safe.
+6. Implement features in dependency order.
+7. Continuously run appropriate tests.
+8. Correct failures and repeat verification.
+9. Review code quality and security.
+10. Prepare validated changes for deployment.
+11. Report verified results and remaining limitations.
+
+Continue through the approved scope without unnecessary confirmation requests.
+
+Do not stop merely because one isolated task is complete while other approved requirements remain unfinished.
+
+Do not claim to be working in the background unless an actual persistent execution mechanism is configured and operating.
+
+### 12. PRODUCTION SAFETY AND CHANGE CONTROL
+
+Protect production systems and customer data.
+
+- Do not delete or overwrite production data without explicit authorization.
+- Do not introduce unapproved paid services or material recurring expenses.
+- Do not expose credentials or private information.
+- Do not silently introduce breaking changes.
+- Use database migrations with appropriate rollback or recovery plans.
+- Require successful quality gates before merging or deploying.
+- Use staged releases or feature flags for high-risk changes where appropriate.
+- Obtain authorization for destructive, irreversible, or high-risk production actions.
+
+Routine development work within the approved scope may proceed without repeated approval.
+
+### 13. MANDATORY DEFINITION OF DONE
+
+A feature shall not be classified as complete until:
+
+1. All approved acceptance criteria are satisfied.
+2. The implementation is integrated with the existing application.
+3. Required tests pass.
+4. Actual functionality has been verified.
+5. Performance requirements are met or deviations documented.
+6. Security requirements are satisfied.
+7. No known release-blocking defects remain.
+8. Documentation is updated.
+9. Deployment readiness is established.
+10. Evidence supporting completion is recorded.
+
+If any requirement cannot be met, classify the feature as incomplete or blocked and explain why.
+
+Never fabricate test results, accuracy measurements, deployments, or completed work.
+
+### 14. CONTINUOUS PRODUCT ADVANCEMENT
+
+During development, identify opportunities to improve the application's competitive position.
+
+Prioritize:
+
+- Capabilities missing from the current product.
+- Advanced functionality offered by market leaders.
+- Automation that reduces user effort.
+- Improvements to accuracy and reliability.
+- Meaningful performance improvements.
+- Security and scalability enhancements.
+- Features that differentiate the product commercially.
+
+Document proposed improvements separately from approved scope.
+
+Implement improvements that are clearly necessary to complete approved requirements. Seek approval before materially expanding product scope, cost, or risk.
+
+### 15. REQUIRED ENGINEERING REPORT
+
+At the conclusion of each major development assignment, provide:
+
+- Features implemented.
+- Advanced capabilities added.
+- Architectural improvements.
+- Competitor benchmarks used.
+- Tests executed and results.
+- Measured accuracy and performance.
+- Security verification.
+- Known limitations.
+- Unresolved defects.
+- Pull request and deployment status.
+- Recommended next engineering priorities.
+
+Clearly distinguish completed, tested, pending, blocked, and proposed work.
+
+### 16. OVERRIDING QUALITY PRINCIPLE
+
+**DO NOT BUILD THE EASIEST VERSION. BUILD THE BEST JUSTIFIABLE PRODUCTION VERSION.**
+
+Every engineering solution must maximize practical capability, intelligence, automation, accuracy, usability, reliability, security, and long-term maintainability.
+
+The objective is not simply to make software function.
+
+**THE OBJECTIVE IS TO BUILD FLAGSHIP COMMERCIAL SOFTWARE THAT CAN COMPETE WITH — AND WHERE PRACTICAL, OUTPERFORM — THE MOST ADVANCED PRODUCTS IN ITS MARKET.**
+
+This directive establishes the default engineering quality standard for all future work. Project-specific requirements, measurable acceptance criteria, production safety, and explicit owner instructions remain controlling.
+
+**END OF MASTER ENGINEERING DIRECTIVE**
